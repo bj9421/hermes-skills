@@ -1,7 +1,7 @@
 ---
 name: hermes-agent-skill-authoring
 description: "Author in-repo SKILL.md: frontmatter, validator, structure, and writing-quality principles."
-version: 1.1.0
+version: 1.2.0
 author: Hermes Agent
 license: MIT
 platforms: [linux, macos, windows]
@@ -125,6 +125,40 @@ Categories currently in repo (confirm with `ls skills/`): `autonomous-ai-agents`
 
 Pick the closest existing category. Don't invent new top-level categories casually.
 
+## Before Any Skill Edit (Mandatory Gate)
+
+> ⚠️ **No exceptions.** Every skill edit — patch, edit, or rewrite — must pass through this gate first.
+
+### Step 1: Write todo (mandatory)
+Use the `todo` tool to list:
+- What changes are planned (specific sections/files)
+- Impact scope (which skills/users are affected)
+- Rollback method (`git checkout` / `patch` revert)
+
+### Step 2: Save plan (for multi-step edits)
+For edits touching 2+ sections or multiple files:
+- Save a plan to `.hermes/plans/YYYY-MM-DD-<slug>.md` using the `plan` skill
+- Include: goal, current state, proposed changes, exact file paths, verification steps
+
+For single-line patches (typo, pitfall fix): todo list is sufficient, no plan file needed.
+
+### Step 3: User confirms
+Present the todo/plan to the user. Wait for explicit confirmation before editing.
+Exception: one-line typo fixes or version bumps — proceed directly, log in todo.
+
+### Step 4: After edit — commit
+```bash
+cd /opt/data/skills && git add -A && git commit -m "<skill-name> v<version>: <description>"
+```
+
+### Quick Reference
+
+| Edit Type | Required Steps |
+|-----------|---------------|
+| One-line typo / version bump | todo → proceed → commit |
+| 2-5 section changes | todo → plan file → confirm → edit → commit |
+| Full rewrite | todo → plan file → confirm → edit → verify → commit |
+
 ## Workflow
 
 1. **Survey peers** in the target category:
@@ -178,6 +212,8 @@ Pick the closest existing category. Don't invent new top-level categories casual
 8. **Writing no-op prose.** "Be careful," "be thorough," and "use best practices" rarely change model behavior. Replace with a checkable completion criterion or a stronger leading word.
 
 9. **Linking to skills that don't exist in-repo.** `related_skills: [some-user-local-skill]` works for you but breaks for other clones. Prefer only in-repo links.
+
+10. **Editing skills without writing a plan first.** Even "simple" edits can have unexpected side effects (version drift, broken cross-references, missing changelog entries). Always run through the `## Before Any Skill Edit` gate — todo → plan (if multi-step) → confirm → commit. Skipping this leads to accidental regressions and lost rollback points.
 
 ## Verification Checklist
 

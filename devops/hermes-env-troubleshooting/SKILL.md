@@ -731,3 +731,47 @@ Installing MCP servers (e.g., `duckduckgo-mcp-server`) in a Docker container whe
 **Pitfall:** `hermes config set mcp_servers.X.args '[...]'` stores as a **YAML string** (quoted scalar), not a proper YAML list. This causes validation errors. Only `hermes mcp add --args` produces the correct YAML list format.
 
 See `references/mcp-server-install-container.md` for full step-by-step with uv workaround, direct-run patterns, CLI pitfalls, and verification steps.
+
+---
+
+### 21. Skills Directory Version Control — No Git = No Rollback
+
+**Symptom:** User asks "每個版本迭代變更哪些有詳細記錄下來嗎？如果不滿意可以 rollback 嗎？" — turns out `/opt/data/skills/` has no git repository, so there is zero version history for skill changes.
+
+**Why it matters:** Skills are modified via `skill_manage(action='patch')` frequently. Without git, the only record of changes is in session history tool_calls — which requires searching, is fragile, and provides no one-click rollback.
+
+**Initialization (one-time setup):**
+```bash
+cd /opt/data/skills
+git init
+git config user.email "hermes@dietpi4"
+git config user.name "Hermes Pi"
+git add -A
+git commit -m "v1.0: initial snapshot of all skills"
+```
+
+**Ongoing workflow — commit after skill edits:**
+```bash
+cd /opt/data/skills
+git add -A
+git commit -m "ha-powers v1.6.1: description of change"
+```
+
+**Rollback patterns:**
+```bash
+# View history
+git log --oneline
+
+# See what changed between versions
+git diff abc123..def456 -- software-development/ha-powers/
+
+# Rollback a single skill file to a previous version
+git checkout abc123 -- software-development/ha-powers/SKILL.md
+```
+
+**Pitfalls:**
+- ⚠️ **Commit frequency:** Always commit after `skill_manage` calls that modify SKILL.md. Don't batch multiple skill changes into one commit — it makes rollback harder.
+- ⚠️ **git user config:** Docker container runs as `hermes` user but git needs identity. Set `git config user.email` and `user.name` before first commit.
+- ⚠️ **Session history is NOT a substitute:** Session search can find past changes via tool_calls, but it's slow, imprecise, and can't do one-click file restore. Git is the proper mechanism.
+
+**Prevention:** After initial setup, verify with `git status --short` in the skills directory. If it shows "not a git repository", initialize immediately.
