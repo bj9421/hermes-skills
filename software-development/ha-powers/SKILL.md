@@ -618,6 +618,7 @@ The `ha-powers` skill itself is **declarative orchestration** — it tells you w
 | 1.3.0 | 2026-07-09 | Added Design Philosophy section explaining why the 7-phase pipeline exists, what problems it solves, and what HA-POWERS adds on top of obra's Superpowers |
 | 1.5.0 | 2026-07-10 | Reverted hardcoded paths — restored generic `<project>/docs/specs/` and `<project>/docs/plans/` to avoid environment-specific path issues |
 | 1.6.0 | 2026-07-25 | Integrated mattpocock skills: Phase 0 (grill-me pre-alignment), codebase-design vocabulary in Phase 1, handoff for session continuity |
+| 1.6.1 | 2026-07-25 | Added git version control for skills directory; hermes-agent-skill-authoring v1.2.0 enforces mandatory pre-edit gate (todo → plan → confirm → commit) |
 
 > ⚠️ **Name change notice:** Originally `ha-power`, renamed to `ha-powers` (plural) to better match the Superpowers homage. All references must use `ha-powers` going forward: skill directory, frontmatter `name:`, `@skill:ha-powers` command, and all docs.
 
