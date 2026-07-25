@@ -1,7 +1,7 @@
 ---
 name: hermes-cron-management
 description: "Manage Hermes Agent cron jobs: audit, migrate between profiles, rebuild, diagnose failures, and coordinate multi-profile scheduling."
-version: 1.0.0
+version: 1.1.0
 author: Hermes Agent
 license: MIT
 platforms: [linux]
@@ -193,6 +193,7 @@ find /opt/data -path "*/cron/jobs.json"
 - `references/cron-drift-and-jobs-json-locations.md` — Drift-protection deep dive + full jobs.json enumeration recipe and a model-liveness probe.
 - `references/cron-custom-provider-and-diagnosis.md` — Custom-provider naming (`custom:<name>`), curl liveness probe, and gateway-log diagnosis of pinned-model cron failures.
 - `references/cron-session-search-debugging.md` — Inspect cron job execution history via `session_search(session_id="cron_{job_id}_{ts}")` when CLI can't show the full prompt. Includes SQL to find cron session IDs and real diagnostic example.
+- `scripts/cron_watchdog.py` — Auto-repair watchdog script (no_agent). Reads jobs.json, auto-patches auth/drift errors to big-pickle, silent on success. See Auto-Repair Watchdog section above.
 
 ## Core Concepts
 
@@ -645,6 +646,128 @@ name: auto-memory-scanner
 schedule: "every 180m"   # every 3 hours
 prompt: "Run the auto memory scanner..."
 ```
+
+## 🚨 Cron Failure Response Protocol (Mandatory)
+
+**🔴 最高指令（2026-07-25 用戶明確要求）：**
+> 收到指令必須立刻計劃如何執行。有疑問無法執行時要立刻反應，不能等報錯無法處理。
+> 收到任何錯誤通知（cron 失敗、API 宕機、腳本報錯），**不准只回報錯誤就停住**。
+> 必須立刻自行診斷 → 修復 → 驗證 → 回報。這是一次又一次被糾正的鐵律。
+
+**完整處理流程：**
+
+### Step 1: 立即診斷（不問使用者，不等，不猜）
+1. `cronjob action=list` 查看 `last_status` / `last_error`
+2. 讀 cron output log：`/opt/data/cron/output/{job_id}/` 最新檔案
+3. 找出根因：
+   - `drifted` / `401` / `ModelError` → provider 問題，見下方 Step 2
+   - `timeout` / `killed` → 腳本掛住，見下方 Step 3
+   - `FileNotFoundError` → 路徑錯誤
+   - `database is locked` → SQLite 併發，見上方 lock 章節
+4. 如果判斷是大範圍問題（API 全掛），搜尋網路確認：
+   - 搜 `anysearch` 查該 provider 是否有人回報問題
+   - 確認後直接切備援，不需要等第三方修復
+
+### Step 2: Provider/Auth 失敗 → 立即切換模型
+不要只報告「AGNES API 挂了」— 直接切到備援模型：
+
+```bash
+# 備援順位：opencode/big-pickle > custom:agnes
+cronjob action=update job_id=<id> model='{"model":"big-pickle","provider":"opencode"}'
+cronjob action=run job_id=<id>  # 立即驗證
+```
+
+### Step 3: Timeout/Script 失敗
+1. 讀 output log 確認哪一步掛住
+2. 手動執行腳本確認能跑
+3. 考慮加 `timeout N` 保護（見上方 Script Hardening 章節）
+
+### Step 4: 回報
+修復後簡要回報：
+- 根因（一句話）
+- 修了什麼（model 切換 / 路徑修正 / etc.）
+- 驗證結果（`cronjob run` 成功）
+
+**紅旗：** 修 2 次以上還沒好 → 停下來，質疑架構問題，找使用者討論。
+
+### ⚡ 被動等待的代價（真實案例）
+
+用戶曾多次糾正同一問題：「之前不是已經要求你自己修復報錯嗎」。
+根因是：cron 失敗通知是**系統自動推送**，跳過了 agent 的處理流程。
+Agent 收到通知後只回報錯誤、等用戶指示 → 用戶認為「按規定妳該自己修」。
+
+**教訓：**
+- 任何錯誤通知 → 立即行動，不要等用戶開口
+- 被動等 = 失職。主動修 = 基本要求
+- 如果某類錯誤反覆出現 → 建自動修復機制（見下方 Watchdog 章節），不要靠人工巡檢
+
+## ⚡ Auto-Repair Watchdog（自動巡檢 + 自動修復）
+
+**問題：** 即使 agent 在對話中能即時處理錯誤，cron job 失敗的自動推送通知有時沒人處理。
+**方案：** 建一個 `no_agent` watchdog cron job，每 10 分鐘掃描所有 job 的 `last_status`，
+遇到可自動修復的錯誤直接改 `jobs.json`，不用 LLM、不用 TTY。
+
+### 架構
+
+```
+every 10m → cron_watchdog.py (no_agent)
+  ├─ exit 0 + 空 stdout → 安靜（不通知用戶）
+  └─ exit 1 + 報告 → 通知用戶（自動修復 + 需人工的診斷）
+```
+
+### 自動修復範圍
+
+| 錯誤類型 | 訊號 | 自動修復方式 |
+|---------|------|------------|
+| 401 / Missing Auth / not supported | `last_error` 或 output 含關鍵字 | 改 `jobs.json`：model→big-pickle, provider→opencode, 清 error 狀態 |
+| model drift | `last_error` 含 `drift` | 同上 re-pin |
+| timeout / killed | 需人工調查 | 只報告，不自動修 |
+| 其他錯誤 | — | 報告錯誤內容 + 建議方向 |
+
+### 修復方式：直接改 jobs.json
+
+**不走 `cronjob action=update`（需要 TTY），直接改 live JSON store：**
+1. 讀 `/opt/data/cron/jobs.json`
+2. 找到 error 的 job，改 `model`/`provider`，清 `last_status`/`last_error`
+3. 備份原檔（`jobs.json.bak`）後寫回
+4. 驗證 JSON 完整性
+
+**腳本路徑：** `/opt/data/scripts/cron_watchdog.py`（同時存在 `~/.hermes/scripts/` 供 cron 使用）
+**建立時間：** 2026-07-25
+**Cron job ID：** `6f64a0b2995b`（name: `cron-watchdog-fast`）
+
+### 建立步驟（供未來重建參考）
+
+```bash
+# 1. 寫腳本到兩個位置
+cp /opt/data/scripts/cron_watchdog.py /opt/data/.hermes/scripts/cron_watchdog.py
+chmod +x /opt/data/scripts/cron_watchdog.py /opt/data/.hermes/scripts/cron_watchdog.py
+
+# 2. 建 no_agent cron job（script 用相對檔名）
+cronjob action=create name=cron-watchdog-fast schedule="every 10m" \
+  script="cron_watchdog.py" no_agent=true
+
+# 3. 測試
+python3 /opt/data/scripts/cron_watchdog.py  # exit 0 = 正常
+cronjob action=run job_id=<id>  # 驗證 no_agent 模式正常
+```
+
+### Pitfall: script 路徑限制
+
+`cronjob action=create` 的 `script` 欄位只接受 `~/.hermes/scripts/` 下的**相對檔名**，不能用絕對路徑。
+腳本必須先複製到 `/opt/data/.hermes/scripts/` 才能被 cron 排程器讀取。
+
+### 與 LLM-driven 巡檢的互補
+
+| 機制 | 角色 | 頻率 | 能力 |
+|------|------|------|------|
+| **Watchdog** (no_agent) | 快速自動修復 | 每 10 分鐘 | 改 JSON、切 model、清 error |
+| **LLM 巡檢** (agent-driven) | 複雜診斷 | 按需 | 分析日誌、搜網路、多步驟修復 |
+
+簡單的 auth/drift 錯誤 → watchdog 10 分鐘內自動修。
+複雜的 timeout / 未知錯誤 → 通知用戶 + agent 介入。
+
+---
 
 ## Troubleshooting
 
