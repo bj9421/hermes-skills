@@ -1,7 +1,7 @@
 ---
 name: ha-powers
 description: "ORCHESTRATOR: Full-stack development pipeline from ideation to merge. One profile, 0-2 transient subagents. Includes Progress Tracker (superpowers-style) with 7-phase granular checklists."
-version: 1.6.0
+version: 1.7.0
 author: Hermes Agent
 license: MIT
 platforms: [linux, macos, windows]
@@ -9,7 +9,9 @@ metadata:
   hermes:
     tags: [orchestrator, workflow, pipeline, development, git]
     related_skills:
+      - grilling
       - grill-me
+      - grill-with-docs
       - brainstorming
       - writing-plans
       - git-worktrees
@@ -152,8 +154,9 @@ Agent reads the file, loads suggested skills, and continues from the pending pha
 ## 🚧 Progress Tracker
 
 ### Phase 0: Grill Me (if idea is fuzzy)
-- [ ] Describe the idea/goal
-- [ ] Answer questions one at a time
+- [ ] Load grilling primitive
+- [ ] Interview: one question at a time
+- [ ] (Optional) grill-with-docs: create ADR + CONTEXT.md
 - [ ] Confirm shared understanding ✅
 
 ### Phase 1: Brainstorming
@@ -254,7 +257,7 @@ Agent reads the file, loads suggested skills, and continues from the pending pha
 ## Phase Details
 
 ### Phase 0: Grill Me (Optional Pre-Alignment)
-*Skill: `grill-me`*
+*Skills: `grilling` (primitive) → `grill-me` or `grill-with-docs` (wrappers)*
 
 Goal: When the idea is fuzzy, align with the user BEFORE entering full brainstorming.
 
@@ -268,13 +271,20 @@ Goal: When the idea is fuzzy, align with the user BEFORE entering full brainstor
 - User says "just do it, no need for planning"
 
 **Process:**
-1. Ask one question at a time, with recommended answer
-2. Classify each response: Fact (verify yourself) vs Decision (ask user)
-3. Walk every branch of the decision tree
-4. Confirm shared understanding with a checklist
-5. User confirms → proceed to Phase 1
+1. Load `grilling` skill (core interview primitive)
+2. Ask one question at a time, with recommended answer
+3. Classify each response: Fact (verify yourself) vs Decision (ask user)
+4. Walk every branch of the decision tree
+5. Confirm shared understanding with a checklist
+6. User confirms → proceed to Phase 1
 
-**Output:** Aligned understanding (no file artifact needed)
+**File output choice:**
+- `grill-me` — no files, conversation only (quick alignment)
+- `grill-with-docs` — auto-creates ADR + CONTEXT.md (persistent decisions)
+
+Pick based on whether the decisions need a paper trail.
+
+**Output:** Aligned understanding (no file artifact needed, unless grill-with-docs used)
 **Next:** Invoke `brainstorming` skill (Phase 1).
 
 > 💡 **Why this exists:** Brainstorming produces a spec. But if the idea is too fuzzy, brainstorming wastes time on wrong assumptions. Grill-me catches misalignment early — 5 minutes of Q&A can save an hour of rework.
@@ -617,6 +627,7 @@ The `ha-powers` skill itself is **declarative orchestration** — it tells you w
 | 1.1.0 | 2026-07-09 | Added Progress Tracker, Phase Gates, Kanban integration |
 | 1.3.0 | 2026-07-09 | Added Design Philosophy section explaining why the 7-phase pipeline exists, what problems it solves, and what HA-POWERS adds on top of obra's Superpowers |
 | 1.5.0 | 2026-07-10 | Reverted hardcoded paths — restored generic `<project>/docs/specs/` and `<project>/docs/plans/` to avoid environment-specific path issues |
+| 1.7.0 | 2026-07-25 | Refactored grill-me into grilling primitive + grill-me/grill-with-docs wrappers. Phase 0 now supports file output choice (ADR + CONTEXT.md). |
 | 1.6.0 | 2026-07-25 | Integrated mattpocock skills: Phase 0 (grill-me pre-alignment), codebase-design vocabulary in Phase 1, handoff for session continuity |
 | 1.6.1 | 2026-07-25 | Added git version control for skills directory; hermes-agent-skill-authoring v1.2.0 enforces mandatory pre-edit gate (todo → plan → confirm → commit) |
 

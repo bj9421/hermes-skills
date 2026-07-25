@@ -6,7 +6,7 @@ author: Hermes Agent (ported from mattpocock/skills)
 license: MIT
 platforms: [linux, macos, windows]
 tags: [handoff, continuity, session-management, documentation]
-related_skills: [grill-me, writing-plans, obsidian]
+related_skills: [grilling, grill-me, writing-plans, obsidian]
 ---
 
 # Handoff — Session 交接文件

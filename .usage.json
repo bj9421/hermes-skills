@@ -667,13 +667,39 @@
     "created_at": "2026-07-24T21:47:51.637438+00:00",
     "created_by": null,
     "last_patched_at": null,
-    "last_used_at": "2026-07-25T04:27:21.363261+00:00",
-    "last_viewed_at": "2026-07-25T04:27:21.338230+00:00",
+    "last_used_at": "2026-07-25T04:51:00.707193+00:00",
+    "last_viewed_at": "2026-07-25T04:51:00.684368+00:00",
     "patch_count": 0,
     "pinned": false,
     "state": "active",
-    "use_count": 2,
-    "view_count": 2
+    "use_count": 3,
+    "view_count": 3
+  },
+  "grill-with-docs": {
+    "archived_at": null,
+    "created_at": "2026-07-25T04:51:00.739654+00:00",
+    "created_by": null,
+    "last_patched_at": null,
+    "last_used_at": "2026-07-25T04:51:00.765043+00:00",
+    "last_viewed_at": "2026-07-25T04:51:00.739706+00:00",
+    "patch_count": 0,
+    "pinned": false,
+    "state": "active",
+    "use_count": 1,
+    "view_count": 1
+  },
+  "grilling": {
+    "archived_at": null,
+    "created_at": "2026-07-25T04:51:00.723190+00:00",
+    "created_by": null,
+    "last_patched_at": null,
+    "last_used_at": "2026-07-25T04:51:00.752612+00:00",
+    "last_viewed_at": "2026-07-25T04:51:00.723236+00:00",
+    "patch_count": 0,
+    "pinned": false,
+    "state": "active",
+    "use_count": 1,
+    "view_count": 1
   },
   "ha-powers": {
     "archived_at": null,
