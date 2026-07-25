@@ -1,12 +1,13 @@
 ---
 name: youtube-note-pipeline
-description: "Full pipeline: YouTube video → subtitle/transcript → clean Markdown → Obsidian vault export. Three-stage auto-fallback: youtube-transcript-api (cleanest) → yt-dlp VTT → Whisper transcription. For note-taking, research capturing, or creating durable knowledge from any YouTube video."
+description: "Full pipeline: YouTube video → subtitle/transcript → clean Markdown → Obsidian vault export. Three-stage auto-fallback: youtube-transcript-api (cleanest) → yt-dlp VTT → Whisper transcription. Optional --organize flag for LLM-powered structuring (summary + sections + condensed text). For note-taking, research capturing, or creating durable knowledge from any YouTube video."
 platforms: [linux]
 compatibility:
   - yt-dlp
   - faster-whisper
   - ffmpeg
   - youtube-transcript-api
+  - openai (for --organize via NVIDIA API)
 related_skills: [youtube-content, obsidian]
 ---
 
@@ -22,8 +23,10 @@ This skill complements `youtube-content` (transcript → summary/thread/blog) by
 
 ```bash
 # Dependencies already installed:
-# yt-dlp, youtube-transcript-api, faster-whisper, ffmpeg, markitdown
+# yt-dlp, youtube-transcript-api, faster-whisper, ffmpeg, markitdown, openai
 ```
+
+> `openai` SDK required for `--organize` (NVIDIA API). Install: `uv pip install openai`
 
 ## Pipeline Overview (3-stage auto-fallback)
 
@@ -71,6 +74,9 @@ uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --whisper --model tiny
 
 # Save to specific file
 uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" -o ~/note.md
+
+# Organize mode — LLM-powered structured notes (two files: organized + raw)
+uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --organize --obsidian "我的筆記/yt2md"
 ```
 
 ### Output format (Markdown with frontmatter)
@@ -116,6 +122,32 @@ When the user wants Chinese content from any language video:
    - Chinese translation line
 4. **Chunk** if transcript >50K chars: split into ~40K blocks with 2K overlap, translate each, merge
 
+## Organize Mode (`--organize`) — Post-Processing via LLM
+
+> ✅ **Implemented** — `--organize` flag uses NVIDIA API LLM to turn raw transcripts into structured notes.
+
+Adds a post-processing step that uses an LLM to turn raw transcripts into structured notes.
+
+```bash
+# Organize mode — produces two files
+uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --organize --obsidian "我的筆記/yt2md"
+```
+
+**Output:**
+- `<title>.md` — organized note (summary + sections + condensed text)
+- `<title>_raw.md` — original raw transcript (backup)
+
+**LLM:** NVIDIA API (`integrate.api.nvidia.com/v1`), env var `NVIDIA_API_KEY`.
+Without API key → falls back to raw transcript only (no error).
+
+**Key design decisions:**
+- Always saves raw transcript as backup (two-file output)
+- Chunking for transcripts >30K chars (20K chunks, 1K overlap)
+- Language-aware: prompt instructs LLM to match source language
+- Error-tolerant: API failure → saves raw transcript anyway
+
+See `references/organize-architecture.md` for full design (prompt template, chunking strategy, error handling).
+
 ## Error Handling
 
 - **No subs and no audio**: video is private/deleted — tell the user
@@ -128,4 +160,5 @@ When the user wants Chinese content from any language video:
 ## See Also
 
 - `references/pipeline-architecture.md` — detailed pipeline architecture, `--obsidian` subfolder usage, VTT garbled-text caveats, and API migration notes.
+- `references/organize-architecture.md` — LLM post-processing design: NVIDIA API integration, prompt template, chunking strategy, error handling.
 - `references/translation-and-troubleshooting.md` — bilingual translation format, language fallback chain, common yt-dlp fixes, Whisper on RPi tips.

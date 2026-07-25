@@ -7,6 +7,8 @@ Three pipelines (auto-fallback):
   2. yt-dlp VTT subtitles
   3. yt-dlp + faster-whisper (videos without subtitles)
 
+Optional: --organize  Post-process transcript via LLM into structured notes.
+
 Usage:
     uv run python3 yt2md_pipeline.py "URL"                       # auto-detect
     uv run python3 yt2md_pipeline.py "URL" --whisper             # force Whisper
@@ -14,6 +16,9 @@ Usage:
     uv run python3 yt2md_pipeline.py "URL" -o out.md             # save to file
     uv run python3 yt2md_pipeline.py "URL" --obsidian            # save to Obsidian (YouTube/)
     uv run python3 yt2md_pipeline.py "URL" --obsidian 我的筆記/yt2md  # save to custom subfolder
+    uv run python3 yt2md_pipeline.py "URL" --organize            # LLM-organized notes
+    uv run python3 yt2md_pipeline.py "URL" --organize --obsidian "我的筆記/yt2md"
+    uv run python3 yt2md_pipeline.py "URL" --organize --no-raw   # skip raw backup file
 """
 
 import sys
@@ -29,6 +34,13 @@ from datetime import date
 
 OBSIDIAN_BASE = "/opt/data/obsidian-vault"
 DEFAULT_OBSIDIAN_SUBDIR = "YouTube"
+
+# LLM config — reads from environment (set in .env or shell)
+NVIDIA_BASE_URL = os.environ.get("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
+NVIDIA_API_KEY = os.environ.get("NVIDIA_API_KEY", "")
+NVIDIA_MODEL = os.environ.get("NVIDIA_ORGANIZE_MODEL", "meta/llama-3.1-8b-instruct")
+LLM_MAX_CHARS = 25000   # chunk threshold
+LLM_OVERLAP_CHARS = 1000
 
 
 # ---------------------------------------------------------------------------
@@ -185,6 +197,124 @@ def _download_audio(yt_dlp_path, url, temp_dir) -> Path | None:
 
 
 # ---------------------------------------------------------------------------
+# LLM Organize (--organize)
+# ---------------------------------------------------------------------------
+_ORGANIZE_PROMPT = """你是一個專業的內容整理助手。請將以下 YouTube 影片逐字稿整理成結構化筆記。
+
+要求：
+1. 【重點摘要】— 3-5 個核心要點（bullet points），用 **粗體** 標示關鍵詞
+2. 【內容整理】— 根據主題分段，每段加 ## 標題，段落之間邏輯連貫
+3. 【精簡文字】— 去除贅字、口語重複、語助詞（嗯、啊、那個、就是說），保留完整語意
+4. 【時間標記】— 在每個主要段落開頭保留 [MM:SS] 或 [HH:MM:SS] 時間戳（來自原文）
+5. 語言：與原文相同（中文影片用中文回覆，英文影片用英文回覆）
+6. 不要加你自己的評論或額外資訊，忠於原文內容
+
+逐字稿：
+"""
+
+
+def _get_llm_client():
+    """Create OpenAI-compatible client pointing at NVIDIA API."""
+    api_key = NVIDIA_API_KEY
+    if not api_key:
+        # Try reading from .env file
+        env_path = "/opt/data/.env"
+        if os.path.exists(env_path):
+            with open(env_path) as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("NVIDIA_API_KEY="):
+                        api_key = line.split("=", 1)[1].strip().strip('"').strip("'")
+                        break
+    if not api_key:
+        return None
+
+    from openai import OpenAI
+    return OpenAI(base_url=NVIDIA_BASE_URL, api_key=api_key)
+
+
+def _chunk_transcript(text: str, max_chars: int = LLM_MAX_CHARS, overlap: int = LLM_OVERLAP_CHARS) -> list[str]:
+    """Split transcript into chunks at paragraph boundaries."""
+    if len(text) <= max_chars:
+        return [text]
+
+    paragraphs = text.split("\n\n")
+    chunks = []
+    current = []
+    current_len = 0
+
+    for para in paragraphs:
+        para_len = len(para) + 2  # +2 for \n\n
+        if current_len + para_len > max_chars and current:
+            chunks.append("\n\n".join(current))
+            # Keep overlap: last paragraphs
+            overlap_text = []
+            overlap_len = 0
+            for p in reversed(current):
+                if overlap_len + len(p) > overlap:
+                    break
+                overlap_text.insert(0, p)
+                overlap_len += len(p) + 2
+            current = overlap_text
+            current_len = overlap_len
+        current.append(para)
+        current_len += para_len
+
+    if current:
+        chunks.append("\n\n".join(current))
+
+    return chunks
+
+
+def _organize_via_llm(transcript: str, title: str = "") -> str | None:
+    """Send transcript to LLM for organization. Returns organized markdown or None."""
+    client = _get_llm_client()
+    if not client:
+        print("[WARN] No NVIDIA API key found — skipping organize", file=sys.stderr)
+        return None
+
+    chunks = _chunk_transcript(transcript)
+    total_chunks = len(chunks)
+    print(f"[INFO] Organizing via LLM ({total_chunks} chunk{'s' if total_chunks > 1 else ''})...", file=sys.stderr)
+
+    organized_parts = []
+    for i, chunk in enumerate(chunks):
+        if total_chunks > 1:
+            prefix = f"[Chunk {i+1}/{total_chunks}] "
+            print(f"[INFO] {prefix}Processing...", file=sys.stderr)
+        else:
+            prefix = ""
+
+        prompt = _ORGANIZE_PROMPT + chunk
+        if total_chunks > 1 and i == 0:
+            prompt += "\n\n（這是多段處理的第 1 段，後續還有。請先整理這段內容，最後一段再加總摘要。）"
+        elif total_chunks > 1 and i == total_chunks - 1:
+            prompt += "\n\n（這是最後一段。請在整理完本段後，附上整部影片的【重點摘要】。）"
+
+        try:
+            response = client.chat.completions.create(
+                model=NVIDIA_MODEL,
+                messages=[
+                    {"role": "system", "content": "你是專業的內容整理助手，擅長將逐字稿轉化為結構化筆記。"},
+                    {"role": "user", "content": prompt},
+                ],
+                max_tokens=4096,
+                temperature=0.3,
+            )
+            result = response.choices[0].message.content
+            if result:
+                organized_parts.append(result.strip())
+            else:
+                print(f"[WARN] LLM returned empty for chunk {i+1}", file=sys.stderr)
+                organized_parts.append(chunk)
+        except Exception as e:
+            print(f"[WARN] LLM call failed for chunk {i+1}: {e}", file=sys.stderr)
+            organized_parts.append(chunk)
+
+    return "\n\n---\n\n".join(organized_parts)
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 def _fmt_ts(seconds: float) -> str:
@@ -228,12 +358,55 @@ def _sanitize_filename(s: str) -> str:
     return s[:120]  # keep it reasonable
 
 
+def _build_raw_md(title: str, url: str, md: str, lang: str, source: str, today: str) -> str:
+    """Build raw transcript markdown with frontmatter."""
+    content_parts = [
+        "---",
+        f"created: {today}",
+        f"source: {url}",
+        f"title: {title}",
+        f"language: {lang}",
+        f"pipeline: {source}",
+        "tags: [youtube, transcript]",
+        "---",
+        "",
+        f"# {title}",
+        "",
+        f"> {url}",
+        "",
+        md,
+    ]
+    return "\n".join(content_parts)
+
+
+def _build_organized_md(title: str, url: str, organized: str, lang: str, source: str, today: str) -> str:
+    """Build organized note markdown with frontmatter."""
+    content_parts = [
+        "---",
+        f"created: {today}",
+        f"source: {url}",
+        f"title: {title}",
+        f"language: {lang}",
+        f"pipeline: {source}",
+        "type: organized",
+        "tags: [youtube, notes]",
+        "---",
+        "",
+        f"# {title}",
+        "",
+        f"> {url}",
+        "",
+        organized,
+    ]
+    return "\n".join(content_parts)
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 def main():
     if len(sys.argv) < 2:
-        print("Usage: yt2md_pipeline.py <URL> [-o out.md] [--whisper] [--model SIZE] [--obsidian]",
+        print("Usage: yt2md_pipeline.py <URL> [-o out.md] [--whisper] [--model SIZE] [--obsidian] [--organize] [--no-raw]",
               file=sys.stderr)
         sys.exit(1)
 
@@ -244,6 +417,8 @@ def main():
     model_size = "small"
     save_to_obsidian = "--obsidian" in args
     obsidian_subdir = DEFAULT_OBSIDIAN_SUBDIR
+    do_organize = "--organize" in args
+    keep_raw = "--no-raw" not in args  # default: keep raw
 
     if "--model" in args:
         idx = args.index("--model")
@@ -263,6 +438,7 @@ def main():
     title = _get_video_title(url)
     today = date.today().strftime("%Y-%m-%d")
     video_id = _extract_video_id(url) or ""
+    safe_title = _sanitize_filename(title)
 
     # Try pipelines in order
     md = None
@@ -312,42 +488,62 @@ def main():
         print("[ERROR] No content generated from any pipeline.", file=sys.stderr)
         sys.exit(1)
 
-    # Build final Markdown with frontmatter
-    content_parts = [
-        "---",
-        f"created: {today}",
-        f"source: {url}",
-        f"title: {title}",
-        f"language: {lang}",
-        f"pipeline: {source}",
-        "tags: [youtube, transcript]",
-        "---",
-        "",
-        f"# {title}",
-        "",
-        f"> {url}",
-        "",
-        md,
-    ]
-    final_md = "\n".join(content_parts)
+    # Build raw markdown
+    raw_md = _build_raw_md(title, url, md, lang, source, today)
 
-    # Determine output path
+    # Determine output directory
     if save_to_obsidian:
         obsidian_dir = os.path.join(OBSIDIAN_BASE, obsidian_subdir)
         os.makedirs(obsidian_dir, exist_ok=True)
-        out_path = os.path.join(obsidian_dir, f"{_sanitize_filename(title)}.md")
-        output_path = out_path
+        out_dir = obsidian_dir
     elif output_path:
-        # Ensure parent dir exists
-        os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-
-    if output_path:
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(final_md)
-        line_count = final_md.count("\n") + 1
-        print(f"[OK] Saved: {output_path}  ({line_count} lines, {source})", file=sys.stderr)
+        out_dir = os.path.dirname(output_path) or "."
+        os.makedirs(out_dir, exist_ok=True)
     else:
-        sys.stdout.write(final_md)
+        out_dir = None
+
+    # Save raw transcript (unless --organize without --no-raw, or plain mode)
+    if do_organize and keep_raw and out_dir:
+        raw_path = os.path.join(out_dir, f"{safe_title}_raw.md")
+        with open(raw_path, "w", encoding="utf-8") as f:
+            f.write(raw_md)
+        print(f"[OK] Raw saved: {raw_path}", file=sys.stderr)
+    elif not do_organize and out_dir:
+        # Plain mode: save raw as the main file
+        main_path = os.path.join(out_dir, f"{safe_title}.md")
+        with open(main_path, "w", encoding="utf-8") as f:
+            f.write(raw_md)
+        line_count = raw_md.count("\n") + 1
+        print(f"[OK] Saved: {main_path}  ({line_count} lines, {source})", file=sys.stderr)
+        return
+    elif not do_organize and not out_dir:
+        sys.stdout.write(raw_md)
+        return
+
+    # --organize mode: run LLM
+    if do_organize:
+        organized = _organize_via_llm(md, title)
+        if not organized:
+            print("[WARN] LLM organize failed — saving raw only", file=sys.stderr)
+            if out_dir:
+                fallback_path = os.path.join(out_dir, f"{safe_title}.md")
+                with open(fallback_path, "w", encoding="utf-8") as f:
+                    f.write(raw_md)
+                print(f"[OK] Fallback saved: {fallback_path}", file=sys.stderr)
+            else:
+                sys.stdout.write(raw_md)
+            return
+
+        organized_md = _build_organized_md(title, url, organized, lang, source, today)
+
+        if out_dir:
+            organized_path = os.path.join(out_dir, f"{safe_title}.md")
+            with open(organized_path, "w", encoding="utf-8") as f:
+                f.write(organized_md)
+            line_count = organized_md.count("\n") + 1
+            print(f"[OK] Organized saved: {organized_path}  ({line_count} lines, {source})", file=sys.stderr)
+        else:
+            sys.stdout.write(organized_md)
 
 
 if __name__ == "__main__":
