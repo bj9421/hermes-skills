@@ -180,7 +180,7 @@ uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --podcast dual --lang z
 uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --podcast dual --voice-a zh-TW-HsiaoYuNeural --voice-b zh-TW-YunJheNeural
 ```
 
-**Output:** `口播/{title}/{title}_podcast.mp3` + `script.txt` in Obsidian vault.
+**Output:** `口播/{title}/{title}_podcast.mp3` + `script.md` (Markdown with frontmatter, tags: `[podcast, 口播]`) in Obsidian vault.
 
 **Modes:**
 - `solo` — Single narrator, natural monologue
@@ -196,8 +196,18 @@ uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --podcast dual --voice-
 
 **Script generation:** NVIDIA API LLM (same as `--organize`), different prompt template.
 
+**Output auto-chmod:** `script.md` and MP3 are `chmod 777` after creation for Syncthing sync.
+
+### Podcast Pitfalls
+
+1. **Edge TTS voice names changed**: Newer `edge-tts` versions require `Neural` suffix (e.g., `zh-TW-HsiaoChenNeural`, not `zh-TW-TingTing`). Check available voices with `edge_tts.list_voices()`.
+2. **pydub is too slow for 100+ segments**: Each `AudioSegment.from_file()` re-decodes. Use ffmpeg concat demuxer instead (`ffmpeg -f concat -safe 0 -i list.txt -acodec libmp3lame out.mp3`). pydub kept as fallback only.
+3. **ffmpeg concat requires same codec params**: All edge-tts MP3 segments share the same format by default, but if segments come from different sources, use `-acodec libmp3lame` (re-encode) instead of `-c copy`.
+4. **Large videos produce 200+ segments**: LLM script generation is the fast part; TTS + merge dominates. 200 segments ≈ 3-4 min TTS + 10s merge (ffmpeg) vs 5+ min (pydub).
+
 ## See Also
 
 - `references/pipeline-architecture.md` — detailed pipeline architecture, `--obsidian` subfolder usage, VTT garbled-text caveats, and API migration notes.
 - `references/organize-architecture.md` — LLM post-processing design: NVIDIA API integration, prompt template, chunking strategy, error handling.
+- `references/podcast-architecture.md` — podcast mode flow, prompt templates, Edge TTS voice names, audio merge strategy, Python 3.13 compatibility.
 - `references/translation-and-troubleshooting.md` — bilingual translation format, language fallback chain, common yt-dlp fixes, Whisper on RPi tips.

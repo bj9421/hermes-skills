@@ -1148,13 +1148,13 @@
     "created_at": "2026-06-17T14:47:41.257313+00:00",
     "created_by": null,
     "last_patched_at": "2026-06-17T20:46:02.017402+00:00",
-    "last_used_at": "2026-07-25T20:58:37.646484+00:00",
-    "last_viewed_at": "2026-07-25T20:58:37.633341+00:00",
+    "last_used_at": "2026-07-25T21:29:58.873003+00:00",
+    "last_viewed_at": "2026-07-25T21:29:58.845195+00:00",
     "patch_count": 1,
     "pinned": false,
     "state": "active",
-    "use_count": 21,
-    "view_count": 21
+    "use_count": 22,
+    "view_count": 22
   },
   "obsidian-daily-summary": {
     "archived_at": null,
@@ -1719,14 +1719,14 @@
     "archived_at": null,
     "created_at": "2026-07-07T04:37:44.994692+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-07-25T15:07:09.829153+00:00",
-    "last_used_at": "2026-07-25T20:59:16.784666+00:00",
-    "last_viewed_at": "2026-07-25T20:59:16.771758+00:00",
-    "patch_count": 19,
+    "last_patched_at": "2026-07-25T21:32:44.001992+00:00",
+    "last_used_at": "2026-07-25T21:32:08.175978+00:00",
+    "last_viewed_at": "2026-07-25T21:32:08.164491+00:00",
+    "patch_count": 23,
     "pinned": false,
     "state": "active",
-    "use_count": 30,
-    "view_count": 30
+    "use_count": 32,
+    "view_count": 32
   },
   "yuanbao": {
     "archived_at": null,

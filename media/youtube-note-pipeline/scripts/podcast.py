@@ -231,20 +231,45 @@ def _parse_solo_script(script: str) -> list[str]:
 # Audio Merging
 # ---------------------------------------------------------------------------
 def _merge_audio(segment_files: list[str], output_path: str):
-    """Merge audio segments into a single MP3 using pydub + ffmpeg."""
+    """Merge audio segments into a single MP3 using ffmpeg concat demuxer.
+
+    Much faster than pydub for large numbers of segments.
+    """
+    import subprocess
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+        concat_list = f.name
+        for seg in segment_files:
+            f.write(f"file '{seg}'\n")
+
+    try:
+        cmd = [
+            "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+            "-i", concat_list, "-acodec", "libmp3lame", "-b:a", "192k", output_path,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        if result.returncode != 0:
+            print(f"[WARN] ffmpeg concat failed: {result.stderr[-200:]}", file=sys.stderr)
+            # Fallback to pydub
+            _merge_audio_pydub(segment_files, output_path)
+        else:
+            print(f"[INFO] Merged {len(segment_files)} segments → {output_path}", file=sys.stderr)
+    finally:
+        os.unlink(concat_list)
+
+
+def _merge_audio_pydub(segment_files: list[str], output_path: str):
+    """Fallback: merge using pydub (slower but more compatible)."""
     from pydub import AudioSegment
-
     combined = AudioSegment.empty()
-    silence = AudioSegment.silent(duration=600)  # 600ms pause between segments
-
+    silence = AudioSegment.silent(duration=600)
     for i, f in enumerate(segment_files):
         seg = AudioSegment.from_file(f)
         if i > 0:
             combined += silence
         combined += seg
-
     combined.export(output_path, format="mp3", bitrate="192k")
-    print(f"[INFO] Merged {len(segment_files)} segments → {output_path}", file=sys.stderr)
+    print(f"[INFO] Merged {len(segment_files)} segments (pydub) → {output_path}", file=sys.stderr)
 
 
 # ---------------------------------------------------------------------------
@@ -288,10 +313,26 @@ def produce_podcast(
         print("[ERROR] Failed to generate podcast script", file=sys.stderr)
         return None
 
-    # Save script for reference
-    script_path = os.path.join(out_dir, "script.txt")
+    # Save script for reference (as Markdown note)
+    script_path = os.path.join(out_dir, "script.md")
+    script_md = f"""---
+created: {__import__('datetime').date.today().isoformat()}
+source: {title}
+type: podcast-script
+mode: {mode}
+language: {lang}
+tags: [podcast, 口播]
+---
+
+# {title} — 口播腳本
+
+> 模式: {"雙主持人" if mode == "dual" else "單人口播"} | 語言: {lang}
+
+{script}
+"""
     with open(script_path, "w", encoding="utf-8") as f:
-        f.write(script)
+        f.write(script_md)
+    os.chmod(script_path, 0o777)
     print(f"[OK] Script saved: {script_path}", file=sys.stderr)
 
     # Step 2: Generate TTS segments
@@ -337,8 +378,10 @@ def produce_podcast(
         safe_title = _sanitize(title)
         mp3_path = os.path.join(out_dir, f"{safe_title}_podcast.mp3")
         _merge_audio(segment_files, mp3_path)
+        os.chmod(mp3_path, 0o777)
+        os.chmod(out_dir, 0o777)
 
-    print(f"[OK] Podcast saved: {mp3_path}", file=sys.stderr)
+        print(f"[OK] Podcast saved: {mp3_path}", file=sys.stderr)
     return mp3_path
 
 
