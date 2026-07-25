@@ -1,0 +1,141 @@
+{
+  "jobs": [
+    {
+      "id": "d8379e951943",
+      "name": "twse_daily_update",
+      "prompt": "",
+      "skills": [],
+      "skill": null,
+      "model": null,
+      "provider": null,
+      "base_url": null,
+      "script": "run_daily_incremental_update.sh",
+      "no_agent": true,
+      "context_from": null,
+      "schedule": {
+        "kind": "cron",
+        "expr": "6 16 * * *",
+        "display": "6 16 * * *"
+      },
+      "schedule_display": "6 16 * * *",
+      "repeat": {
+        "times": null,
+        "completed": 11
+      },
+      "enabled": true,
+      "state": "scheduled",
+      "paused_at": null,
+      "paused_reason": null,
+      "created_at": "2026-06-07T07:26:29.195810+08:00",
+      "next_run_at": "2026-07-10T16:06:00+08:00",
+      "last_run_at": "2026-07-09T16:06:59.429805+08:00",
+      "last_status": "ok",
+      "last_error": null,
+      "last_delivery_error": null,
+      "deliver": "origin",
+      "origin": {
+        "platform": "telegram",
+        "chat_id": "745279221",
+        "chat_name": "Xun",
+        "thread_id": null
+      },
+      "enabled_toolsets": null,
+      "workdir": "/opt/data",
+      "profile": null,
+      "fire_claim": null
+    },
+    {
+      "id": "5cbdacd487ad",
+      "name": "holographic-to-obsidian-sync",
+      "prompt": "",
+      "skills": [],
+      "skill": null,
+      "model": null,
+      "provider": null,
+      "provider_snapshot": null,
+      "model_snapshot": null,
+      "base_url": null,
+      "script": "sync_holographic_to_obsidian.sh",
+      "no_agent": true,
+      "context_from": null,
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 2 * * *",
+        "display": "0 2 * * *"
+      },
+      "schedule_display": "0 2 * * *",
+      "repeat": {
+        "times": null,
+        "completed": 3
+      },
+      "enabled": true,
+      "state": "scheduled",
+      "paused_at": null,
+      "paused_reason": null,
+      "created_at": "2026-07-07T11:45:58.371607+08:00",
+      "next_run_at": "2026-07-11T02:00:00+08:00",
+      "last_run_at": "2026-07-10T02:00:59.473370+08:00",
+      "last_status": "ok",
+      "last_error": null,
+      "last_delivery_error": null,
+      "deliver": "origin",
+      "origin": {
+        "platform": "telegram",
+        "chat_id": "745279221",
+        "chat_name": "Xun",
+        "thread_id": null,
+        "user_id": "745279221"
+      },
+      "enabled_toolsets": null,
+      "workdir": "/opt/data/profiles/research",
+      "fire_claim": null
+    },
+    {
+      "id": "7ebd14dcb4bd",
+      "name": "Auto Memory Scanner",
+      "prompt": "Run the auto memory scanner script to extract new facts from recent sessions and save them to memory with proper source tags.\n\nExecute: python3 /opt/data/scripts/auto_memory_scan.py 3\n\nThen summarize any new facts found.",
+      "skills": [],
+      "skill": null,
+      "model": null,
+      "provider": null,
+      "provider_snapshot": "custom",
+      "model_snapshot": "agnes-2.0-flash",
+      "base_url": null,
+      "script": null,
+      "no_agent": false,
+      "context_from": null,
+      "schedule": {
+        "kind": "interval",
+        "minutes": 180,
+        "display": "every 180m"
+      },
+      "schedule_display": "every 180m",
+      "repeat": {
+        "times": null,
+        "completed": 2
+      },
+      "enabled": true,
+      "state": "scheduled",
+      "paused_at": null,
+      "paused_reason": null,
+      "created_at": "2026-07-10T02:33:48.629474+08:00",
+      "next_run_at": "2026-07-10T08:43:10.110707+08:00",
+      "last_run_at": "2026-07-10T05:43:10.110707+08:00",
+      "last_status": "ok",
+      "last_error": null,
+      "last_delivery_error": null,
+      "deliver": "origin",
+      "origin": {
+        "platform": "telegram",
+        "chat_id": "745279221",
+        "chat_name": "Xun",
+        "thread_id": null,
+        "user_id": "745279221"
+      },
+      "enabled_toolsets": null,
+      "workdir": null,
+      "fire_claim": null
+    }
+  ],
+  "updated_at": "2026-07-10T05:43:10.111283+08:00"
+}
