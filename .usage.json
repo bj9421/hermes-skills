@@ -628,13 +628,13 @@
     "created_at": "2026-06-17T14:47:40.899215+00:00",
     "created_by": null,
     "last_patched_at": null,
-    "last_used_at": "2026-07-10T04:27:03.066495+00:00",
-    "last_viewed_at": "2026-07-10T04:27:03.056002+00:00",
+    "last_used_at": "2026-07-25T06:43:14.381579+00:00",
+    "last_viewed_at": "2026-07-25T06:43:14.370359+00:00",
     "patch_count": 0,
     "pinned": false,
     "state": "active",
-    "use_count": 2,
-    "view_count": 2
+    "use_count": 3,
+    "view_count": 3
   },
   "google-trends-behavior": {
     "archived_at": null,
@@ -758,26 +758,26 @@
     "created_at": "2026-06-17T14:47:40.963053+00:00",
     "created_by": null,
     "last_patched_at": "2026-07-25T01:31:29.429094+00:00",
-    "last_used_at": "2026-07-25T01:31:00.744516+00:00",
-    "last_viewed_at": "2026-07-25T01:31:00.733426+00:00",
+    "last_used_at": "2026-07-25T06:59:57.987370+00:00",
+    "last_viewed_at": "2026-07-25T06:59:57.974800+00:00",
     "patch_count": 3,
     "pinned": false,
     "state": "active",
-    "use_count": 9,
-    "view_count": 9
+    "use_count": 10,
+    "view_count": 10
   },
   "hermes-cron-management": {
     "archived_at": null,
     "created_at": "2026-07-10T12:39:38.045007+00:00",
     "created_by": "agent",
     "last_patched_at": "2026-07-25T04:17:20.730837+00:00",
-    "last_used_at": "2026-07-25T04:41:02.152587+00:00",
-    "last_viewed_at": "2026-07-25T04:41:02.139511+00:00",
+    "last_used_at": "2026-07-25T06:42:54.997053+00:00",
+    "last_viewed_at": "2026-07-25T06:42:54.984320+00:00",
     "patch_count": 42,
     "pinned": false,
     "state": "active",
-    "use_count": 61,
-    "view_count": 61
+    "use_count": 63,
+    "view_count": 63
   },
   "hermes-dashboard-troubleshooting": {
     "archived_at": null,
