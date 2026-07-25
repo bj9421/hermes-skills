@@ -1,6 +1,6 @@
 ---
 name: youtube-note-pipeline
-description: "Full pipeline: YouTube video → subtitle/transcript → clean Markdown → Obsidian vault export. Three-stage auto-fallback: youtube-transcript-api (cleanest) → yt-dlp VTT → Whisper transcription. Optional --organize flag for LLM-powered structuring (summary + sections + condensed text). For note-taking, research capturing, or creating durable knowledge from any YouTube video."
+description: "Full pipeline: YouTube video → subtitle/transcript → clean Markdown → Obsidian vault export. Three-stage auto-fallback: youtube-transcript-api (cleanest) → yt-dlp VTT → Whisper transcription. Optional --organize for LLM structuring, --podcast for solo/dual-host TTS audio. For note-taking, research, or creating durable knowledge from any YouTube video."
 platforms: [linux]
 compatibility:
   - yt-dlp
@@ -8,6 +8,8 @@ compatibility:
   - ffmpeg
   - youtube-transcript-api
   - openai (for --organize via NVIDIA API)
+  - edge-tts (for --podcast)
+  - pydub (for --podcast audio merging)
 related_skills: [youtube-content, obsidian]
 ---
 
@@ -159,6 +161,40 @@ See `references/organize-architecture.md` for full design (prompt template, chun
 - **yt-dlp sign-in wall**: try `--extractor-args "youtube:skip=webpage"` or cookie import
 - **Long transcript**: chunk before translation; 2K overlap between chunks
 - **Dependency missing**: `uv pip install <package>` and retry
+
+## Podcast Mode (`--podcast`) — TTS Audio Generation
+
+> ✅ **Implemented** — `--podcast` flag generates solo or dual-host podcast audio from transcripts.
+
+```bash
+# Dual-host podcast (default)
+uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --podcast dual
+
+# Solo podcast
+uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --podcast solo
+
+# Chinese podcast from English video
+uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --podcast dual --lang zh
+
+# Custom voices
+uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --podcast dual --voice-a zh-TW-HsiaoYuNeural --voice-b zh-TW-YunJheNeural
+```
+
+**Output:** `口播/{title}/{title}_podcast.mp3` + `script.txt` in Obsidian vault.
+
+**Modes:**
+- `solo` — Single narrator, natural monologue
+- `dual` — Host A (asks) + Commentator B (answers), alternating dialogue
+
+**Default voices:**
+- A (host): `zh-TW-HsiaoChenNeural` (female)
+- B (commentator): `zh-TW-YunJheNeural` (male)
+
+**Language:** `--lang auto` (follow source) or `--lang zh` / `--lang en` (force target language).
+
+**Dependencies:** `edge-tts`, `pydub`, `audioop-lts` (Python 3.13+).
+
+**Script generation:** NVIDIA API LLM (same as `--organize`), different prompt template.
 
 ## See Also
 

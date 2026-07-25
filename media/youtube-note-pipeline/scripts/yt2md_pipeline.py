@@ -8,6 +8,7 @@ Three pipelines (auto-fallback):
   3. yt-dlp + faster-whisper (videos without subtitles)
 
 Optional: --organize  Post-process transcript via LLM into structured notes.
+Optional: --podcast   Generate podcast audio (solo/dual) from transcript.
 
 Usage:
     uv run python3 yt2md_pipeline.py "URL"                       # auto-detect
@@ -19,6 +20,9 @@ Usage:
     uv run python3 yt2md_pipeline.py "URL" --organize            # LLM-organized notes
     uv run python3 yt2md_pipeline.py "URL" --organize --obsidian "我的筆記/yt2md"
     uv run python3 yt2md_pipeline.py "URL" --organize --no-raw   # skip raw backup file
+    uv run python3 yt2md_pipeline.py "URL" --podcast dual        # dual-host podcast
+    uv run python3 yt2md_pipeline.py "URL" --podcast solo        # solo podcast
+    uv run python3 yt2md_pipeline.py "URL" --podcast dual --lang zh  # Chinese podcast from English video
 """
 
 import sys
@@ -420,6 +424,30 @@ def main():
     do_organize = "--organize" in args
     keep_raw = "--no-raw" not in args  # default: keep raw
 
+    # Podcast flags
+    podcast_mode = None  # None, "solo", or "dual"
+    voice_a = None
+    voice_b = None
+    target_lang = "auto"
+    if "--podcast" in args:
+        idx = args.index("--podcast")
+        if idx + 1 < len(args) and args[idx + 1] in ("solo", "dual"):
+            podcast_mode = args[idx + 1]
+        else:
+            podcast_mode = "dual"  # default to dual
+    if "--voice-a" in args:
+        idx = args.index("--voice-a")
+        if idx + 1 < len(args):
+            voice_a = args[idx + 1]
+    if "--voice-b" in args:
+        idx = args.index("--voice-b")
+        if idx + 1 < len(args):
+            voice_b = args[idx + 1]
+    if "--lang" in args:
+        idx = args.index("--lang")
+        if idx + 1 < len(args):
+            target_lang = args[idx + 1]
+
     if "--model" in args:
         idx = args.index("--model")
         if idx + 1 < len(args):
@@ -487,6 +515,31 @@ def main():
     if not md:
         print("[ERROR] No content generated from any pipeline.", file=sys.stderr)
         sys.exit(1)
+
+    # --podcast mode: produce podcast audio
+    if podcast_mode:
+        try:
+            # Add sys.path for podcast module import
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            if script_dir not in sys.path:
+                sys.path.insert(0, script_dir)
+            from podcast import produce_podcast
+
+            podcast_kwargs = {"lang": target_lang, "mode": podcast_mode}
+            if voice_a:
+                podcast_kwargs["voice_a"] = voice_a
+            if voice_b:
+                podcast_kwargs["voice_b"] = voice_b
+
+            mp3_path = produce_podcast(md, title, url, **podcast_kwargs)
+            if mp3_path:
+                print(f"[OK] Podcast produced: {mp3_path}", file=sys.stderr)
+            else:
+                print("[WARN] Podcast production failed", file=sys.stderr)
+        except ImportError as e:
+            print(f"[ERROR] Podcast module not found: {e}", file=sys.stderr)
+        except Exception as e:
+            print(f"[ERROR] Podcast production error: {e}", file=sys.stderr)
 
     # Build raw markdown
     raw_md = _build_raw_md(title, url, md, lang, source, today)
