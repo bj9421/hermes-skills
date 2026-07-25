@@ -52,13 +52,14 @@ response = client.chat.completions.create(
 
 ## Chunking Strategy
 
-For transcripts > 30,000 characters:
+For transcripts > 25,000 characters (configurable via `LLM_MAX_CHARS`):
 
-1. Split at paragraph boundaries near 20K chars
+1. Split at paragraph boundaries near 25K chars
 2. 1,000 char overlap between chunks (preserves context)
-3. Organize each chunk independently
-4. Merge: unified summary from first pass + concatenated sections
-5. Max 4096 tokens per LLM call (covers ~20K chars of input)
+3. First chunk prompt: "this is part 1 of N"; last chunk prompt: "add overall summary"
+4. Organize each chunk independently
+5. Merge with `---` horizontal rules between chunks
+6. Max 4096 tokens per LLM call output
 
 ## Error Handling
 
@@ -109,3 +110,14 @@ tags: [youtube, transcript, notes]
 ### Raw file (`<title>_raw.md`)
 
 Same format as current output (timestamps + verbatim text), filename suffix `_raw`.
+
+## Flags
+
+| Flag | Effect |
+|------|--------|
+| `--organize` | Enable LLM post-processing (two-file output) |
+| `--no-raw` | Skip raw backup file in organize mode (organized only) |
+| `--whisper` | Force Whisper transcription (skip transcript-api + VTT) |
+| `--model tiny` | Use smaller Whisper model (less RAM) |
+| `-o out.md` | Save to specific file path |
+| `--obsidian [subdir]` | Save to Obsidian vault (default subdir: `YouTube/`) |

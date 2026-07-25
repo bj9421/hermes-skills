@@ -131,6 +131,9 @@ Adds a post-processing step that uses an LLM to turn raw transcripts into struct
 ```bash
 # Organize mode — produces two files
 uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --organize --obsidian "我的筆記/yt2md"
+
+# Organize without raw backup
+uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --organize --no-raw
 ```
 
 **Output:**
@@ -142,7 +145,7 @@ Without API key → falls back to raw transcript only (no error).
 
 **Key design decisions:**
 - Always saves raw transcript as backup (two-file output)
-- Chunking for transcripts >30K chars (20K chunks, 1K overlap)
+- Chunking for transcripts >25K chars (25K chunks, 1K overlap, configurable via `LLM_MAX_CHARS`)
 - Language-aware: prompt instructs LLM to match source language
 - Error-tolerant: API failure → saves raw transcript anyway
 
