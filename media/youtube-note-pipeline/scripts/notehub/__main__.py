@@ -12,6 +12,8 @@ Usage:
 Voice shortcuts (can be used anywhere in args):
     台男  → zh-TW-YunJheNeural      台女  → zh-TW-HsiaoChenNeural
     英男  → en-US-GuyNeural          英女  → en-US-JennyNeural
+    美男  → en-US-ChristopherNeural  美女  → en-US-AriaNeural
+    日男  → ja-JP-KeitaNeural        日女  → ja-JP-NanamiNeural
 """
 
 import os
@@ -36,6 +38,10 @@ def main():
         "台女": "zh-TW-HsiaoChenNeural",
         "英男": "en-US-GuyNeural",
         "英女": "en-US-JennyNeural",
+        "美男": "en-US-ChristopherNeural",
+        "美女": "en-US-AriaNeural",
+        "日男": "ja-JP-KeitaNeural",
+        "日女": "ja-JP-NanamiNeural",
     }
 
     def resolve_voice(v):
