@@ -24,11 +24,35 @@ Use when the user shares a YouTube URL and wants to save the content as a perman
 
 This skill complements `youtube-content` (transcript → summary/thread/blog) by adding automated transcription, multi-pipeline fallback, and Obsidian persistence.
 
+## NoteHub (New Multi-Source Entry Point)
+
+> ✅ **As of 2026-07-26** — The pipeline has been upgraded to **NoteHub** (`notehub/` package) which supports YouTube, URLs, PDFs, and local text files. The old `yt2md_pipeline.py` still works for backward compatibility.
+
+```bash
+# New entry point (recommended)
+python -m notehub "YouTube URL" --podcast dual --ppt --visual --lang zh
+python -m notehub "https://example.com" --organize --visual
+python -m notehub "./document.pdf" --organize --ppt
+python -m notehub "./notes.txt" --podcast solo
+
+# Search & manage
+python -m notehub --search "AI"
+python -m notehub --list
+python -m notehub --stats
+```
+
+**Architecture:** `notehub/extractors/` (Strategy Pattern) → `notehub/core/pipeline.py` → `notehub/db/models.py` (SQLite FTS5) → `notehub/generators/` (podcast/ppt/visual) → `notehub/mcp/server.py` (9 MCP tools for AI agents).
+
+**New dependencies:** `pymupdf4llm` (PDF), `mcp` (MCP Server SDK).
+
+See `references/notehub-architecture.md` for full architecture details.
+
 ## Setup (all done — ready to use)
 
 ```bash
 # Dependencies already installed:
 # yt-dlp, youtube-transcript-api, faster-whisper, ffmpeg, markitdown, openai
+# pymupdf4llm, mcp (for notehub)
 ```
 
 > `openai` SDK required for `--organize` (NVIDIA API). Install: `uv pip install openai`
@@ -274,6 +298,22 @@ uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --visual --lang zh
    For iansui: get release URL via `https://api.github.com/repos/ButTaiwan/iansui/releases/latest`, extract `assets[].browser_download_url`, then download with urllib. Only one TTF in the zip (`Iansui-Regular.ttf`). Save to `/opt/data/fonts/Iansui-Regular.ttf`.
 
 3. **Emoji icons need separate font — iansui has no emoji glyphs**: When using CJK fonts like iansui, emoji characters (🦷💧💔) render as tofu/replacement characters. **Fix:** Load Noto Emoji monochrome (`/opt/data/fonts/NotoEmoji-Regular.ttf`) as a separate font and render icons in their own `draw.text()` call. Pillow cannot mix fonts in one call — each `draw.text()` uses one font. Install Noto Emoji from Google Fonts CSS API: `https://fonts.googleapis.com/css2?family=Noto+Emoji` → extract first `url()` → download with urllib. Only the monochrome variant works with Pillow (color emoji `NotoColorEmoji.ttf` uses CBDT/CBLC format unsupported by Pillow).
+
+   **Noto Emoji installation steps:**
+   ```python
+   import urllib.request
+   # 1. Get font URL from Google Fonts CSS
+   req = urllib.request.Request("https://fonts.googleapis.com/css2?family=Noto+Emoji",
+                                headers={"User-Agent": "Mozilla/5.0"})
+   css = urllib.request.urlopen(req).read().decode()
+   url = css.split("url(")[1].split(")")[0]
+   # 2. Download monochrome TTF
+   req2 = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+   data = urllib.request.urlopen(req2).read()
+   with open("/opt/data/fonts/NotoEmoji-Regular.ttf", "wb") as f:
+       f.write(data)
+   ```
+   File: ~880KB. Renders emoji as white outlines on dark background.
 
 4. **Resolution must be 1920×1080 (Full HD)**: User rejected 1200×675 as "不夠清晰". Never downgrade resolution.
 
