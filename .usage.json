@@ -771,13 +771,13 @@
     "created_at": "2026-07-10T12:39:38.045007+00:00",
     "created_by": "agent",
     "last_patched_at": "2026-07-25T04:17:20.730837+00:00",
-    "last_used_at": "2026-07-25T08:16:12.101451+00:00",
-    "last_viewed_at": "2026-07-25T08:16:12.077939+00:00",
+    "last_used_at": "2026-07-26T01:06:40.591146+00:00",
+    "last_viewed_at": "2026-07-26T01:06:40.577715+00:00",
     "patch_count": 42,
     "pinned": false,
     "state": "active",
-    "use_count": 64,
-    "view_count": 64
+    "use_count": 65,
+    "view_count": 65
   },
   "hermes-dashboard-troubleshooting": {
     "archived_at": null,
@@ -1719,14 +1719,14 @@
     "archived_at": null,
     "created_at": "2026-07-07T04:37:44.994692+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-07-26T01:06:21.537782+00:00",
-    "last_used_at": "2026-07-26T01:06:14.527793+00:00",
-    "last_viewed_at": "2026-07-26T01:06:14.514967+00:00",
-    "patch_count": 24,
+    "last_patched_at": "2026-07-26T01:42:27.991433+00:00",
+    "last_used_at": "2026-07-26T01:42:22.562548+00:00",
+    "last_viewed_at": "2026-07-26T01:42:22.549643+00:00",
+    "patch_count": 29,
     "pinned": false,
     "state": "active",
-    "use_count": 33,
-    "view_count": 33
+    "use_count": 37,
+    "view_count": 37
   },
   "yuanbao": {
     "archived_at": null,

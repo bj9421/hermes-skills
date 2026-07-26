@@ -180,7 +180,7 @@ uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --podcast dual --lang z
 uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --podcast dual --voice-a zh-TW-HsiaoYuNeural --voice-b zh-TW-YunJheNeural
 ```
 
-**Output:** `口播/{title}/{title}_podcast.mp3` + `script.md` (Markdown with frontmatter, tags: `[podcast, 口播]`) in Obsidian vault.
+**Output:** `口播/{title} [{video_id}]/{title}_podcast.mp3` + `script.md` (Markdown with frontmatter, tags: `[podcast, 口播]`) in Obsidian vault. Directory name includes video ID for uniqueness when producing multiple podcasts.
 
 **Modes:**
 - `solo` — Single narrator, natural monologue
@@ -194,7 +194,7 @@ uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --podcast dual --voice-
 
 **Dependencies:** `edge-tts`, `pydub`, `audioop-lts` (Python 3.13+).
 
-**Script generation:** NVIDIA API LLM (`meta/llama-3.1-8b-instruct` default, env var `NVIDIA_ORGANIZE_MODEL` overrides), different prompt template.
+**Script generation:** NVIDIA API LLM (`deepseek-ai/deepseek-v4-flash` default, env var `NVIDIA_ORGANIZE_MODEL` overrides), different prompt template. Includes `frequency_penalty=0.3`, `presence_penalty=0.2`, system prompt anti-repetition instruction, and `_dedup_script()` post-processing to catch degeneration loops.
 
 **Output auto-chmod:** `script.md` and MP3 are `chmod 777` after creation for Syncthing sync.
 
@@ -204,6 +204,7 @@ uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --podcast dual --voice-
 2. **pydub is too slow for 100+ segments**: Each `AudioSegment.from_file()` re-decodes. Use ffmpeg concat demuxer instead (`ffmpeg -f concat -safe 0 -i list.txt -acodec libmp3lame out.mp3`). pydub kept as fallback only.
 3. **ffmpeg concat requires same codec params**: All edge-tts MP3 segments share the same format by default, but if segments come from different sources, use `-acodec libmp3lame` (re-encode) instead of `-c copy`.
 4. **Large videos produce 200+ segments**: LLM script generation is the fast part; TTS + merge dominates. 200 segments ≈ 3-4 min TTS + 10s merge (ffmpeg) vs 5+ min (pydub).
+5. **LLM degeneration (repetition loops)**: Small models (especially `meta/llama-3.1-8b-instruct`) produce infinite repetition on Chinese text — same sentence repeated 100+ times, inflating script from ~4KB to 28KB+ and MP3 from ~5MB to 34MB+. Mitigations already built in: `frequency_penalty=0.3`, `presence_penalty=0.2`, system prompt anti-repetition instruction, `_dedup_script()` post-processing that truncates at 3rd repeat. If this still happens, the model is too weak — upgrade via `NVIDIA_ORGANIZE_MODEL` env var. Tested: `deepseek-ai/deepseek-v4-flash` (284B MoE) handles Chinese well with no degeneration.
 
 ## See Also
 

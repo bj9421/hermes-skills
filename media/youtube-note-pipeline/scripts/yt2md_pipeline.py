@@ -9,6 +9,8 @@ Three pipelines (auto-fallback):
 
 Optional: --organize  Post-process transcript via LLM into structured notes.
 Optional: --podcast   Generate podcast audio (solo/dual) from transcript.
+          --ppt      Generate PowerPoint presentation from transcript.
+          --visual   Generate visual summary image (NotebookLM-style).
 
 Usage:
     uv run python3 yt2md_pipeline.py "URL"                       # auto-detect
@@ -23,6 +25,8 @@ Usage:
     uv run python3 yt2md_pipeline.py "URL" --podcast dual        # dual-host podcast
     uv run python3 yt2md_pipeline.py "URL" --podcast solo        # solo podcast
     uv run python3 yt2md_pipeline.py "URL" --podcast dual --lang zh  # Chinese podcast from English video
+    uv run python3 yt2md_pipeline.py "URL" --ppt --visual        # PPT + visual summary
+    uv run python3 yt2md_pipeline.py "URL" --podcast dual --ppt --visual --lang zh  # all outputs
 """
 
 import sys
@@ -38,11 +42,12 @@ from datetime import date
 
 OBSIDIAN_BASE = "/opt/data/obsidian-vault"
 DEFAULT_OBSIDIAN_SUBDIR = "YouTube"
+PODCAST_SUBDIR = "口播"
 
 # LLM config — reads from environment (set in .env or shell)
 NVIDIA_BASE_URL = os.environ.get("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
 NVIDIA_API_KEY = os.environ.get("NVIDIA_API_KEY", "")
-NVIDIA_MODEL = os.environ.get("NVIDIA_ORGANIZE_MODEL", "meta/llama-3.1-8b-instruct")
+NVIDIA_MODEL = os.environ.get("NVIDIA_ORGANIZE_MODEL", "deepseek-ai/deepseek-v4-flash")
 LLM_MAX_CHARS = 25000   # chunk threshold
 LLM_OVERLAP_CHARS = 1000
 
@@ -345,16 +350,19 @@ def _extract_video_id(url: str) -> str | None:
 
 def _get_video_title(url: str) -> str:
     """Try to get video title via yt-dlp."""
+    yt_dlp = shutil.which("yt-dlp") or "/opt/data/.venv/bin/yt-dlp"
     try:
         result = subprocess.run(
-            ["uv", "run", "yt-dlp", "--print", "title", "--no-warnings", url],
+            [yt_dlp, "--print", "title", "--no-warnings", url],
             capture_output=True, text=True, timeout=30
         )
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip()
     except:
         pass
-    return "YouTube Video"
+    # Fallback: use video ID instead of generic "YouTube Video"
+    vid = _extract_video_id(url)
+    return f"Video {vid}" if vid else "YouTube Video"
 
 
 def _sanitize_filename(s: str) -> str:
@@ -448,6 +456,10 @@ def main():
         if idx + 1 < len(args):
             target_lang = args[idx + 1]
 
+    # PPT and visual summary flags
+    do_ppt = "--ppt" in args
+    do_visual = "--visual" in args
+
     if "--model" in args:
         idx = args.index("--model")
         if idx + 1 < len(args):
@@ -467,6 +479,21 @@ def main():
     today = date.today().strftime("%Y-%m-%d")
     video_id = _extract_video_id(url) or ""
     safe_title = _sanitize_filename(title)
+
+    # Translate title for directory naming when target lang differs
+    dir_title = title
+    if target_lang and target_lang not in ("auto", "en") and title:
+        try:
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            if script_dir not in sys.path:
+                sys.path.insert(0, script_dir)
+            from podcast import _translate_title
+            translated = _translate_title(title, target_lang)
+            if translated:
+                dir_title = translated
+                print(f"[INFO] Translated title: {dir_title}", file=sys.stderr)
+        except Exception as e:
+            print(f"[WARN] Title translation failed: {e}", file=sys.stderr)
 
     # Try pipelines in order
     md = None
@@ -517,6 +544,7 @@ def main():
         sys.exit(1)
 
     # --podcast mode: produce podcast audio
+    podcast_out_dir = None
     if podcast_mode:
         try:
             # Add sys.path for podcast module import
@@ -531,7 +559,14 @@ def main():
             if voice_b:
                 podcast_kwargs["voice_b"] = voice_b
 
-            mp3_path = produce_podcast(md, title, url, **podcast_kwargs)
+            # Pre-compute output dir so podcast module doesn't double-translate
+            safe_title_dir = _sanitize_filename(dir_title)
+            vid_part = f" [{video_id}]" if video_id else ""
+            podcast_out_dir = os.path.join(OBSIDIAN_BASE, PODCAST_SUBDIR, f"{safe_title_dir}{vid_part}")
+            os.makedirs(podcast_out_dir, exist_ok=True)
+            podcast_kwargs["out_dir"] = podcast_out_dir
+
+            mp3_path = produce_podcast(md, title, url, video_id=video_id, **podcast_kwargs)
             if mp3_path:
                 print(f"[OK] Podcast produced: {mp3_path}", file=sys.stderr)
             else:
@@ -540,6 +575,60 @@ def main():
             print(f"[ERROR] Podcast module not found: {e}", file=sys.stderr)
         except Exception as e:
             print(f"[ERROR] Podcast production error: {e}", file=sys.stderr)
+
+    # --ppt mode: generate PowerPoint presentation
+    if do_ppt:
+        try:
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            if script_dir not in sys.path:
+                sys.path.insert(0, script_dir)
+            from ppt_gen import generate_ppt
+
+            # Determine output directory for PPT
+            if podcast_mode:
+                ppt_out = podcast_out_dir
+            elif save_to_obsidian:
+                ppt_out = os.path.join(OBSIDIAN_BASE, obsidian_subdir)
+            elif output_path:
+                ppt_out = os.path.dirname(output_path) or "."
+            else:
+                ppt_out = None
+            if ppt_out:
+                os.makedirs(ppt_out, exist_ok=True)
+                ppt_path = generate_ppt(md, title, lang=target_lang, out_dir=ppt_out)
+                if ppt_path:
+                    print(f"[OK] PPT produced: {ppt_path}", file=sys.stderr)
+        except ImportError as e:
+            print(f"[ERROR] PPT module not found: {e}", file=sys.stderr)
+        except Exception as e:
+            print(f"[ERROR] PPT production error: {e}", file=sys.stderr)
+
+    # --visual mode: generate visual summary image
+    if do_visual:
+        try:
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            if script_dir not in sys.path:
+                sys.path.insert(0, script_dir)
+            from visual_gen import generate_visual
+
+            # Determine output directory for visual
+            if podcast_mode:
+                vis_out = podcast_out_dir
+            elif save_to_obsidian:
+                vis_out = os.path.join(OBSIDIAN_BASE, obsidian_subdir)
+            elif output_path:
+                vis_out = os.path.dirname(output_path) or "."
+            else:
+                vis_out = None
+            if vis_out:
+                os.makedirs(vis_out, exist_ok=True)
+                vis_path = generate_visual(md, title, lang=target_lang, out_dir=vis_out)
+                if vis_path:
+                    print(f"[OK] Visual summary produced: {vis_path}", file=sys.stderr)
+        except ImportError as e:
+            print(f"[ERROR] Visual module not found: {e}", file=sys.stderr)
+        except Exception as e:
+            print(f"[ERROR] Visual production error: {e}", file=sys.stderr)
 
     # Build raw markdown
     raw_md = _build_raw_md(title, url, md, lang, source, today)

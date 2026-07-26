@@ -22,7 +22,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 NVIDIA_BASE_URL = os.environ.get("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
 NVIDIA_API_KEY = os.environ.get("NVIDIA_API_KEY", "")
-NVIDIA_MODEL = os.environ.get("NVIDIA_ORGANIZE_MODEL", "meta/llama-3.1-8b-instruct")
+NVIDIA_MODEL = os.environ.get("NVIDIA_ORGANIZE_MODEL", "deepseek-ai/deepseek-v4-flash")
 
 DEFAULT_VOICE_A = "zh-TW-HsiaoChenNeural"   # 主持人（女）
 DEFAULT_VOICE_B = "zh-TW-YunJheNeural"     # 評論員（男）
@@ -97,6 +97,90 @@ _DUAL_PROMPT = """你是一個專業的播客腳本編寫者。請將以下逐�
 
 
 # ---------------------------------------------------------------------------
+# Deduplication — detect and trim degenerate repetition loops
+# ---------------------------------------------------------------------------
+def _dedup_script(text: str) -> str:
+    """Remove degenerate repetition loops from LLM output.
+    
+    Detects when the same line (or very similar line) repeats 3+ times in a row
+    and truncates at the first repeat.
+    """
+    lines = text.split("\n")
+    if len(lines) < 10:
+        return text
+    
+    # Track consecutive near-duplicates
+    seen = {}  # normalized_line -> count
+    cutoff = None
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        # Normalize: remove leading role prefix (A: / B:) for comparison
+        normalized = stripped
+        for prefix in ("A:", "B:", "A：", "B："):
+            if normalized.startswith(prefix):
+                normalized = normalized[len(prefix):].strip()
+                break
+        if normalized in seen:
+            seen[normalized] += 1
+            if seen[normalized] >= 3 and cutoff is None:
+                cutoff = i - 2  # keep up to 2 instances
+                break
+        else:
+            seen[normalized] = 1
+            # Reset counts for other lines (only track consecutive)
+            if len(seen) > 1:
+                # If we see a new unique line, reset — we only care about
+                # rapid-fire repetition of the SAME thing
+                prev_keys = [k for k in seen if k != normalized]
+                for pk in prev_keys:
+                    if seen[pk] < 3:
+                        del seen[pk]
+    
+    if cutoff is not None:
+        trimmed = "\n".join(lines[:cutoff])
+        orig_lines = len(lines)
+        kept = cutoff
+        print(f"[INFO] Dedup: trimmed repetition at line {cutoff} ({kept}/{orig_lines} lines kept)", file=sys.stderr)
+        return trimmed
+    return text
+
+
+# ---------------------------------------------------------------------------
+# Title Translation — translate title for directory naming
+# ---------------------------------------------------------------------------
+_LANG_NAMES = {
+    "zh": "繁體中文", "zh-TW": "繁體中文", "zh-CN": "简体中文",
+    "ja": "日本語", "ko": "한국어", "en": "English",
+    "es": "Español", "fr": "Français", "de": "Deutsch", "pt": "Português",
+}
+
+def _translate_title(title: str, target_lang: str) -> str | None:
+    """Translate a video title to the target language via LLM (fast, short call)."""
+    client = _get_llm_client()
+    if not client:
+        return None
+    lang_name = _LANG_NAMES.get(target_lang, target_lang)
+    try:
+        response = client.chat.completions.create(
+            model=NVIDIA_MODEL,
+            messages=[
+                {"role": "system", "content": f"你是翻譯專家。只翻譯標題，不加任何解釋、引號或額外文字。"},
+                {"role": "user", "content": f"將以下英文標題翻譯成{lang_name}，直接輸出翻譯結果：\n\n{title}"},
+            ],
+            max_tokens=100,
+            temperature=0.3,
+        )
+        result = response.choices[0].message.content
+        if result:
+            return result.strip().strip('"').strip("'").strip("《》")
+    except Exception as e:
+        print(f"[WARN] Title translation failed: {e}", file=sys.stderr)
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Script Generation
 # ---------------------------------------------------------------------------
 def _generate_script(transcript: str, title: str, mode: str, target_lang: str) -> str | None:
@@ -128,20 +212,22 @@ def _generate_script(transcript: str, title: str, mode: str, target_lang: str) -
     template = _DUAL_PROMPT if mode == "dual" else _SOLO_PROMPT
     prompt = template.format(lang_instruction=lang_instruction) + transcript
 
-    print(f"[INFO] Generating {mode} podcast script via LLM...", file=sys.stderr)
+    print(f"[INFO] Generating {mode} podcast script via LLM ({NVIDIA_MODEL})...", file=sys.stderr)
     try:
         response = client.chat.completions.create(
             model=NVIDIA_MODEL,
             messages=[
-                {"role": "system", "content": "你是專業的播客腳本編寫者，擅長將逐字稿轉化為自然流暢的口播腳本。"},
+                {"role": "system", "content": "你是專業的播客腳本編寫者，擅長將逐字稿轉化為自然流暢的口播腳本。嚴格禁止重複相同或相似的段落，每個論點只講一次。"},
                 {"role": "user", "content": prompt},
             ],
-            max_tokens=8192,
+            max_tokens=4096,
             temperature=0.7,
+            frequency_penalty=0.3,
+            presence_penalty=0.2,
         )
         result = response.choices[0].message.content
         if result:
-            return result.strip()
+            return _dedup_script(result.strip())
         print("[WARN] LLM returned empty script", file=sys.stderr)
         return None
     except Exception as e:
@@ -284,6 +370,7 @@ def produce_podcast(
     voice_a: str = DEFAULT_VOICE_A,
     voice_b: str = DEFAULT_VOICE_B,
     out_dir: str | None = None,
+    video_id: str = "",
 ) -> str | None:
     """Produce a podcast from a transcript.
 
@@ -295,16 +382,28 @@ def produce_podcast(
         mode: 'solo' or 'dual'
         voice_a: voice for host / solo speaker
         voice_b: voice for co-host (dual mode only)
-        out_dir: output directory (default: OBSIDIAN_BASE/口播/{title}/)
+        out_dir: output directory (default: OBSIDIAN_BASE/口播/{title} [{video_id}]/)
+        video_id: YouTube video ID for unique directory naming
 
     Returns:
         Path to the generated MP3, or None on failure.
     """
+    # Step 0: Translate title for directory naming when target lang differs
+    dir_title = title
+    if lang and lang not in ("auto", "en") and title:
+        translated = _translate_title(title, lang)
+        if translated:
+            dir_title = translated
+
     # Resolve output directory
     if not out_dir:
         obsidian_base = "/opt/data/obsidian-vault"
-        safe_title = _sanitize(title)
-        out_dir = os.path.join(obsidian_base, PODCAST_SUBDIR, safe_title)
+        safe_title = _sanitize(dir_title)
+        if video_id:
+            folder_name = f"{safe_title} [{video_id}]"
+        else:
+            folder_name = safe_title
+        out_dir = os.path.join(obsidian_base, PODCAST_SUBDIR, folder_name)
     os.makedirs(out_dir, exist_ok=True)
 
     # Step 1: Generate script
@@ -375,7 +474,7 @@ tags: [podcast, 口播]
             return None
 
         # Step 3: Merge
-        safe_title = _sanitize(title)
+        safe_title = _sanitize(dir_title)
         mp3_path = os.path.join(out_dir, f"{safe_title}_podcast.mp3")
         _merge_audio(segment_files, mp3_path)
         os.chmod(mp3_path, 0o777)
