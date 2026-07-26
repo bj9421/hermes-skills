@@ -415,8 +415,63 @@ See `references/nvidia-api-rate-limits.md` for NVIDIA's rate limit mechanism, co
 All outputs in the podcast directory get `chmod -R 777` after generation, ensuring Syncthing compatibility across devices (Docker hermes user vs phone uid 1000).
 
 ## See Also
-See Also
+## Voice Shortcuts (NoteHub CLI)
+
+Voice aliases can be placed anywhere in args — no `--voice-*` flag needed:
+
+```bash
+python -m notehub source --podcast solo 台女
+python -m notehub source --podcast dual 台女 台男
+python -m notehub source --podcast solo 台男 --lang zh
+```
+
+| Alias | Voice ID | Language |
+|-------|----------|----------|
+| 台男 | zh-TW-YunJheNeural | 繁中男 |
+| 台女 | zh-TW-HsiaoChenNeural | 繁中女 |
+| 英男 | en-US-GuyNeural | 美式男 |
+| 英女 | en-US-JennyNeural | 美式女 |
+| 美男 | en-US-ChristopherNeural | 美式男（低沉） |
+| 美女 | en-US-AriaNeural | 美式女（自然） |
+| 日男 | ja-JP-KeitaNeural | 日文男 |
+| 日女 | ja-JP-NanamiNeural | 日文女 |
+
+Default voice (no alias specified): `zh-TW-HsiaoChenNeural` (台女).
+
+Implementation: `notehub/__main__.py` scans `pipeline_args` for any value in `VOICE_ALIASES` dict. First match → `voice_a`. Full Edge-TTS voice names still work via `--voice-a`/`--voice-b`.
+
+## Usage (NoteHub — recommended entry point)
+
+```bash
+# YouTube
+python -m notehub "https://youtube.com/watch?v=xxx" --podcast dual --ppt --visual --lang zh 台女 台男
+
+# Bilibili / non-YouTube video (yt-dlp + Groq Whisper)
+yt-dlp -x --audio-format m4a -o "audio/%(id)s.%(ext)s" "BILIBILI_URL"
+# Then: python -m notehub transcript.md --podcast solo --ppt --visual 台女
+
+# Web URL
+python -m notehub "https://example.com" --organize --visual
+
+# PDF / text file
+python -m notehub ./doc.pdf --organize --ppt
+python -m notehub ./notes.txt --podcast solo 台男
+
+# Search & manage
+python -m notehub --search "AI"
+python -m notehub --list
+python -m notehub --stats
+```
+
+## Legacy entry point (backward compatible)
+
+```bash
+uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --podcast dual --ppt --visual --lang zh
+```
+
+## See Also
 - `references/groq-whisper-integration.md` — Groq Whisper STT for non-YouTube sources (Bilibili, Vimeo, local video). Free tier, setup, usage pattern.
+- `references/voice-shortcuts.md` — Voice alias reference, Edge-TTS reliability notes, pipeline integration details.
 - `references/cjk-font-rendering.md` — CJK font inventory, emoji rendering patterns, Pillow font mixing, Docker font installation.
 - `references/pipeline-architecture.md` — detailed pipeline architecture, `--obsidian` subfolder usage, VTT garbled-text caveats, and API migration notes.
 - `references/organize-architecture.md` — LLM post-processing design: NVIDIA API integration, prompt template, chunking strategy, error handling.

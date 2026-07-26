@@ -91,7 +91,10 @@ def _extract_visual_data(script: str, title: str, lang: str = "zh") -> dict:
 
     lang_hint = "使用繁體中文" if lang in ("zh", "zh-TW") else "Use English"
 
-    prompt = f"""從口播腳本提取視覺摘要資料。{lang_hint}
+    prompt = f"""從口播腳本提取視覺摘要資料。
+
+⚠️ 重要：所有文字必須使用「繁體中文」（Traditional Chinese），禁止使用簡體中文。
+例如：軟體（非软件）、程式（非程序）、遊戲（非游戏）、連結（非连接）。
 
 輸出嚴格 JSON（不要 code fence）：
 {{
@@ -133,12 +136,15 @@ def _extract_visual_data(script: str, title: str, lang: str = "zh") -> dict:
 # Font loading
 # ---------------------------------------------------------------------------
 def _load_font(size: int, bold: bool = False):
-    """Load a CJK-capable font, falling back gracefully."""
+    """Load a CJK-capable font, falling back gracefully.
+    
+    Priority: NotoSansSC (繁簡全覆蓋) > Iansui (繁體) > fallback.
+    """
     font_paths = [
+        # Noto Sans SC (simplified + traditional Chinese, best coverage)
+        "/opt/data/fonts/NotoSansSC-Bold.ttf" if bold else "/opt/data/fonts/NotoSansSC-Regular.ttf",
         # 芫荽 iansui (Taiwanese traditional Chinese, Klee One derived)
         "/opt/data/fonts/Iansui-Regular.ttf",
-        # Noto Sans SC (clean, modern CJK)
-        "/opt/data/fonts/NotoSansSC-Bold.ttf" if bold else "/opt/data/fonts/NotoSansSC-Regular.ttf",
         # WenQuanYi Zen Hei (fallback)
         "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
         # DejaVu (last resort, no CJK)
