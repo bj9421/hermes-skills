@@ -9,4 +9,4 @@ if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
 
 # Import from existing podcast.py (reuse, don't rewrite)
-from podcast import produce_podcast as _produce_podcast
+from podcast import produce_podcast

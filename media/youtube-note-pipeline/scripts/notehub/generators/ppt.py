@@ -7,4 +7,4 @@ _SCRIPTS_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
 
-from ppt_gen import generate_ppt as _generate_ppt
+from ppt_gen import generate_ppt

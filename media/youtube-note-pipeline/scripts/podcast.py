@@ -304,16 +304,76 @@ def _generate_script(transcript: str, title: str, mode: str, target_lang: str) -
 # ---------------------------------------------------------------------------
 # TTS via Edge TTS
 # ---------------------------------------------------------------------------
-async def _tts_one(text: str, voice: str, out_path: str):
-    """Generate TTS audio for a single text segment."""
+_tts_last_call = 0.0  # global timestamp for rate limiting
+
+
+async def _tts_one(text: str, voice: str, out_path: str, max_retries: int = 3):
+    """Generate TTS audio for a single text segment with retry."""
+    global _tts_last_call
     import edge_tts
-    communicate = edge_tts.Communicate(text, voice)
-    await communicate.save(out_path)
+
+    for attempt in range(max_retries):
+        # Rate limit: at least 2 seconds between calls
+        elapsed = time.time() - _tts_last_call
+        if elapsed < 2.0:
+            await asyncio.sleep(2.0 - elapsed)
+
+        try:
+            _tts_last_call = time.time()
+            communicate = edge_tts.Communicate(text, voice, rate="+5%")
+            await communicate.save(out_path)
+            return  # success
+        except Exception as e:
+            wait = 3 * (2 ** attempt)  # 3s, 6s, 12s
+            print(f"  [WARN] TTS attempt {attempt+1}/{max_retries} failed: {e} — retry in {wait}s",
+                  file=sys.stderr)
+            await asyncio.sleep(wait)
+
+    raise RuntimeError(f"TTS failed after {max_retries} retries")
+
+
+def _split_long_text(text: str, max_chars: int = 200) -> list[str]:
+    """Split long text into shorter chunks at sentence boundaries."""
+    import re
+    if len(text) <= max_chars:
+        return [text]
+
+    chunks = []
+    current = ""
+    # Split at sentence endings
+    for sentence in re.split(r'([。！？.!?])', text):
+        if not sentence:
+            continue
+        if len(current) + len(sentence) > max_chars and current:
+            chunks.append(current.strip())
+            current = sentence
+        else:
+            current += sentence
+    if current.strip():
+        chunks.append(current.strip())
+
+    return chunks if chunks else [text]
 
 
 def _tts_segment(text: str, voice: str, out_path: str):
-    """Synchronous wrapper for TTS generation."""
-    asyncio.run(_tts_one(text, voice, out_path))
+    """Synchronous wrapper for TTS generation with retry and long-text splitting."""
+    chunks = _split_long_text(text)
+    if len(chunks) == 1:
+        asyncio.run(_tts_one(chunks[0], voice, out_path))
+    else:
+        # Generate each chunk separately, then merge
+        import tempfile
+        from pydub import AudioSegment
+        parts = []
+        with tempfile.TemporaryDirectory(prefix="tts_split_") as tmpdir:
+            for i, chunk in enumerate(chunks):
+                part_path = os.path.join(tmpdir, f"part_{i}.mp3")
+                asyncio.run(_tts_one(chunk, voice, part_path))
+                parts.append(AudioSegment.from_mp3(part_path))
+            combined = AudioSegment.empty()
+            for p in parts:
+                combined += p
+            combined.export(out_path, format="mp3")
 
 
 def _parse_dual_script(script: str) -> list[tuple[str, str]]:
