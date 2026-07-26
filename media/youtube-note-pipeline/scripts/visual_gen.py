@@ -164,6 +164,21 @@ _TEXT_W = (255, 255, 255)
 _TEXT_L = (200, 200, 200)
 _TEXT_DIM = (140, 140, 160)
 
+# Emoji font path (monochrome, for icon rendering)
+_EMOJI_FONT = "/opt/data/fonts/NotoEmoji-Regular.ttf"
+
+# Rate limiter — minimum 2s between API calls (40 RPM free tier)
+_last_api_call = 0.0
+_API_INTERVAL = 2.0
+
+def _rate_limit():
+    global _last_api_call
+    import time
+    elapsed = time.time() - _last_api_call
+    if elapsed < _API_INTERVAL:
+        time.sleep(_API_INTERVAL - elapsed)
+    _last_api_call = time.time()
+
 
 def _rounded_rect(draw, xy, radius, fill):
     """Draw a rounded rectangle."""
@@ -243,21 +258,22 @@ def generate_visual(script: str, title: str, lang: str = "zh", out_dir: str = ".
     y = MARGIN
 
     # --- Title area ---
-    # Accent bar
-    draw.rectangle([MARGIN, y, MARGIN + 6, y + 40], fill=_ACCENT)
+    # Accent bar (match title height)
+    bar_h = 80
+    draw.rectangle([MARGIN, y, MARGIN + 6, y + bar_h], fill=_ACCENT)
     
     # Title text
     title_text = data.get("title", title)[:20]
     draw.text((MARGIN + 18, y), title_text, font=font_title, fill=_TEXT_W)
-    y += 50
+    y += 100
 
     # Tagline
     tagline = data.get("tagline", "")
     if tagline:
         draw.text((MARGIN + 18, y), tagline, font=font_tagline, fill=_TEXT_DIM)
-        y += 30
+        y += 50
 
-    y += 15
+    y += 25
 
     # --- Topics grid ---
     topics = data.get("topics", [])
@@ -276,9 +292,13 @@ def generate_visual(script: str, title: str, lang: str = "zh", out_dir: str = ".
             # Card background
             _rounded_rect(draw, [cx, cy, cx + card_w, cy + card_h], 18, _BG_CARD)
             
-            # Icon
+            # Icon (emoji rendered with Noto Emoji font)
             icon = topic.get("icon", "📌")
-            draw.text((cx + 24, cy + 22), icon, font=font_icon, fill=_TEXT_W)
+            try:
+                emoji_font = ImageFont.truetype(_EMOJI_FONT, 48)
+            except:
+                emoji_font = font_icon
+            draw.text((cx + 24, cy + 18), icon, font=emoji_font, fill=_TEXT_W)
             
             # Label
             label = topic.get("label", "")[:8]

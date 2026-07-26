@@ -1719,14 +1719,14 @@
     "archived_at": null,
     "created_at": "2026-07-07T04:37:44.994692+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-07-26T06:00:32.548841+00:00",
-    "last_used_at": "2026-07-26T05:59:54.843691+00:00",
-    "last_viewed_at": "2026-07-26T05:59:54.832158+00:00",
-    "patch_count": 49,
+    "last_patched_at": "2026-07-26T08:55:16.995739+00:00",
+    "last_used_at": "2026-07-26T08:54:26.988195+00:00",
+    "last_viewed_at": "2026-07-26T08:54:26.975500+00:00",
+    "patch_count": 60,
     "pinned": false,
     "state": "active",
-    "use_count": 45,
-    "view_count": 45
+    "use_count": 48,
+    "view_count": 48
   },
   "yuanbao": {
     "archived_at": null,

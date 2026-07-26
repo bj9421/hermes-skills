@@ -31,6 +31,18 @@ Usage:
 
 import sys
 import os
+
+# Rate limiter — minimum 2s between API calls (40 RPM free tier)
+_last_api_call = 0.0
+_API_INTERVAL = 2.0
+
+def _rate_limit():
+    global _last_api_call
+    import time
+    elapsed = time.time() - _last_api_call
+    if elapsed < _API_INTERVAL:
+        time.sleep(_API_INTERVAL - elapsed)
+    _last_api_call = time.time()
 import subprocess
 import tempfile
 import re
@@ -300,24 +312,54 @@ def _organize_via_llm(transcript: str, title: str = "") -> str | None:
         elif total_chunks > 1 and i == total_chunks - 1:
             prompt += "\n\n（這是最後一段。請在整理完本段後，附上整部影片的【重點摘要】。）"
 
-        try:
-            response = client.chat.completions.create(
-                model=NVIDIA_MODEL,
-                messages=[
-                    {"role": "system", "content": "你是專業的內容整理助手，擅長將逐字稿轉化為結構化筆記。"},
-                    {"role": "user", "content": prompt},
-                ],
-                max_tokens=4096,
-                temperature=0.3,
-            )
-            result = response.choices[0].message.content
-            if result:
-                organized_parts.append(result.strip())
-            else:
-                print(f"[WARN] LLM returned empty for chunk {i+1}", file=sys.stderr)
-                organized_parts.append(chunk)
-        except Exception as e:
-            print(f"[WARN] LLM call failed for chunk {i+1}: {e}", file=sys.stderr)
+        # Per-chunk retry with fallback models
+        _chunk_fallback = [
+            "deepseek-ai/deepseek-v4-flash",
+            "meta/llama-3.3-70b-instruct",
+            "nvidia/llama-3.1-nemotron-70b-instruct",
+        ]
+        chunk_done = False
+        import time as _time
+        for cmodel in _chunk_fallback:
+            if chunk_done:
+                break
+            for cattempt in range(3):
+                try:
+                    _rate_limit()
+                    response = client.chat.completions.create(
+                        model=cmodel,
+                        messages=[
+                            {"role": "system", "content": "你是專業的內容整理助手，擅長將逐字稿轉化為結構化筆記。"},
+                            {"role": "user", "content": prompt},
+                        ],
+                        max_tokens=4096,
+                        temperature=0.3,
+                    )
+                    result = response.choices[0].message.content
+                    if result:
+                        organized_parts.append(result.strip())
+                    else:
+                        print(f"[WARN] LLM returned empty for chunk {i+1}", file=sys.stderr)
+                        organized_parts.append(chunk)
+                    chunk_done = True
+                    break
+                except Exception as e:
+                    err_str = str(e)
+                    is_rl = "503" in err_str or "ResourceExhausted" in err_str or "rate" in err_str.lower()
+                    if is_rl and cattempt < 2:
+                        delay = 3.0 * (2 ** cattempt)
+                        print(f"[WARN] Organize chunk {i+1}: {cmodel} rate limited, retry in {delay:.0f}s...", file=sys.stderr)
+                        _time.sleep(delay)
+                    elif is_rl:
+                        print(f"[WARN] Organize chunk {i+1}: {cmodel} still rate limited, next model...", file=sys.stderr)
+                        break
+                    else:
+                        print(f"[WARN] Organize chunk {i+1} error on {cmodel}: {e}", file=sys.stderr)
+                        organized_parts.append(chunk)
+                        chunk_done = True
+                        break
+        if not chunk_done:
+            print(f"[ERROR] Organize chunk {i+1}: all models exhausted, using raw", file=sys.stderr)
             organized_parts.append(chunk)
 
     return "\n\n---\n\n".join(organized_parts)

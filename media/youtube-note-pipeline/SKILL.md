@@ -12,6 +12,7 @@ compatibility:
   - pydub (for --podcast audio merging)
   - python-pptx (for --ppt)
   - Pillow (for --visual)
+  - Noto Emoji monochrome font (for --visual emoji icons, installed at /opt/data/fonts/NotoEmoji-Regular.ttf)
 related_skills: [youtube-content, obsidian]
 ---
 
@@ -199,7 +200,7 @@ uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --podcast dual --voice-
 
 **Dependencies:** `edge-tts`, `pydub`, `audioop-lts` (Python 3.13+).
 
-**Script generation:** NVIDIA API LLM (`deepseek-ai/deepseek-v4-flash` default, env var `NVIDIA_ORGANIZE_MODEL` overrides), different prompt template. Includes `frequency_penalty=0.3`, `presence_penalty=0.2`, system prompt anti-repetition instruction, and `_dedup_script()` post-processing to catch degeneration loops.
+**Script generation:** NVIDIA API LLM (`deepseek-ai/deepseek-v4-flash` default, env var `NVIDIA_ORGANIZE_MODEL` overrides), different prompt template. Includes `frequency_penalty=0.3`, `presence_penalty=0.2`, system prompt anti-repetition instruction, and `_dedup_script()` post-processing to catch degeneration loops. **Has retry + fallback** (same model chain as other modules — see LLM Retry Pattern below).
 
 **Output auto-chmod:** `script.md` and MP3 are `chmod 777` after creation for Syncthing sync.
 
@@ -260,6 +261,9 @@ uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --visual --lang zh
    3. **WenQuanYi Zen Hei** (`/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc`) — functional but ugly
    4. **DejaVu** — last resort, no CJK support
 
+   **Emoji font** (loaded separately for icon rendering, NOT in `_load_font()`):
+   - **Noto Emoji monochrome** (`/opt/data/fonts/NotoEmoji-Regular.ttf`) — renders emoji as white outlines on dark background
+
    **Installing fonts in Docker** (no root for apt): Download from GitHub releases using Python urllib (NOT curl — curl gets blocked/redirected by GitHub and produces tiny corrupt files):
    ```python
    import urllib.request
@@ -269,13 +273,11 @@ uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --visual --lang zh
    ```
    For iansui: get release URL via `https://api.github.com/repos/ButTaiwan/iansui/releases/latest`, extract `assets[].browser_download_url`, then download with urllib. Only one TTF in the zip (`Iansui-Regular.ttf`). Save to `/opt/data/fonts/Iansui-Regular.ttf`.
 
-3. **Resolution must be 1920×1080 (Full HD)**: User rejected 1200×675 as "不夠清晰". Canvas `W, H = 1920, 1080` with `MARGIN = 60`. All font sizes and card dimensions scaled proportionally. Never downgrade resolution.
+3. **Emoji icons need separate font — iansui has no emoji glyphs**: When using CJK fonts like iansui, emoji characters (🦷💧💔) render as tofu/replacement characters. **Fix:** Load Noto Emoji monochrome (`/opt/data/fonts/NotoEmoji-Regular.ttf`) as a separate font and render icons in their own `draw.text()` call. Pillow cannot mix fonts in one call — each `draw.text()` uses one font. Install Noto Emoji from Google Fonts CSS API: `https://fonts.googleapis.com/css2?family=Noto+Emoji` → extract first `url()` → download with urllib. Only the monochrome variant works with Pillow (color emoji `NotoColorEmoji.ttf` uses CBDT/CBLC format unsupported by Pillow).
 
-4. **Large fonts for elderly readability — minimum 36px, ALL bold**: User explicitly asked for bigger text and "最小字體至少36px 其他往上調整 並且全部加粗". Current sizes: title 80px, tagline 42px (bold), card label 48px (bold), card detail 36px (bold), stat value 72px (bold), stat label 36px (bold), icon 60px. Card height 260px, stats bar 200px. All fonts loaded with `bold=True` except icon (emoji). If user says "字太小", increase further — but never below 36px.
+4. **Resolution must be 1920×1080 (Full HD)**: User rejected 1200×675 as "不夠清晰". Never downgrade resolution.
 
-2. **Canvas resolution and font size — user demands high quality**: Default canvas is **1920×1080** (Full HD, NOT 1200×675). User explicitly requested large fonts for elderly readability with **minimum 36px, ALL bold**: title 80px, tagline 42px, card label 48px, card detail 36px, stat value 72px, stat label 36px, icon 60px. Card height 260px, stats bar 200px. If user says "字型太醜" or "字太小", increase font sizes and/or switch font family. Current preference: **芫荽 iansui** (warm kai-style).
-
-3. **NVIDIA API 503 ResourceExhausted — worker-level, transient + auto-retry now built in**: The limit is `Worker local total request limit reached (N/48)` — **worker-level, NOT per-model**. ALL models share the same 48-request worker pool. Error is transient: recovers in 2-10 minutes without intervention. **Visual module now has `_call_llm_with_retry()`**: tries each model in `_FALLBACK_MODELS` chain up to 3 times with exponential backoff (5s → 10s → 20s), then auto-switches to next model. Chain: `deepseek-v4-flash` → `llama-3.3-70b` → `nemotron-70b`. Non-rate-limit errors fail fast (no retry). When running `--podcast dual --ppt --visual` together, all three modules hit the same endpoint sequentially — if 503 still occurs after all fallbacks exhausted, visual falls back to sparse default data. **Mitigation:** Wait 5 min and re-run just `--visual`.
+3. **NVIDIA API 503 ResourceExhausted — now handled by retry+fallback**: See **LLM Retry Pattern** section above for the standardized retry+fallback logic now built into all modules. When running `--podcast dual --ppt --visual` together, all three modules hit the same endpoint sequentially — retry logic handles transient 503s automatically. If ALL fallback models are exhausted, visual falls back to sparse default data. **Last resort:** Wait 5 min and re-run just `--visual`.
 
 ## Title Translation
 
@@ -283,11 +285,36 @@ When `--lang` differs from the source language (e.g. `--lang zh` on an English v
 - **`dir_title`** = LLM-translated title (used for directory name + MP3/PPT/visual filenames)
 - **`title`** = original English title (used in frontmatter `source` field + transcript content)
 
-Translation uses a fast LLM call (`max_tokens=100`, `temperature=0.3`) via `_translate_title()` in `podcast.py`. Falls back to original title on failure.
+Translation uses a fast LLM call (`max_tokens=100`, `temperature=0.3`) via `_translate_title()` in `podcast.py`. **Has retry + fallback** (same model chain — see LLM Retry Pattern below). Falls back to original title only after all models exhausted.
 
-### Title Translation Pitfall
+### Title Translation Pitfalls
 
-**Must pass `dir_title` (not `title`) to all output modules**: `generate_ppt()`, `generate_visual()`, and `produce_podcast()` all receive `dir_title` as their title parameter. If you accidentally pass the English `title`, the output filenames will be English inside a Chinese directory name — inconsistent and confusing. The pipeline computes `dir_title` early (via `_translate_title()`) and threads it through all module calls.
+1. **Must pass `dir_title` (not `title`) to all output modules**: `generate_ppt()`, `generate_visual()`, and `produce_podcast()` all receive `dir_title` as their title parameter. If you accidentally pass the English `title`, the output filenames will be English inside a Chinese directory name — inconsistent and confusing. The pipeline computes `dir_title` early (via `_translate_title()`) and threads it through all module calls.
+
+2. **API timeout → English directory name fallback**: `_translate_title()` now has retry + fallback (3 models × 3 retries each). Translation only fails if ALL models in the chain are rate-limited simultaneously — rare. If it does fail, `dir_title` falls back to the original English title. **Workaround:** After pipeline completes, check if directory name is English. If so, manually rename with Python: `os.rename(old_dir, new_chinese_name)` + `chmod -R 777`.
+
+## LLM Retry + Fallback Pattern (All Modules)
+
+> ✅ **Standardized across all LLM call points** — `podcast.py` (translate + generate), `yt2md_pipeline.py` (organize per-chunk), `visual_gen.py` (visual data extraction).
+
+**Fallback model chain** (same in all modules):
+1. `deepseek-ai/deepseek-v4-flash` (primary — 284B MoE, excellent Chinese)
+2. `meta/llama-3.3-70b-instruct` (backup)
+3. `nvidia/llama-3.1-nemotron-70b-instruct` (last resort)
+
+**Retry behavior:**
+- Per-model: 3 attempts with exponential backoff (base_delay × 2^attempt)
+  - Script gen / visual: 5s → 10s → 20s
+  - Title translate: 3s → 6s → 12s
+  - Organize per-chunk: 3s → 6s → 12s
+- Rate limit detection: `503` in error string OR `ResourceExhausted` OR `rate` (case-insensitive)
+- Non-rate-limit errors: fail fast (no retry, return None)
+- When a model exhausts retries: `break` to next model in chain
+- When ALL models exhausted: print `[ERROR] ... all models exhausted`, return None (caller uses fallback behavior — default data for visual, raw transcript for organize, English title for translate)
+
+**Key design decision:** Each module defines its own `_FALLBACK_MODELS` list locally (not shared global). This avoids import dependency between modules and allows independent tuning. All three currently use the same chain.
+
+**NVIDIA API note:** The 503 `ResourceExhausted` error is **worker-level** (shared 48-request pool across ALL models), NOT per-model. All models share the same rate limit. The retry+fallback buys time (total wait ~63s per model × 3 models = ~3 min max), which is usually enough for the worker pool to recover.
 
 ## Final chmod Sweep
 
@@ -295,6 +322,7 @@ All outputs in the podcast directory get `chmod -R 777` after generation, ensuri
 
 ## See Also
 
+- `references/cjk-font-rendering.md` — CJK font inventory, emoji rendering patterns, Pillow font mixing, Docker font installation.
 - `references/pipeline-architecture.md` — detailed pipeline architecture, `--obsidian` subfolder usage, VTT garbled-text caveats, and API migration notes.
 - `references/organize-architecture.md` — LLM post-processing design: NVIDIA API integration, prompt template, chunking strategy, error handling.
 - `references/podcast-architecture.md` — podcast mode flow, prompt templates, Edge TTS voice names, audio merge strategy, Python 3.13 compatibility.

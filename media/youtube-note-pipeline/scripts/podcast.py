@@ -156,27 +156,66 @@ _LANG_NAMES = {
     "es": "Español", "fr": "Français", "de": "Deutsch", "pt": "Português",
 }
 
+# Rate limiter — minimum 2s between API calls (40 RPM free tier = 1.5s baseline, 2s for safety margin)
+import time as _rate_time
+_last_api_call = 0.0
+_API_INTERVAL = 2.0
+
+def _rate_limit():
+    global _last_api_call
+    elapsed = _rate_time.time() - _last_api_call
+    if elapsed < _API_INTERVAL:
+        _rate_time.sleep(_API_INTERVAL - elapsed)
+    _last_api_call = _rate_time.time()
+
+
 def _translate_title(title: str, target_lang: str) -> str | None:
-    """Translate a video title to the target language via LLM (fast, short call)."""
+    """Translate a video title to the target language via LLM (with retry + fallback)."""
+    import time
+    
     client = _get_llm_client()
     if not client:
         return None
     lang_name = _LANG_NAMES.get(target_lang, target_lang)
-    try:
-        response = client.chat.completions.create(
-            model=NVIDIA_MODEL,
-            messages=[
-                {"role": "system", "content": f"你是翻譯專家。只翻譯標題，不加任何解釋、引號或額外文字。"},
-                {"role": "user", "content": f"將以下英文標題翻譯成{lang_name}，直接輸出翻譯結果：\n\n{title}"},
-            ],
-            max_tokens=100,
-            temperature=0.3,
-        )
-        result = response.choices[0].message.content
-        if result:
-            return result.strip().strip('"').strip("'").strip("《》")
-    except Exception as e:
-        print(f"[WARN] Title translation failed: {e}", file=sys.stderr)
+    
+    _FALLBACK_MODELS = [
+        "deepseek-ai/deepseek-v4-flash",
+        "meta/llama-3.3-70b-instruct",
+        "nvidia/llama-3.1-nemotron-70b-instruct",
+    ]
+    max_retries = 3
+    base_delay = 3.0
+    
+    for model in _FALLBACK_MODELS:
+        for attempt in range(max_retries):
+            try:
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": f"你是翻譯專家。只翻譯標題，不加任何解釋、引號或額外文字。"},
+                        {"role": "user", "content": f"將以下英文標題翻譯成{lang_name}，直接輸出翻譯結果：\n\n{title}"},
+                    ],
+                    max_tokens=100,
+                    temperature=0.3,
+                )
+                result = response.choices[0].message.content
+                if result:
+                    return result.strip().strip('"').strip("'").strip("《》")
+            except Exception as e:
+                err_str = str(e)
+                is_rate_limit = "503" in err_str or "ResourceExhausted" in err_str or "rate" in err_str.lower()
+                if is_rate_limit and attempt < max_retries - 1:
+                    delay = base_delay * (2 ** attempt)
+                    print(f"[WARN] Title translate: {model} rate limited (attempt {attempt+1}/{max_retries}), retry in {delay:.0f}s...", file=sys.stderr)
+                    time.sleep(delay)
+                elif is_rate_limit:
+                    print(f"[WARN] Title translate: {model} still rate limited, trying next model...", file=sys.stderr)
+                    break
+                else:
+                    print(f"[WARN] Title translate error on {model}: {e}", file=sys.stderr)
+                    return None
+    
+    print("[ERROR] Title translate: all models exhausted", file=sys.stderr)
     return None
 
 
@@ -212,27 +251,52 @@ def _generate_script(transcript: str, title: str, mode: str, target_lang: str) -
     template = _DUAL_PROMPT if mode == "dual" else _SOLO_PROMPT
     prompt = template.format(lang_instruction=lang_instruction) + transcript
 
-    print(f"[INFO] Generating {mode} podcast script via LLM ({NVIDIA_MODEL})...", file=sys.stderr)
-    try:
-        response = client.chat.completions.create(
-            model=NVIDIA_MODEL,
-            messages=[
-                {"role": "system", "content": "你是專業的播客腳本編寫者，擅長將逐字稿轉化為自然流暢的口播腳本。嚴格禁止重複相同或相似的段落，每個論點只講一次。"},
-                {"role": "user", "content": prompt},
-            ],
-            max_tokens=4096,
-            temperature=0.7,
-            frequency_penalty=0.3,
-            presence_penalty=0.2,
-        )
-        result = response.choices[0].message.content
-        if result:
-            return _dedup_script(result.strip())
-        print("[WARN] LLM returned empty script", file=sys.stderr)
-        return None
-    except Exception as e:
-        print(f"[WARN] LLM script generation failed: {e}", file=sys.stderr)
-        return None
+    print(f"[INFO] Generating {mode} podcast script via LLM...", file=sys.stderr)
+    
+    _FALLBACK_MODELS = [
+        "deepseek-ai/deepseek-v4-flash",
+        "meta/llama-3.3-70b-instruct",
+        "nvidia/llama-3.1-nemotron-70b-instruct",
+    ]
+    max_retries = 3
+    base_delay = 5.0
+    
+    import time
+    for model in _FALLBACK_MODELS:
+        for attempt in range(max_retries):
+            try:
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": "你是專業的播客腳本編寫者，擅長將逐字稿轉化為自然流暢的口播腳本。嚴格禁止重複相同或相似的段落，每個論點只講一次。"},
+                        {"role": "user", "content": prompt},
+                    ],
+                    max_tokens=4096,
+                    temperature=0.7,
+                    frequency_penalty=0.3,
+                    presence_penalty=0.2,
+                )
+                result = response.choices[0].message.content
+                if result:
+                    return _dedup_script(result.strip())
+                print("[WARN] LLM returned empty script", file=sys.stderr)
+                return None
+            except Exception as e:
+                err_str = str(e)
+                is_rate_limit = "503" in err_str or "ResourceExhausted" in err_str or "rate" in err_str.lower()
+                if is_rate_limit and attempt < max_retries - 1:
+                    delay = base_delay * (2 ** attempt)
+                    print(f"[WARN] Script gen: {model} rate limited (attempt {attempt+1}/{max_retries}), retry in {delay:.0f}s...", file=sys.stderr)
+                    time.sleep(delay)
+                elif is_rate_limit:
+                    print(f"[WARN] Script gen: {model} still rate limited, trying next model...", file=sys.stderr)
+                    break
+                else:
+                    print(f"[WARN] Script gen error on {model}: {e}", file=sys.stderr)
+                    return None
+    
+    print("[ERROR] Script gen: all models exhausted", file=sys.stderr)
+    return None
 
 
 # ---------------------------------------------------------------------------
