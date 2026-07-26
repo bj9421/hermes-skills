@@ -239,7 +239,29 @@ uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --podcast dual --voice-
 7. **NVIDIA API 503 ResourceExhausted**: When running `--podcast dual --ppt --visual` together, all three modules call the same NVIDIA API endpoint sequentially. If the worker pool is already saturated (e.g. from a previous heavy run), later calls get `503: Worker local total request limit reached (48/48)`. The podcast module handles this gracefully (falls back to default data), but PPT/visual may produce sparse output. **Mitigation:** Run `--podcast` first, wait a few minutes, then add `--ppt --visual` in a second pass if 503 occurs.
 8. **Edge-TTS intermittent `NoAudioReceived`**: Edge-TTS randomly fails with `NoAudioReceived` on longer text segments (>200 chars). Not a rate limit — appears to be a connection/timeout issue. **Fix:** Split script into paragraphs ≤200 chars each, `asyncio.sleep(2-3)` between segments, 3 retries per segment with backoff. Combine with pydub `AudioSegment.from_mp3()` + `+=` concatenation. Corrupted segments (0-byte or invalid MP3) should be skipped gracefully.
 9. **Git snapshot before refactoring**: Always `git add -A && git commit -m "snapshot: pre-<feature>"` before multi-file refactoring. Without a commit, there is no rollback point if the refactor breaks something. This is a general workflow rule, not specific to this pipeline.
-10. **Non-YouTube sources (Bilibili, Vimeo, etc.)**: YouTube extractor only works with youtube.com URLs. For other platforms: extract content via web search/extract → save as `.md` text file → run `python -m notehub <file.md> --podcast solo`. The notehub TextExtractor handles the rest.
+10. **Non-YouTube sources (Bilibili, Vimeo, etc.)**: YouTube extractor only works with youtube.com URLs. For other video platforms, use yt-dlp + Groq Whisper:
+
+    ```bash
+    # Step 1: yt-dlp download audio (supports Bilibili, Vimeo, 1000+ sites)
+    yt-dlp -x --audio-format m4a -o "output/audio/%(id)s.%(ext)s" "BILIBILI_URL"
+
+    # Step 2: Groq Whisper transcribe (free, fast, supports Chinese)
+    # GROQ_API_KEY must be set in /opt/data/.env
+    python3 -c "
+    from groq import Groq
+    client = Groq(api_key=open('/opt/data/.env').read().split('GROQ_API_KEY=')[1].split()[0])
+    with open('audio.m4a','rb') as f:
+        r = client.audio.transcriptions.create(file=('a.m4a',f), model='whisper-large-v3', language='zh')
+    with open('transcript.md','w') as f: f.write(r.text)
+    "
+
+    # Step 3: Run notehub on transcript
+    python -m notehub transcript.md --podcast solo --ppt --visual
+    ```
+
+    **⚠️ Common mistake:** Do NOT manually scrape web content for video platforms — always use yt-dlp + Whisper. Manual scraping loses audio tone, timing, and nuance that Whisper captures. The user explicitly called this out: "所以step1-5也沒用groq whisper啊".
+
+    **Groq API key:** `GROQ_API_KEY` in `/opt/data/.env`. Free tier, no credit card. Install: `uv pip install groq`.
 
 ## PPT Mode (`--ppt`) — PowerPoint Presentation
 
@@ -386,6 +408,7 @@ All outputs in the podcast directory get `chmod -R 777` after generation, ensuri
 
 ## See Also
 See Also
+- `references/groq-whisper-integration.md` — Groq Whisper STT for non-YouTube sources (Bilibili, Vimeo, local video). Free tier, setup, usage pattern.
 - `references/cjk-font-rendering.md` — CJK font inventory, emoji rendering patterns, Pillow font mixing, Docker font installation.
 - `references/pipeline-architecture.md` — detailed pipeline architecture, `--obsidian` subfolder usage, VTT garbled-text caveats, and API migration notes.
 - `references/organize-architecture.md` — LLM post-processing design: NVIDIA API integration, prompt template, chunking strategy, error handling.
