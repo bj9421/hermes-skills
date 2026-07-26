@@ -4,10 +4,14 @@ Usage:
     python -m notehub "YouTube URL" --podcast dual --ppt --visual --lang zh
     python -m notehub "https://example.com" --organize --visual
     python -m notehub "./document.pdf" --organize --ppt
-    python -m notehub "./notes.txt" --podcast solo
+    python -m notehub "./notes.txt" --podcast solo 台女
     python -m notehub --search "keyword"
     python -m notehub --list
     python -m notehub --stats
+
+Voice shortcuts (can be used anywhere in args):
+    台男  → zh-TW-YunJheNeural      台女  → zh-TW-HsiaoChenNeural
+    英男  → en-US-GuyNeural          英女  → en-US-JennyNeural
 """
 
 import os
@@ -25,6 +29,20 @@ def main():
     if not args:
         print(__doc__, file=sys.stderr)
         sys.exit(1)
+
+    # Voice alias mapping
+    VOICE_ALIASES = {
+        "台男": "zh-TW-YunJheNeural",
+        "台女": "zh-TW-HsiaoChenNeural",
+        "英男": "en-US-GuyNeural",
+        "英女": "en-US-JennyNeural",
+    }
+
+    def resolve_voice(v):
+        """Resolve voice alias to full voice name."""
+        if v and v in VOICE_ALIASES:
+            return VOICE_ALIASES[v]
+        return v
 
     # Search mode
     if "--search" in args:
@@ -85,11 +103,18 @@ def main():
     voice_a = None
     if "--voice-a" in pipeline_args:
         idx = pipeline_args.index("--voice-a")
-        voice_a = pipeline_args[idx + 1] if idx + 1 < len(pipeline_args) else None
+        voice_a = resolve_voice(pipeline_args[idx + 1] if idx + 1 < len(pipeline_args) else None)
     voice_b = None
     if "--voice-b" in pipeline_args:
         idx = pipeline_args.index("--voice-b")
-        voice_b = pipeline_args[idx + 1] if idx + 1 < len(pipeline_args) else None
+        voice_b = resolve_voice(pipeline_args[idx + 1] if idx + 1 < len(pipeline_args) else None)
+
+    # Auto-detect voice shortcuts from remaining args (e.g. notehub file 台女)
+    if not voice_a:
+        for arg in pipeline_args:
+            if arg in VOICE_ALIASES:
+                voice_a = VOICE_ALIASES[arg]
+                break
 
     from notehub.core.pipeline import run_pipeline
     out_dir = run_pipeline(

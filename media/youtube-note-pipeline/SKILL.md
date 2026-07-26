@@ -243,7 +243,9 @@ uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --podcast dual --voice-
 
 11. **Segment files should NOT be saved to obsidian vault**: User explicitly said "seg音檔不要存obsidian". Use `tempfile.TemporaryDirectory` for `_seg_*.mp3` files during TTS generation. Only the final merged `_podcast.mp3` and `script.md` should be saved to the output directory.
 
-12. **Non-YouTube sources (Bilibili, Vimeo, etc.)**: YouTube extractor only works with youtube.com URLs. For other video platforms, use yt-dlp + Groq Whisper:
+12. **notehub must use shared podcast.py, NOT its own prompt**: The notehub pipeline (`notehub/core/pipeline.py`) MUST import and call `podcast.py`'s `produce_podcast()` directly — never use a wrapper with a generic LLM prompt. Reason: `podcast.py`'s `_SOLO_PROMPT` / `_DUAL_PROMPT` are specifically designed for clean spoken-text output (no meta-commentary like "好的，沒問題！...", no `**` markdown markers, no stage directions). A generic prompt produces text with formatting that Edge-TTS reads literally as "asterisk asterisk". The correct import: `from podcast import produce_podcast` (from `notehub/core/pipeline.py`), NOT `from ..generators.podcast import produce_podcast`. Parameter order: `(transcript, title, url, lang, mode, voice_a, voice_b, out_dir, video_id)`. Return value is `mp3_path` (single string), not a tuple.
+
+13. **Non-YouTube sources (Bilibili, Vimeo, etc.)**: YouTube extractor only works with youtube.com URLs. For other video platforms, use yt-dlp + Groq Whisper:
 
     ```bash
     # Step 1: yt-dlp download audio (supports Bilibili, Vimeo, 1000+ sites)
