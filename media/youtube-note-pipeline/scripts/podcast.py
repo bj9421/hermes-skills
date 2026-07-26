@@ -189,6 +189,7 @@ def _translate_title(title: str, target_lang: str) -> str | None:
     for model in _FALLBACK_MODELS:
         for attempt in range(max_retries):
             try:
+                _rate_limit()
                 response = client.chat.completions.create(
                     model=model,
                     messages=[
@@ -265,6 +266,7 @@ def _generate_script(transcript: str, title: str, mode: str, target_lang: str) -
     for model in _FALLBACK_MODELS:
         for attempt in range(max_retries):
             try:
+                _rate_limit()
                 response = client.chat.completions.create(
                     model=model,
                     messages=[

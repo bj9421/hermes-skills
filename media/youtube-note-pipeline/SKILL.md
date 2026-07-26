@@ -297,7 +297,28 @@ Translation uses a fast LLM call (`max_tokens=100`, `temperature=0.3`) via `_tra
 
 > ✅ **Standardized across all LLM call points** — `podcast.py` (translate + generate), `yt2md_pipeline.py` (organize per-chunk), `visual_gen.py` (visual data extraction).
 
-**Fallback model chain** (same in all modules):
+### Rate Limiter (per-module, 2-second minimum)
+
+Every API call site has a `_rate_limit()` function that enforces a **minimum 2-second gap** between consecutive NVIDIA API calls. This prevents burst-triggered 503s (the 40 RPM free tier = 1.5s/call; we use 2s for safety margin).
+
+```python
+# Each module defines this locally (no shared global):
+_last_api_call = 0.0
+_API_INTERVAL = 2.0
+
+def _rate_limit():
+    global _last_api_call
+    elapsed = time.time() - _last_api_call
+    if elapsed < _API_INTERVAL:
+        time.sleep(_API_INTERVAL - elapsed)
+    _last_api_call = time.time()
+```
+
+Called before every `client.chat.completions.create()`. A full pipeline run (~5 API calls) takes ~10-15 seconds of rate-limit wait, well within safe bounds.
+
+See `references/nvidia-api-rate-limits.md` for NVIDIA's rate limit mechanism, cooldown behavior, and avoidance strategies.
+
+### Fallback model chain (same in all modules):
 1. `deepseek-ai/deepseek-v4-flash` (primary — 284B MoE, excellent Chinese)
 2. `meta/llama-3.3-70b-instruct` (backup)
 3. `nvidia/llama-3.1-nemotron-70b-instruct` (last resort)
@@ -321,9 +342,10 @@ Translation uses a fast LLM call (`max_tokens=100`, `temperature=0.3`) via `_tra
 All outputs in the podcast directory get `chmod -R 777` after generation, ensuring Syncthing compatibility across devices (Docker hermes user vs phone uid 1000).
 
 ## See Also
-
+See Also
 - `references/cjk-font-rendering.md` — CJK font inventory, emoji rendering patterns, Pillow font mixing, Docker font installation.
 - `references/pipeline-architecture.md` — detailed pipeline architecture, `--obsidian` subfolder usage, VTT garbled-text caveats, and API migration notes.
 - `references/organize-architecture.md` — LLM post-processing design: NVIDIA API integration, prompt template, chunking strategy, error handling.
 - `references/podcast-architecture.md` — podcast mode flow, prompt templates, Edge TTS voice names, audio merge strategy, Python 3.13 compatibility.
 - `references/translation-and-troubleshooting.md` — bilingual translation format, language fallback chain, common yt-dlp fixes, Whisper on RPi tips.
+- `references/nvidia-api-rate-limits.md` — NVIDIA NIM free tier rate limits: 40 RPM baseline, unpredictable cooldown (30s-2h+), no usage API, avoidance strategy.

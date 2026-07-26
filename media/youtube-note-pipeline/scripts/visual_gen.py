@@ -50,6 +50,7 @@ def _call_llm_with_retry(client, prompt: str, max_retries: int = 3, base_delay: 
     for model in _FALLBACK_MODELS:
         for attempt in range(max_retries):
             try:
+                _rate_limit()
                 response = client.chat.completions.create(
                     model=model,
                     messages=[
