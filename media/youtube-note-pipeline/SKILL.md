@@ -194,7 +194,7 @@ uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --podcast dual --voice-
 
 **Dependencies:** `edge-tts`, `pydub`, `audioop-lts` (Python 3.13+).
 
-**Script generation:** NVIDIA API LLM (same as `--organize`), different prompt template.
+**Script generation:** NVIDIA API LLM (`meta/llama-3.1-8b-instruct` default, env var `NVIDIA_ORGANIZE_MODEL` overrides), different prompt template.
 
 **Output auto-chmod:** `script.md` and MP3 are `chmod 777` after creation for Syncthing sync.
 

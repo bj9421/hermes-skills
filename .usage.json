@@ -147,13 +147,13 @@
     "created_at": "2026-07-09T18:37:31.164418+00:00",
     "created_by": null,
     "last_patched_at": "2026-07-17T08:47:41.048678+00:00",
-    "last_used_at": "2026-07-24T20:48:14.233993+00:00",
-    "last_viewed_at": "2026-07-24T20:48:14.195657+00:00",
+    "last_used_at": "2026-07-26T01:05:46.978048+00:00",
+    "last_viewed_at": "2026-07-26T01:05:46.949837+00:00",
     "patch_count": 27,
     "pinned": false,
     "state": "active",
-    "use_count": 57,
-    "view_count": 57
+    "use_count": 60,
+    "view_count": 60
   },
   "baoyu-infographic": {
     "archived_at": null,
@@ -875,13 +875,13 @@
     "created_at": "2026-07-16T00:14:07.048556+00:00",
     "created_by": "agent",
     "last_patched_at": "2026-07-16T09:34:03.928840+00:00",
-    "last_used_at": "2026-07-18T14:05:46.966906+00:00",
-    "last_viewed_at": "2026-07-18T14:05:46.953827+00:00",
+    "last_used_at": "2026-07-26T01:06:29.266818+00:00",
+    "last_viewed_at": "2026-07-26T01:06:29.253820+00:00",
     "patch_count": 15,
     "pinned": false,
     "state": "active",
-    "use_count": 27,
-    "view_count": 27
+    "use_count": 28,
+    "view_count": 28
   },
   "himalaya": {
     "archived_at": null,
@@ -1719,14 +1719,14 @@
     "archived_at": null,
     "created_at": "2026-07-07T04:37:44.994692+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-07-25T21:32:44.001992+00:00",
-    "last_used_at": "2026-07-25T21:32:08.175978+00:00",
-    "last_viewed_at": "2026-07-25T21:32:08.164491+00:00",
-    "patch_count": 23,
+    "last_patched_at": "2026-07-26T01:06:21.537782+00:00",
+    "last_used_at": "2026-07-26T01:06:14.527793+00:00",
+    "last_viewed_at": "2026-07-26T01:06:14.514967+00:00",
+    "patch_count": 24,
     "pinned": false,
     "state": "active",
-    "use_count": 32,
-    "view_count": 32
+    "use_count": 33,
+    "view_count": 33
   },
   "yuanbao": {
     "archived_at": null,
