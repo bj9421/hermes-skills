@@ -401,8 +401,8 @@ def _parse_dual_script(script: str) -> list[tuple[str, str]]:
                 current_lines = []
             continue
 
-        # Match "A:" or "B:" at start of line
-        m = re.match(r'^([AB])[:：]\s*(.*)', line)
+        # Match "A:" or "B:" at start of line (with or without colon)
+        m = re.match(r'^([AB])[:：]?\s*(.*)', line)
         if m:
             if current_role and current_lines:
                 segments.append((current_role, " ".join(current_lines)))

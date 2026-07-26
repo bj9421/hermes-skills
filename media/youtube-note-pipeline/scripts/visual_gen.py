@@ -271,13 +271,13 @@ def generate_visual(script: str, title: str, lang: str = "zh", out_dir: str = ".
     
     # Title text
     title_text = data.get("title", title)[:20]
-    draw.text((MARGIN + 18, y), title_text, font=font_title, fill=_TEXT_W)
+    draw.text((MARGIN + 18, y), title_text, font=font_title, fill=_TEXT_W, stroke_width=2, stroke_fill=_TEXT_W)
     y += 100
 
     # Tagline
     tagline = data.get("tagline", "")
     if tagline:
-        draw.text((MARGIN + 18, y), tagline, font=font_tagline, fill=_TEXT_DIM)
+        draw.text((MARGIN + 18, y), tagline, font=font_tagline, fill=_TEXT_DIM, stroke_width=1, stroke_fill=_TEXT_DIM)
         y += 50
 
     y += 25
@@ -309,13 +309,13 @@ def generate_visual(script: str, title: str, lang: str = "zh", out_dir: str = ".
             
             # Label
             label = topic.get("label", "")[:8]
-            draw.text((cx + 90, cy + 28), label, font=font_topic_label, fill=_TEXT_W)
+            draw.text((cx + 90, cy + 28), label, font=font_topic_label, fill=_TEXT_W, stroke_width=2, stroke_fill=_TEXT_W)
             
             # Detail
             detail = topic.get("detail", "")[:50]
             detail_lines = _wrap_text(detail, font_topic_detail, card_w - 110, draw)
             for j, line in enumerate(detail_lines[:3]):
-                draw.text((cx + 90, cy + 100 + j * 42), line, font=font_topic_detail, fill=_TEXT_L)
+                draw.text((cx + 90, cy + 100 + j * 42), line, font=font_topic_detail, fill=_TEXT_L, stroke_width=1, stroke_fill=_TEXT_L)
         
         y += rows * (card_h + 24) + 36
 
@@ -331,10 +331,10 @@ def generate_visual(script: str, title: str, lang: str = "zh", out_dir: str = ".
             sy = y + 25
             
             value = stat.get("value", "")[:12]
-            draw.text((sx, sy), value, font=font_stat_value, fill=_ACCENT2)
+            draw.text((sx, sy), value, font=font_stat_value, fill=_ACCENT2, stroke_width=2, stroke_fill=_ACCENT2)
             
             label = stat.get("label", "")[:25]
-            draw.text((sx, sy + 80), label, font=font_stat_label, fill=_TEXT_DIM)
+            draw.text((sx, sy + 80), label, font=font_stat_label, fill=_TEXT_DIM, stroke_width=1, stroke_fill=_TEXT_DIM)
         
         y += 220
 

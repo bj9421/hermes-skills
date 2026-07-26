@@ -312,11 +312,13 @@ uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --visual --lang zh
 
 ### Visual Pitfalls
 
-1. **CJK font quality matters — user rejects ugly fonts**: Font priority in `visual_gen.py` `_load_font()`:
-   1. **芫荽 iansui** (`/opt/data/fonts/Iansui-Regular.ttf`) — warm kai-style, Taiwan traditional Chinese, user's current preference
-   2. **Noto Sans SC** (`/opt/data/fonts/NotoSansSC-Bold.ttf`) — clean modern sans-serif
+1. **CJK font priority — NotoSansSC first for full coverage**: Font priority in `visual_gen.py` `_load_font()`:
+   1. **Noto Sans SC** (`/opt/data/fonts/NotoSansSC-Bold.ttf`) —繁簡全覆蓋, clean modern sans-serif, **MUST be first** (iansui can't render Simplified Chinese)
+   2. **芫荽 iansui** (`/opt/data/fonts/Iansui-Regular.ttf`) — warm kai-style, Traditional Chinese only, fallback
    3. **WenQuanYi Zen Hei** (`/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc`) — functional but ugly
    4. **DejaVu** — last resort, no CJK support
+   
+   **⚠️ LLM prompt must enforce Traditional Chinese**: Add to visual/podcast prompts: `⚠️ 重要：所有文字必須使用「繁體中文」（Traditional Chinese），禁止使用簡體中文。` Without this, DeepSeek defaults to Simplified Chinese even with `--lang zh`.
 
    **Emoji font** (loaded separately for icon rendering, NOT in `_load_font()`):
    - **Noto Emoji monochrome** (`/opt/data/fonts/NotoEmoji-Regular.ttf`) — renders emoji as white outlines on dark background
