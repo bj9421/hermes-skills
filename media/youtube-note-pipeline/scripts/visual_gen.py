@@ -34,6 +34,51 @@ def _get_llm_client():
 
 
 # ---------------------------------------------------------------------------
+# LLM Client with retry + fallback models
+# ---------------------------------------------------------------------------
+# Fallback model chain: primary → alternatives (all NVIDIA-hosted)
+_FALLBACK_MODELS = [
+    "deepseek-ai/deepseek-v4-flash",
+    "meta/llama-3.3-70b-instruct",
+    "nvidia/llama-3.1-nemotron-70b-instruct",
+]
+
+def _call_llm_with_retry(client, prompt: str, max_retries: int = 3, base_delay: float = 5.0) -> str | None:
+    """Call LLM with retry on 503/rate-limit, auto-switch to next model on persistent failure."""
+    import time
+    
+    for model in _FALLBACK_MODELS:
+        for attempt in range(max_retries):
+            try:
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": "只輸出 JSON，不加任何額外文字。"},
+                        {"role": "user", "content": prompt},
+                    ],
+                    max_tokens=1500,
+                    temperature=0.3,
+                )
+                result = response.choices[0].message.content
+                if result:
+                    return result.strip()
+            except Exception as e:
+                err_str = str(e)
+                is_rate_limit = "503" in err_str or "ResourceExhausted" in err_str or "rate" in err_str.lower()
+                if is_rate_limit and attempt < max_retries - 1:
+                    delay = base_delay * (2 ** attempt)
+                    print(f"[WARN] {model} rate limited (attempt {attempt+1}/{max_retries}), retry in {delay:.0f}s...", file=sys.stderr)
+                    time.sleep(delay)
+                elif is_rate_limit:
+                    print(f"[WARN] {model} still rate limited after {max_retries} retries, trying next model...", file=sys.stderr)
+                    break  # move to next model
+                else:
+                    print(f"[WARN] LLM error on {model}: {e}", file=sys.stderr)
+                    return None  # non-rate-limit error, don't retry
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Extract visual summary data
 # ---------------------------------------------------------------------------
 def _extract_visual_data(script: str, title: str, lang: str = "zh") -> dict:
@@ -41,7 +86,7 @@ def _extract_visual_data(script: str, title: str, lang: str = "zh") -> dict:
     client_info = _get_llm_client()
     if not client_info:
         return None
-    client, model = client_info
+    client, _ = client_info  # ignore default model, _call_llm_with_retry handles model selection
 
     lang_hint = "使用繁體中文" if lang in ("zh", "zh-TW") else "Use English"
 
@@ -68,26 +113,18 @@ def _extract_visual_data(script: str, title: str, lang: str = "zh") -> dict:
 腳本：
 {script[:5000]}
 """
+    result = _call_llm_with_retry(client, prompt)
+    if not result:
+        print("[WARN] Visual data extraction failed: all models exhausted", file=sys.stderr)
+        return None
     try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": "只輸出 JSON，不加任何額外文字。"},
-                {"role": "user", "content": prompt},
-            ],
-            max_tokens=1500,
-            temperature=0.3,
-        )
-        result = response.choices[0].message.content
-        if result:
-            result = result.strip()
-            if result.startswith("```"):
-                result = result.split("\n", 1)[1]
-            if result.endswith("```"):
-                result = result.rsplit("```", 1)[0]
-            return json.loads(result.strip())
+        if result.startswith("```"):
+            result = result.split("\n", 1)[1]
+        if result.endswith("```"):
+            result = result.rsplit("```", 1)[0]
+        return json.loads(result.strip())
     except Exception as e:
-        print(f"[WARN] Visual data extraction failed: {e}", file=sys.stderr)
+        print(f"[WARN] Visual data JSON parse failed: {e}", file=sys.stderr)
     return None
 
 
@@ -194,14 +231,14 @@ def generate_visual(script: str, title: str, lang: str = "zh", out_dir: str = ".
     img = Image.new("RGB", (W, H), _BG_DARK)
     draw = ImageDraw.Draw(img)
 
-    # Fonts (scaled for 1920x1080)
-    font_title = _load_font(56, bold=True)
-    font_tagline = _load_font(28)
-    font_topic_label = _load_font(32, bold=True)
-    font_topic_detail = _load_font(22)
-    font_stat_value = _load_font(44, bold=True)
-    font_stat_label = _load_font(20)
-    font_icon = _load_font(48)
+    # Fonts (大字版 — 全加粗、最小 36px、適合長輩閱讀)
+    font_title = _load_font(80, bold=True)
+    font_tagline = _load_font(42, bold=True)
+    font_topic_label = _load_font(48, bold=True)
+    font_topic_detail = _load_font(36, bold=True)
+    font_stat_value = _load_font(72, bold=True)
+    font_stat_label = _load_font(36, bold=True)
+    font_icon = _load_font(60)
 
     y = MARGIN
 
@@ -227,55 +264,55 @@ def generate_visual(script: str, title: str, lang: str = "zh", out_dir: str = ".
     if topics:
         cols = min(len(topics), 3)
         rows = (len(topics) + cols - 1) // cols
-        card_w = (W - MARGIN * 2 - (cols - 1) * 20) // cols
-        card_h = 180
+        card_w = (W - MARGIN * 2 - (cols - 1) * 24) // cols
+        card_h = 260
         
         for i, topic in enumerate(topics):
             row = i // cols
             col = i % cols
-            cx = MARGIN + col * (card_w + 20)
-            cy = y + row * (card_h + 20)
+            cx = MARGIN + col * (card_w + 24)
+            cy = y + row * (card_h + 24)
             
             # Card background
-            _rounded_rect(draw, [cx, cy, cx + card_w, cy + card_h], 16, _BG_CARD)
+            _rounded_rect(draw, [cx, cy, cx + card_w, cy + card_h], 18, _BG_CARD)
             
             # Icon
             icon = topic.get("icon", "📌")
-            draw.text((cx + 20, cy + 18), icon, font=font_icon, fill=_TEXT_W)
+            draw.text((cx + 24, cy + 22), icon, font=font_icon, fill=_TEXT_W)
             
             # Label
             label = topic.get("label", "")[:8]
-            draw.text((cx + 80, cy + 22), label, font=font_topic_label, fill=_TEXT_W)
+            draw.text((cx + 90, cy + 28), label, font=font_topic_label, fill=_TEXT_W)
             
             # Detail
             detail = topic.get("detail", "")[:50]
-            detail_lines = _wrap_text(detail, font_topic_detail, card_w - 100, draw)
+            detail_lines = _wrap_text(detail, font_topic_detail, card_w - 110, draw)
             for j, line in enumerate(detail_lines[:3]):
-                draw.text((cx + 80, cy + 65 + j * 28), line, font=font_topic_detail, fill=_TEXT_L)
+                draw.text((cx + 90, cy + 100 + j * 42), line, font=font_topic_detail, fill=_TEXT_L)
         
-        y += rows * (card_h + 20) + 30
+        y += rows * (card_h + 24) + 36
 
     # --- Stats bar ---
     stats = data.get("stats", [])
-    if stats and y < H - 160:
+    if stats and y < H - 180:
         # Stats background
-        _rounded_rect(draw, [MARGIN, y, W - MARGIN, y + 140], 14, _BG_CARD)
+        _rounded_rect(draw, [MARGIN, y, W - MARGIN, y + 200], 16, _BG_CARD)
         
-        stat_w = (W - MARGIN * 2 - 40) // max(len(stats), 1)
+        stat_w = (W - MARGIN * 2 - 50) // max(len(stats), 1)
         for i, stat in enumerate(stats[:3]):
-            sx = MARGIN + 30 + i * stat_w
-            sy = y + 18
+            sx = MARGIN + 40 + i * stat_w
+            sy = y + 25
             
             value = stat.get("value", "")[:12]
             draw.text((sx, sy), value, font=font_stat_value, fill=_ACCENT2)
             
             label = stat.get("label", "")[:25]
-            draw.text((sx, sy + 55), label, font=font_stat_label, fill=_TEXT_DIM)
+            draw.text((sx, sy + 80), label, font=font_stat_label, fill=_TEXT_DIM)
         
-        y += 160
+        y += 220
 
     # --- Footer ---
-    draw.text((MARGIN, H - 40), "Generated by yt2md pipeline", font=font_stat_label, fill=_TEXT_DIM)
+    draw.text((MARGIN, H - 44), "Generated by yt2md pipeline", font=font_stat_label, fill=_TEXT_DIM)
 
     # Save
     safe_title = title.replace("/", "_").replace("\\", "_")[:60]

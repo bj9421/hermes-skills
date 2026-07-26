@@ -243,7 +243,7 @@ uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --podcast dual --ppt --
 uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --visual --lang zh
 ```
 
-**Output:** `{dir_title}_summary.png` (1200×675, dark theme, card-based layout with icons, topics, and stats).
+**Output:** `{dir_title}_summary.png` (1920×1080 Full HD, dark theme, card-based layout with icons, topics, and stats). Font sizes large for elderly readability — **minimum 36px, all bold**: title 80px, tagline 42px, card label 48px, card detail 36px, stat value 72px, stat label 36px, icon 60px. Card height 260px, card gap 24px, stats bar 200px. Canvas `MARGIN = 60`.
 
 **How it works:**
 1. LLM extracts visual data (title, tagline, topics with icons, key stats)
@@ -267,9 +267,15 @@ uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --visual --lang zh
    data = urllib.request.urlopen(req, timeout=30).read()
    with open('font.ttf', 'wb') as f: f.write(data)
    ```
-   For iansui: get release URL via `https://api.github.com/repos/ButTaiwan/iansui/releases/latest`, extract `assets[].browser_download_url`, then download with urllib. Only one TTF in the zip (`Iansui-Regular.ttf`).
+   For iansui: get release URL via `https://api.github.com/repos/ButTaiwan/iansui/releases/latest`, extract `assets[].browser_download_url`, then download with urllib. Only one TTF in the zip (`Iansui-Regular.ttf`). Save to `/opt/data/fonts/Iansui-Regular.ttf`.
 
-2. **NVIDIA API 503 ResourceExhausted — worker-level, transient**: The limit is `Worker local total request limit reached (N/48)` — **worker-level, NOT per-model**. ALL models share the same 48-request worker pool. Error is transient: recovers in 2-10 minutes without intervention. When running `--podcast dual --ppt --visual` together, all three modules hit the same endpoint sequentially, so the third call often hits the limit. **Mitigation:** (a) Wait 5 min and retry just the failed step, (b) Run podcast first, then PPT+visual in a second pass. The visual module falls back to sparse default data on 503 (title + "口播 / 請參閱腳本"), so re-running it later overwrites with full content.
+3. **Resolution must be 1920×1080 (Full HD)**: User rejected 1200×675 as "不夠清晰". Canvas `W, H = 1920, 1080` with `MARGIN = 60`. All font sizes and card dimensions scaled proportionally. Never downgrade resolution.
+
+4. **Large fonts for elderly readability — minimum 36px, ALL bold**: User explicitly asked for bigger text and "最小字體至少36px 其他往上調整 並且全部加粗". Current sizes: title 80px, tagline 42px (bold), card label 48px (bold), card detail 36px (bold), stat value 72px (bold), stat label 36px (bold), icon 60px. Card height 260px, stats bar 200px. All fonts loaded with `bold=True` except icon (emoji). If user says "字太小", increase further — but never below 36px.
+
+2. **Canvas resolution and font size — user demands high quality**: Default canvas is **1920×1080** (Full HD, NOT 1200×675). User explicitly requested large fonts for elderly readability with **minimum 36px, ALL bold**: title 80px, tagline 42px, card label 48px, card detail 36px, stat value 72px, stat label 36px, icon 60px. Card height 260px, stats bar 200px. If user says "字型太醜" or "字太小", increase font sizes and/or switch font family. Current preference: **芫荽 iansui** (warm kai-style).
+
+3. **NVIDIA API 503 ResourceExhausted — worker-level, transient + auto-retry now built in**: The limit is `Worker local total request limit reached (N/48)` — **worker-level, NOT per-model**. ALL models share the same 48-request worker pool. Error is transient: recovers in 2-10 minutes without intervention. **Visual module now has `_call_llm_with_retry()`**: tries each model in `_FALLBACK_MODELS` chain up to 3 times with exponential backoff (5s → 10s → 20s), then auto-switches to next model. Chain: `deepseek-v4-flash` → `llama-3.3-70b` → `nemotron-70b`. Non-rate-limit errors fail fast (no retry). When running `--podcast dual --ppt --visual` together, all three modules hit the same endpoint sequentially — if 503 still occurs after all fallbacks exhausted, visual falls back to sparse default data. **Mitigation:** Wait 5 min and re-run just `--visual`.
 
 ## Title Translation
 
