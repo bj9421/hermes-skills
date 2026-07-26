@@ -459,6 +459,8 @@ def main():
     # PPT and visual summary flags
     do_ppt = "--ppt" in args
     do_visual = "--visual" in args
+    ppt_out = None
+    vis_out = None
 
     if "--model" in args:
         idx = args.index("--model")
@@ -595,7 +597,7 @@ def main():
                 ppt_out = None
             if ppt_out:
                 os.makedirs(ppt_out, exist_ok=True)
-                ppt_path = generate_ppt(md, title, lang=target_lang, out_dir=ppt_out)
+                ppt_path = generate_ppt(md, dir_title, lang=target_lang, out_dir=ppt_out)
                 if ppt_path:
                     print(f"[OK] PPT produced: {ppt_path}", file=sys.stderr)
         except ImportError as e:
@@ -622,13 +624,23 @@ def main():
                 vis_out = None
             if vis_out:
                 os.makedirs(vis_out, exist_ok=True)
-                vis_path = generate_visual(md, title, lang=target_lang, out_dir=vis_out)
+                vis_path = generate_visual(md, dir_title, lang=target_lang, out_dir=vis_out)
                 if vis_path:
                     print(f"[OK] Visual summary produced: {vis_path}", file=sys.stderr)
         except ImportError as e:
             print(f"[ERROR] Visual module not found: {e}", file=sys.stderr)
         except Exception as e:
             print(f"[ERROR] Visual production error: {e}", file=sys.stderr)
+
+    # Final chmod sweep for Syncthing compatibility
+    chmod_target = podcast_out_dir
+    if not chmod_target and do_ppt:
+        chmod_target = ppt_out
+    if not chmod_target and do_visual:
+        chmod_target = vis_out
+    if chmod_target:
+        import subprocess as _sp
+        _sp.run(["chmod", "-R", "777", chmod_target], capture_output=True)
 
     # Build raw markdown
     raw_md = _build_raw_md(title, url, md, lang, source, today)

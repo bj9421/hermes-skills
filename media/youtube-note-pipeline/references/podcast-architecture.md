@@ -5,6 +5,10 @@
 ```
 Transcript (raw text from pipeline)
     ↓
+Title Translation (if --lang differs from source)
+    → _translate_title() via LLM → dir_title (for naming)
+    → original title kept for content/frontmatter
+    ↓
 LLM Script Generation (NVIDIA API)
     → solo: paragraphs
     → dual: A:/B: alternating dialogue
@@ -19,7 +23,19 @@ TTS Segments (Edge TTS, async)
 Merge (ffmpeg concat demuxer)
     → concat list file → single MP3
     ↓
-Output: 口播/{title} [{video_id}]/{title}_podcast.mp3 + script.md
+Optional: PPT Generation (ppt_gen.py)
+    → LLM extracts key points → python-pptx renders dark-themed slides
+    ↓
+Optional: Visual Summary (visual_gen.py)
+    → LLM extracts topics/stats → Pillow renders card-based image
+    ↓
+Final chmod -R 777 sweep (Syncthing compatibility)
+    ↓
+Output: 口播/{dir_title} [{video_id}]/
+    ├── {dir_title}_podcast.mp3
+    ├── script.md
+    ├── {dir_title}.pptx          (if --ppt)
+    └── {dir_title}_summary.png   (if --visual)
 ```
 
 ## Script Prompts
@@ -84,3 +100,42 @@ Full voice list: `edge_tts.list_voices()` → filter by `ShortName`.
 - `pydub` requires `audioop-lts` package (audioop removed in 3.13)
 - Install: `uv pip install audioop-lts`
 - SyntaxWarning from pydub about regex escape sequences — harmless
+
+## PPT Generation (`ppt_gen.py`)
+
+**Entry point:** `generate_ppt(script, title, lang, out_dir)`
+
+Flow:
+1. `_extract_key_points()` — LLM call to extract structured JSON (title, subtitle, 4-6 topics with bullets, summary)
+2. Creates 16:9 widescreen Presentation (10×5.625 inches)
+3. Renders dark-themed slides: navy background (#1A1A2E), warm red accent (#E84D3D), white/light text
+4. Title slide → content slides (number badge + heading + bullets) → summary slide
+
+**Dependencies:** `python-pptx` (install: `uv pip install python-pptx`)
+
+## Visual Summary (`visual_gen.py`)
+
+**Entry point:** `generate_visual(script, title, lang, out_dir)`
+
+Flow:
+1. `_extract_visual_data()` — LLM call to extract JSON (title, tagline, topics with emoji icons, stats)
+2. Creates 1200×675 PNG (16:9)
+3. Renders card-based layout: rounded-rect cards, CJK font support, warm accent colors
+4. Title bar → topic cards grid → stats bar → footer
+
+**Dependencies:** `Pillow` (already installed)
+
+## Title Translation
+
+When `--lang` differs from source language:
+1. Pipeline calls `_translate_title(title, lang)` from `podcast.py`
+2. Fast LLM call: `max_tokens=100`, `temperature=0.3`
+3. Returns `dir_title` (translated) — used for directory + filenames
+4. Original `title` kept for frontmatter and content
+5. Falls back to original title on translation failure
+
+**Translation prompt:** "將以下英文標題翻譯成{lang_name}，直接輸出翻譯結果"
+
+## chmod Sweep
+
+After all outputs are generated, pipeline runs `chmod -R 777` on the output directory. This ensures Syncthing can sync files between Docker container (hermes user) and phone (uid 1000).

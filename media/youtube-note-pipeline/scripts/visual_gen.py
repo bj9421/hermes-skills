@@ -97,10 +97,13 @@ def _extract_visual_data(script: str, title: str, lang: str = "zh") -> dict:
 def _load_font(size: int, bold: bool = False):
     """Load a CJK-capable font, falling back gracefully."""
     font_paths = [
-        # Noto Sans CJK (common on Linux)
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc" if bold else "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc" if bold else "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-        # Fallback
+        # 芫荽 iansui (Taiwanese traditional Chinese, Klee One derived)
+        "/opt/data/fonts/Iansui-Regular.ttf",
+        # Noto Sans SC (clean, modern CJK)
+        "/opt/data/fonts/NotoSansSC-Bold.ttf" if bold else "/opt/data/fonts/NotoSansSC-Regular.ttf",
+        # WenQuanYi Zen Hei (fallback)
+        "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+        # DejaVu (last resort, no CJK)
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     ]
     for fp in font_paths:
@@ -185,20 +188,20 @@ def generate_visual(script: str, title: str, lang: str = "zh", out_dir: str = ".
             "stats": [],
         }
 
-    # Canvas settings
-    W, H = 1200, 675  # 16:9
-    MARGIN = 40
+    # Canvas settings (Full HD 16:9)
+    W, H = 1920, 1080
+    MARGIN = 60
     img = Image.new("RGB", (W, H), _BG_DARK)
     draw = ImageDraw.Draw(img)
 
-    # Fonts
-    font_title = _load_font(36, bold=True)
-    font_tagline = _load_font(18)
-    font_topic_label = _load_font(20, bold=True)
-    font_topic_detail = _load_font(14)
-    font_stat_value = _load_font(28, bold=True)
-    font_stat_label = _load_font(13)
-    font_icon = _load_font(32)
+    # Fonts (scaled for 1920x1080)
+    font_title = _load_font(56, bold=True)
+    font_tagline = _load_font(28)
+    font_topic_label = _load_font(32, bold=True)
+    font_topic_detail = _load_font(22)
+    font_stat_value = _load_font(44, bold=True)
+    font_stat_label = _load_font(20)
+    font_icon = _load_font(48)
 
     y = MARGIN
 
@@ -224,55 +227,55 @@ def generate_visual(script: str, title: str, lang: str = "zh", out_dir: str = ".
     if topics:
         cols = min(len(topics), 3)
         rows = (len(topics) + cols - 1) // cols
-        card_w = (W - MARGIN * 2 - (cols - 1) * 15) // cols
-        card_h = 120
+        card_w = (W - MARGIN * 2 - (cols - 1) * 20) // cols
+        card_h = 180
         
         for i, topic in enumerate(topics):
             row = i // cols
             col = i % cols
-            cx = MARGIN + col * (card_w + 15)
-            cy = y + row * (card_h + 15)
+            cx = MARGIN + col * (card_w + 20)
+            cy = y + row * (card_h + 20)
             
             # Card background
-            _rounded_rect(draw, [cx, cy, cx + card_w, cy + card_h], 12, _BG_CARD)
+            _rounded_rect(draw, [cx, cy, cx + card_w, cy + card_h], 16, _BG_CARD)
             
             # Icon
             icon = topic.get("icon", "📌")
-            draw.text((cx + 15, cy + 12), icon, font=font_icon, fill=_TEXT_W)
+            draw.text((cx + 20, cy + 18), icon, font=font_icon, fill=_TEXT_W)
             
             # Label
             label = topic.get("label", "")[:8]
-            draw.text((cx + 60, cy + 15), label, font=font_topic_label, fill=_TEXT_W)
+            draw.text((cx + 80, cy + 22), label, font=font_topic_label, fill=_TEXT_W)
             
             # Detail
-            detail = topic.get("detail", "")[:40]
-            detail_lines = _wrap_text(detail, font_topic_detail, card_w - 80, draw)
-            for j, line in enumerate(detail_lines[:2]):
-                draw.text((cx + 60, cy + 45 + j * 20), line, font=font_topic_detail, fill=_TEXT_L)
+            detail = topic.get("detail", "")[:50]
+            detail_lines = _wrap_text(detail, font_topic_detail, card_w - 100, draw)
+            for j, line in enumerate(detail_lines[:3]):
+                draw.text((cx + 80, cy + 65 + j * 28), line, font=font_topic_detail, fill=_TEXT_L)
         
-        y += rows * (card_h + 15) + 20
+        y += rows * (card_h + 20) + 30
 
     # --- Stats bar ---
     stats = data.get("stats", [])
-    if stats and y < H - 120:
+    if stats and y < H - 160:
         # Stats background
-        _rounded_rect(draw, [MARGIN, y, W - MARGIN, y + 90], 10, _BG_CARD)
+        _rounded_rect(draw, [MARGIN, y, W - MARGIN, y + 140], 14, _BG_CARD)
         
-        stat_w = (W - MARGIN * 2 - 30) // max(len(stats), 1)
+        stat_w = (W - MARGIN * 2 - 40) // max(len(stats), 1)
         for i, stat in enumerate(stats[:3]):
-            sx = MARGIN + 20 + i * stat_w
-            sy = y + 12
+            sx = MARGIN + 30 + i * stat_w
+            sy = y + 18
             
             value = stat.get("value", "")[:12]
             draw.text((sx, sy), value, font=font_stat_value, fill=_ACCENT2)
             
-            label = stat.get("label", "")[:20]
-            draw.text((sx, sy + 38), label, font=font_stat_label, fill=_TEXT_DIM)
+            label = stat.get("label", "")[:25]
+            draw.text((sx, sy + 55), label, font=font_stat_label, fill=_TEXT_DIM)
         
-        y += 110
+        y += 160
 
     # --- Footer ---
-    draw.text((MARGIN, H - 30), "Generated by yt2md pipeline", font=font_stat_label, fill=_TEXT_DIM)
+    draw.text((MARGIN, H - 40), "Generated by yt2md pipeline", font=font_stat_label, fill=_TEXT_DIM)
 
     # Save
     safe_title = title.replace("/", "_").replace("\\", "_")[:60]
