@@ -164,7 +164,7 @@ def run_pipeline(source: str, organize: bool = False,
 
     # 6. Save to SQLite
     try:
-        from ..db.search import NoteDB
+        from ..db.models import NoteDB
         db = NoteDB()
         db.add_note(
             title=title,

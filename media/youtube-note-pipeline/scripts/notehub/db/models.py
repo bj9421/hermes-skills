@@ -6,7 +6,7 @@ import sqlite3
 import sys
 from datetime import datetime
 
-DB_DIR = os.path.expanduser("~/.notehub")
+DB_DIR = os.environ.get("NOTEBOOK_DB_DIR", "/opt/data/.notehub")
 DB_PATH = os.path.join(DB_DIR, "notes.db")
 
 
