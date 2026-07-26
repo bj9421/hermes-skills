@@ -147,13 +147,13 @@
     "created_at": "2026-07-09T18:37:31.164418+00:00",
     "created_by": null,
     "last_patched_at": "2026-07-17T08:47:41.048678+00:00",
-    "last_used_at": "2026-07-26T01:05:46.978048+00:00",
-    "last_viewed_at": "2026-07-26T01:05:46.949837+00:00",
+    "last_used_at": "2026-07-26T13:13:31.701806+00:00",
+    "last_viewed_at": "2026-07-26T13:13:31.688741+00:00",
     "patch_count": 27,
     "pinned": false,
     "state": "active",
-    "use_count": 60,
-    "view_count": 60
+    "use_count": 62,
+    "view_count": 62
   },
   "baoyu-infographic": {
     "archived_at": null,
@@ -1135,13 +1135,13 @@
     "created_at": "2026-07-26T11:18:34.023059+00:00",
     "created_by": null,
     "last_patched_at": null,
-    "last_used_at": "2026-07-26T12:57:13.214122+00:00",
-    "last_viewed_at": "2026-07-26T12:57:13.201254+00:00",
+    "last_used_at": "2026-07-26T13:57:23.833798+00:00",
+    "last_viewed_at": "2026-07-26T13:57:23.821443+00:00",
     "patch_count": 0,
     "pinned": false,
     "state": "active",
-    "use_count": 7,
-    "view_count": 7
+    "use_count": 10,
+    "view_count": 10
   },
   "notion": {
     "archived_at": null,
@@ -1732,14 +1732,14 @@
     "archived_at": null,
     "created_at": "2026-07-07T04:37:44.994692+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-07-26T12:58:37.499325+00:00",
-    "last_used_at": "2026-07-26T12:57:17.986678+00:00",
-    "last_viewed_at": "2026-07-26T12:57:17.975126+00:00",
-    "patch_count": 70,
+    "last_patched_at": "2026-07-26T13:58:12.195547+00:00",
+    "last_used_at": "2026-07-26T13:57:32.139005+00:00",
+    "last_viewed_at": "2026-07-26T13:57:32.127819+00:00",
+    "patch_count": 74,
     "pinned": false,
     "state": "active",
-    "use_count": 56,
-    "view_count": 56
+    "use_count": 59,
+    "view_count": 59
   },
   "yuanbao": {
     "archived_at": null,

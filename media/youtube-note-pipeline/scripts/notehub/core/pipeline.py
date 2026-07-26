@@ -187,21 +187,34 @@ def run_pipeline(source: str, organize: bool = False,
     ppt_out = None
     vis_out = None
 
-    # Podcast
+    # Podcast — directly use podcast.py's produce_podcast (shared, no wrapper)
     if podcast:
         try:
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            parent_dir = os.path.dirname(script_dir)
-            if parent_dir not in sys.path:
-                sys.path.insert(0, parent_dir)
-            from ..generators.podcast import produce_podcast
-            script_path, podcast_out_dir = produce_podcast(
-                content_for_gen, title, source_id, podcast, lang,
-                out_dir, voice_a, voice_b
+            _scripts_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            if _scripts_dir not in sys.path:
+                sys.path.insert(0, _scripts_dir)
+            from podcast import produce_podcast
+            mp3_path = produce_podcast(
+                transcript=content_for_gen,
+                title=title,
+                url=source,
+                lang=lang,
+                mode=podcast,
+                voice_a=voice_a or "zh-TW-HsiaoChenNeural",
+                voice_b=voice_b or "zh-TW-YunJheNeural",
+                out_dir=out_dir,
+                video_id=source_id,
             )
-            print(f"[INFO] Podcast generated: {podcast_out_dir}", file=sys.stderr)
+            if mp3_path:
+                podcast_out_dir = os.path.dirname(mp3_path)
+                script_path = os.path.join(podcast_out_dir, "script.md")
+                print(f"[INFO] Podcast generated: {mp3_path}", file=sys.stderr)
+            else:
+                print("[ERROR] Podcast generation returned None", file=sys.stderr)
         except Exception as e:
             print(f"[ERROR] Podcast failed: {e}", file=sys.stderr)
+            import traceback
+            traceback.print_exc(file=sys.stderr)
 
     # PPT
     if ppt:

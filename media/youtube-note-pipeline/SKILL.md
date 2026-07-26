@@ -237,9 +237,13 @@ uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --podcast dual --voice-
 5. **LLM degeneration (repetition loops)**: Small models (especially `meta/llama-3.1-8b-instruct`) produce infinite repetition on Chinese text — same sentence repeated 100+ times, inflating script from ~4KB to 28KB+ and MP3 from ~5MB to 34MB+. Mitigations already built in: `frequency_penalty=0.3`, `presence_penalty=0.2`, system prompt anti-repetition instruction, `_dedup_script()` post-processing that truncates at 3rd repeat. If this still happens, the model is too weak — upgrade via `NVIDIA_ORGANIZE_MODEL` env var. Tested: `deepseek-ai/deepseek-v4-flash` (284B MoE) handles Chinese well with no degeneration.
 6. **`uv run yt-dlp` fails in Docker**: The `_get_video_title()` function uses `shutil.which("yt-dlp") or "/opt/data/.venv/bin/yt-dlp"` directly instead of `uv run yt-dlp`, because `uv` can't discover Python installations in the Docker container (permission denied on `/root/.local/share/uv/python`). If title extraction fails, check that yt-dlp is installed in the venv.
 7. **NVIDIA API 503 ResourceExhausted**: When running `--podcast dual --ppt --visual` together, all three modules call the same NVIDIA API endpoint sequentially. If the worker pool is already saturated (e.g. from a previous heavy run), later calls get `503: Worker local total request limit reached (48/48)`. The podcast module handles this gracefully (falls back to default data), but PPT/visual may produce sparse output. **Mitigation:** Run `--podcast` first, wait a few minutes, then add `--ppt --visual` in a second pass if 503 occurs.
-8. **Edge-TTS intermittent `NoAudioReceived`**: Edge-TTS randomly fails with `NoAudioReceived` on longer text segments (>200 chars). Not a rate limit — appears to be a connection/timeout issue. **Fix:** Split script into paragraphs ≤200 chars each, `asyncio.sleep(2-3)` between segments, 3 retries per segment with backoff. Combine with pydub `AudioSegment.from_mp3()` + `+=` concatenation. Corrupted segments (0-byte or invalid MP3) should be skipped gracefully.
+8. **Edge-TTS intermittent `NoAudioReceived`**: Edge-TTS randomly fails with `NoAudioReceived` on longer text segments (>200 chars). Not a rate limit — appears to be a connection/timeout issue. **Fix:** Split script into paragraphs ≤200 chars each, `asyncio.sleep(2-3)` between segments, 3 retries per segment with backoff. Combine with pydub `AudioSegment.from_mp3()` + `+=` concatenation. Corrupted segments (0-byte or invalid MP3) should be skipped gracefully. **ALWAYS use `tempfile.TemporaryDirectory` for segment files** — do NOT save `_seg_*.mp3` to the output/obsidian directory. Only the final merged `_podcast.mp3` should be saved. User preference: "seg音檔不要存obsidian".
 9. **Git snapshot before refactoring**: Always `git add -A && git commit -m "snapshot: pre-<feature>"` before multi-file refactoring. Without a commit, there is no rollback point if the refactor breaks something. This is a general workflow rule, not specific to this pipeline.
-10. **Non-YouTube sources (Bilibili, Vimeo, etc.)**: YouTube extractor only works with youtube.com URLs. For other video platforms, use yt-dlp + Groq Whisper:
+10. **NEVER delete/move user's completed work without confirmation**: On 2026-07-26, agent moved completed podcast folders (牙結石, 更年期後肌肉流失, Rick Astley) to archive/ thinking they were "test files". User was upset: "你把其他作好的刪除作什麼". **Rule:** Before moving or deleting any file/folder, confirm with user which are completed works vs test artifacts. When in doubt, ask first.
+
+11. **Segment files should NOT be saved to obsidian vault**: User explicitly said "seg音檔不要存obsidian". Use `tempfile.TemporaryDirectory` for `_seg_*.mp3` files during TTS generation. Only the final merged `_podcast.mp3` and `script.md` should be saved to the output directory.
+
+12. **Non-YouTube sources (Bilibili, Vimeo, etc.)**: YouTube extractor only works with youtube.com URLs. For other video platforms, use yt-dlp + Groq Whisper:
 
     ```bash
     # Step 1: yt-dlp download audio (supports Bilibili, Vimeo, 1000+ sites)
@@ -261,7 +265,9 @@ uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --podcast dual --voice-
 
     **⚠️ Common mistake:** Do NOT manually scrape web content for video platforms — always use yt-dlp + Whisper. Manual scraping loses audio tone, timing, and nuance that Whisper captures. The user explicitly called this out: "所以step1-5也沒用groq whisper啊".
 
-    **Groq API key:** `GROQ_API_KEY` in `/opt/data/.env`. Free tier, no credit card. Install: `uv pip install groq`.
+    **Setup:** `uv pip install groq` (tested with groq==1.6.0). **Groq API key:** `GROQ_API_KEY` in `/opt/data/.env`. Free tier, no credit card.
+
+    **Verified output** (2026-07-26, Bilibili BV1Gv7V6BEjL, 12 min Chinese): yt-dlp downloaded 12.5MB m4a → Groq Whisper transcribed 4510 chars in ~10s → notehub generated 34-line script + 266s MP3 (1MB). Full pipeline under 5 minutes.
 
 ## PPT Mode (`--ppt`) — PowerPoint Presentation
 

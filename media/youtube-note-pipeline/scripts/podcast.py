@@ -13,6 +13,7 @@ Usage (imported by yt2md_pipeline.py):
 
 import os
 import sys
+import time
 import asyncio
 import tempfile
 from pathlib import Path
