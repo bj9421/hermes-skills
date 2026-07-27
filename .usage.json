@@ -784,13 +784,13 @@
     "created_at": "2026-07-10T12:39:38.045007+00:00",
     "created_by": "agent",
     "last_patched_at": "2026-07-25T04:17:20.730837+00:00",
-    "last_used_at": "2026-07-26T01:06:40.591146+00:00",
-    "last_viewed_at": "2026-07-26T01:06:40.577715+00:00",
+    "last_used_at": "2026-07-27T13:00:53.379345+00:00",
+    "last_viewed_at": "2026-07-27T13:00:53.367045+00:00",
     "patch_count": 42,
     "pinned": false,
     "state": "active",
-    "use_count": 65,
-    "view_count": 65
+    "use_count": 66,
+    "view_count": 66
   },
   "hermes-dashboard-troubleshooting": {
     "archived_at": null,
