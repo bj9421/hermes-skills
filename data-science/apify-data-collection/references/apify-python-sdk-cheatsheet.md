@@ -9,6 +9,10 @@ from apify_client import ApifyClient
 
 client = ApifyClient(os.environ["APIFY_TOKEN"])
 approved_budget = Decimal(os.environ["APIFY_MAX_TOTAL_CHARGE_USD"])
+if not approved_budget.is_finite() or approved_budget <= 0:
+    raise ValueError("APIFY_MAX_TOTAL_CHARGE_USD must be positive")
+if os.environ.get("APIFY_APPROVE_PAID_RUN") != "yes":
+    raise RuntimeError("Set APIFY_APPROVE_PAID_RUN=yes after approval")
 ```
 
 ## Run an Actor

@@ -49,6 +49,10 @@ from apify_client import ApifyClient
 client = ApifyClient(token)
 ACTOR_ID = "username/actor-name"
 approved_budget = Decimal(os.environ["APIFY_MAX_TOTAL_CHARGE_USD"])
+if not approved_budget.is_finite() or approved_budget <= 0:
+    raise ValueError("APIFY_MAX_TOTAL_CHARGE_USD must be positive")
+if os.environ.get("APIFY_APPROVE_PAID_RUN") != "yes":
+    raise RuntimeError("Set APIFY_APPROVE_PAID_RUN=yes after approval")
 
 run = client.actor(ACTOR_ID).call(run_input={
     "param1": "value1",
@@ -56,8 +60,7 @@ run = client.actor(ACTOR_ID).call(run_input={
 }, max_items=10, max_total_charge_usd=approved_budget)
 
 if run.status != "SUCCEEDED":
-    print(f"Actor failed: {run.status}")
-    sys.exit(1)
+    raise RuntimeError(f"Actor failed: {run.status}")
 ```
 
 ### Retrieve Results
@@ -86,10 +89,6 @@ running and get approval for the run budget.
 ### Search X Posts
 
 ```python
-import os
-from decimal import Decimal
-
-approved_budget = Decimal(os.environ["APIFY_MAX_TOTAL_CHARGE_USD"])
 run = client.actor("xquik/x-tweet-scraper").call(
     run_input={
         "mode": "search",
@@ -107,10 +106,9 @@ run = client.actor("xquik/x-tweet-scraper").call(
 ### Compare Follower Overlap
 
 ```python
-approved_budget = Decimal(os.environ["APIFY_MAX_TOTAL_CHARGE_USD"])
 run = client.actor("xquik/x-follower-scraper").call(
     run_input={
-        "usernames": ["account_one", "account_two"],
+        "twitterHandles": ["account_one", "account_two"],
         "relation": "followers",
         "maxItems": 20,
         "maxItemsPerTarget": 10,
@@ -122,7 +120,9 @@ run = client.actor("xquik/x-follower-scraper").call(
 )
 ```
 
-`maxItems` limits Actor output. `max_total_charge_usd` caps the whole run.
+For tweet searches, `maxItems` caps the whole run across all search terms.
+For follower runs, `maxItemsPerTarget` can balance explicit targets.
+`max_total_charge_usd` caps the whole paid run.
 
 ## Common Pitfalls
 
@@ -148,34 +148,73 @@ An Apify actor may return fewer results than the number of input items. Check:
 
 Confirm that the launcher exports `APIFY_TOKEN`. Never log its value.
 
-## Example: Instagram Location Stats Scraper
+## ⚠️ Cost Estimation Pitfall
 
-This pattern was used for collecting Instagram location media counts:
+**Always check the Actor's Pricing tab before estimating costs.** Different actors on the same platform can have wildly different pricing models:
+
+| Actor | Pricing Model | Free Tier Cost (50 locations/day) |
+|---|---|---|
+| `louisdeconinck/instagram-location-stats-scraper` | $0.10 start + $10/1,000 results | ~$15/month ❌ |
+| `apify/instagram-scraper` (official) | $2.70/1,000 results (free plan) | ~$4/month ✅ |
+
+**Rule:** Before using any Actor, visit `https://apify.com/{actor-slug}/pricing` and check:
+1. Is it Pay-Per-Event (PPE) or Pay-Per-Usage (compute units)?
+2. What's the per-result cost on the **Free** plan tier?
+3. Is there an Actor start fee on top of per-result?
+
+Multiply: `locations × days × cost_per_result + (start_fee × days)` = monthly estimate.
+
+## Example: Instagram Location Scraper (Official)
+
+Uses `apify/instagram-scraper` with `searchType: "place"` to find locations by name.
 
 ```python
 from apify_client import ApifyClient
+import time
 
-ACTOR_ID = "louisdeconinck/instagram-location-stats-scraper"
+ACTOR_ID = "apify/instagram-scraper"
 
+def search_place(client, location_name):
+    """Search for a place by name, return top result."""
+    run = client.actor(ACTOR_ID).call(
+        run_input={
+            "search": location_name,
+            "searchType": "place",
+            "searchLimit": 1,
+            "resultsType": "details",  # metadata only, no posts
+        },
+        max_items=1,
+        max_total_charge_usd=approved_budget,
+    )
+    if run.status != "SUCCEEDED":
+        return None
+    dataset = client.dataset(run.default_dataset_id)
+    items = list(dataset.iterate_items())
+    return items[0] if items else None
+
+# Usage: one API call per location (~56s each)
 client = ApifyClient(token)
-run = client.actor(ACTOR_ID).call(
-    run_input={"locations": location_ids},  # list of IG location IDs
-    max_items=len(location_ids),
-    max_total_charge_usd=approved_budget,
-)
-
-dataset = client.dataset(run.default_dataset_id)
-items = list(dataset.iterate_items())
-
-for item in items:
-    lid = str(item.get("location_id", ""))
-    mc = item.get("media_count")
-    # Save to SQLite...
+for name in location_names:
+    item = search_place(client, name)
+    if item:
+        mc = item.get("media_count")  # total posts at this location
+        ig_id = item.get("location_id")  # Instagram's numeric ID
+    time.sleep(1)  # rate limit courtesy
 ```
+
+### Key Details
+- **Input:** `search` (string, one location name), `searchType: "place"`, `searchLimit: 1`, `resultsType: "details"`
+- **Output fields:** `name`, `media_count`, `category`, `location_id` (IG numeric), `lat`, `lng`, `location_address`, `location_city`
+- **Limitation:** Each search is a separate API call (~56s). Cannot batch multiple location names in one call.
+- **When location IDs are NOT Instagram IDs** (e.g., Tourism Bureau `Attraction_...` format), must use search-by-name — cannot construct IG URLs.
+
+## Deprecated: Community Instagram Location Stats Scraper
+
+`louisdeconinck/instagram-location-stats-scraper` — 10× more expensive than official, less maintained (12 monthly users vs 37K). Used batch `locations: [id_array]` input. **No longer recommended.**
 
 ## References
 
 - `references/apify-python-sdk-cheatsheet.md` — Quick reference for common Apify SDK operations
-- `references/apify-actor-instagram-location-stats.md` — Details on the Instagram location scraper actor used in this project
+- `references/apify-actor-instagram-location-stats.md` — Details on the old community Instagram location scraper actor (deprecated)
 
 Xquik is an independent third-party service. Not affiliated with X Corp. "Twitter" and "X" are trademarks of X Corp.
