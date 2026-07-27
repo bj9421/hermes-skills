@@ -9,35 +9,74 @@ Taiwan Tourism Bureau open data: data.gov.tw/dataset/7777（景點 Attractions�
 1. 保留現有 28 個重點景點（中正、九份、日月潭等熱門打卡點）
 2. 從 Tourism Bureau 資料中選取 image_count > 0 的景點，依 image_count 降序排列
 3. 先確保每個縣市至少有 1-2 個代表（避免單一城市過度集中）
-4. 剩余數量以最 image_count 的補充，直到總數達 100
+4. 剩餘數量以 image_count 最高的補充，直到總數達 100
 
-## Apify 成本計算
-- Actor: louisdeconinck/instagram-location-stats-scraper
-- 定價模式：Pay per event（非按 CU 計費）
-  - Actor start: $0.10 / 1000 runs = $0.0001/run
-  - Result (每筆 location): $0.01 / 1000 = $0.00001/location
-- 假設一次跑 100 個 locations + 平台使用（約 1GB x 1min ≈ 0.017 CU @ $0.2/CU ≈ $0.0034）
-- 單次運行總成本 ≈ $0.0001*1 + $0.00001*100 + $0.0034 ≈ $0.0045
-- 每月 30 次 × $0.0045 ≈ $0.135（遠低於免費額度 $5）
+## Apify 成本計算（2026-07 更新：官方版）
+- **Actor:** `apify/instagram-scraper`（官方，非社群版）
+- **定價：** $2.70 / 1,000 results（Free plan）。每次搜尋 1 個地點 = 1 result。
+- 50 locations/day: $0.135/天 = **$4.05/月**（免費 $5 額度內 ✅）
+- ⚠️ **社群版** `louisdeconinck/instagram-location-stats-scraper` 貴 4 倍：$10/1,000 + $0.10/start，**不要用**
+
+## DB Schema
+```
+locations (primary key: location_id TEXT — 觀光署 Attraction_* 格式)
+  location_id, name, category, lat, lng
+
+location_stats (daily snapshots)
+  id INTEGER PK, location_id TEXT FK, snapshot_date TEXT, media_count INTEGER,
+  name TEXT, category TEXT, city TEXT
+```
+
+⚠️ `locations` 表**沒有** `last_checked_at` 欄位。不要寫 UPDATE 語句去更新它。
+
+## 🔴 SQLite 時區陷阱（重要）
+SQLite 的 `datetime('now')` 返回 **UTC**，而 Python `datetime.now()` 返回**本地時間（UTC+8）**。
+
+```python
+# ❌ 錯誤：兩者不同步
+snapshot_date = datetime.now().strftime("%Y-%m-%d")  # 本地時間
+c.execute("INSERT ... VALUES (?, ...)", (snapshot_date,))  # 本地日期
+c.execute("SELECT ... WHERE snapshot_date = datetime('now')")  # UTC 日期 → 查不到！
+```
+
+**正確做法：** 統一用 Python 的本地時間，SQL 查詢也用 Python 變數：
+```python
+snapshot_date = datetime.now().strftime("%Y-%m-%d")
+c.execute("SELECT ... WHERE snapshot_date = ?", (snapshot_date,))  # ✅ 一致
+```
+
+## 冪等性設計（重跑安全）
+每日脚本應檢查「今天是否已抓過」，避免重複花 Apify 額度：
+```python
+c.execute("SELECT location_id FROM location_stats WHERE snapshot_date = ?", (snapshot_date,))
+already_done = {row[0] for row in c.fetchall()}
+for lid, name in locations:
+    if lid in already_done:
+        skipped += 1
+        continue
+    # ... fetch and save
+```
+
+## 搜尋限制
+- 地點 ID 是觀光署格式（`Attraction_...`），不是 Instagram ID
+- **無法**構造 Instagram location URL，必須用 `search` 模式按名稱搜尋
+- 每次搜尋 ~56 秒，50 個景點 ≈ 47 分鐘
+- 無法批次搜尋多個地名（API 只接受單一搜尋字串）
+- 部分小景點 IG 上無地標頁面（如社區博物館、季節性花季），會搜不到
 
 ## SQLite 操作注意
-- DROP TABLE 會永久删除表內容，執行前建議先備份或 rename
-- 正確做法：
-  ```sql
-  ALTER TABLE locations_old RENAME TO locations_backup;
-  CREATE TABLE locations_new (...);
-  INSERT INTO locations_new SELECT ...;
-  DROP TABLE locations_old;
-  ALTER TABLE locations_new RENAME TO locations;
-  ```
-- 或直接使用 INSERT OR REPLACE 在臨時表上操作後再替換
+DROP TABLE 為 destructive 操作。建議 rename 舊表再建新表：
+```sql
+ALTER TABLE locations RENAME TO locations_backup;
+CREATE TABLE locations_new (...);
+INSERT INTO locations_new SELECT ...;
+DROP TABLE locations_backup;
+ALTER TABLE locations_new RENAME TO locations;
+```
 
 ## 常見問題
-### Q: 為什麼有些景點的 city 字段是空的？
-A: 部分 Tourism Bureau 資料中的 city 字段可能為空或格式不一致（如「臺北市」vs "台北市"），建議使用 COALESCE(city, 'Unknown') 處理。
+### Q: 為什麼有些景點搜不到？
+A: IG 上沒有對應地標頁面。常見於：小型藝文空間、社區博物館、季節性活動、離島小景點。處理方式：替換成同縣市其他景點，或簡化搜尋關鍵字。
 
 ### Q: category_codes 是什麼格式？
-A: JSON array，例如 `["文化","古蹟"]`。解析時需用 json.loads(cls)[0] 取第一個類別。
-
-### Q: Instagram location ID 和 taiwan_attractions 的 id 格式不同怎麼辦？
-A: IG location ID 是數字（如 236326709），而 taiwan_attractions id 是字串格式（如 Attraction_A25000000E_000013）。在 locations 表中用 taiwan_attractions 的 id 作為 primary key 即可。
+A: JSON array，例如 `["文化","古蹟"]`。解析時需用 `json.loads(cls)[0]` 取第一個類別。

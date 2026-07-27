@@ -36,8 +36,19 @@ description: 擴充 IG 追蹤地點至 100+ 個，使用 Tourism Bureau 官方�
 - 每次搜尋 ~56 秒，50 個景點 ≈ 47 分鐘
 - 無法批次搜尋多個地名（API 只接受單一搜尋字串）
 
+## 每日脚本關鍵陷阱
+
+### 🔴 SQLite 時區不一致
+SQLite `datetime('now')` = UTC，Python `datetime.now()` = 本地時間（UTC+8）。INSERT 用本地日期、SELECT 用 `datetime('now')` 會查不到資料。**統一用 Python 變數傳入 SQL 參數。**
+
+### 冪等性設計
+每次跑之前先查 `location_stats WHERE snapshot_date = ?`（用 Python 本地日期），已存在的跳過不重抓，省 Apify 額度。
+
+### DB Schema 注意
+`locations` 表**沒有** `last_checked_at` 欄位。不要寫 UPDATE 去更新它。
+
 ## 安全注意
 DROP TABLE 為 destructive 操作，執行前需使用者明確確認。建議先 rename 保留舊表再建新表。
 
 ## References
-- `references/ig-location-expansion.md`：技術細節（待建立）
+- `references/ig-location-expansion.md`：成本計算、DB schema、時區陷阱、搜尋限制

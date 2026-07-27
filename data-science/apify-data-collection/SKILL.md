@@ -102,6 +102,22 @@ An Apify actor may return fewer results than the number of input items. Check:
 
 The `.env` file may be in a different location than expected. Always check both `.env` file and `os.environ`.
 
+### 4. SQLite Timezone Mismatch (Apify + SQLite pipelines)
+
+SQLite's `datetime('now')` returns **UTC**, while Python's `datetime.now()` returns **local time**. If you INSERT records using a Python-local date but query with `datetime('now')`, you won't find them.
+
+```python
+# ❌ WRONG — different dates
+snapshot_date = datetime.now().strftime("%Y-%m-%d")  # local: 2026-07-28
+c.execute("INSERT INTO stats (date) VALUES (?)", (snapshot_date,))
+c.execute("SELECT * FROM stats WHERE date = datetime('now')")  # UTC: 2026-07-27 → 0 rows!
+
+# ✅ CORRECT — use Python variable consistently
+snapshot_date = datetime.now().strftime("%Y-%m-%d")
+c.execute("INSERT INTO stats (date) VALUES (?)", (snapshot_date,))
+c.execute("SELECT * FROM stats WHERE date = ?", (snapshot_date,))  # ✅
+```
+
 ## ⚠️ Cost Estimation Pitfall
 
 **Always check the Actor's Pricing tab before estimating costs.** Different actors on the same platform can have wildly different pricing models:
