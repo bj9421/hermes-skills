@@ -255,7 +255,7 @@ def _generate_agnes_illustration(script: str, title: str, lang: str = "zh", out_
     payload = _json.dumps({
         "model": "agnes-image-2.1-flash",
         "prompt": image_prompt,
-        "size": "1K",
+        "size": "2K",
         "ratio": "16:9",
         "extra_body": {
             "response_format": "url"
