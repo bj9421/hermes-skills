@@ -186,13 +186,13 @@
     "created_at": "2026-07-23T20:59:25.636437+00:00",
     "created_by": null,
     "last_patched_at": "2026-07-24T11:56:15.492717+00:00",
-    "last_used_at": "2026-07-24T11:43:09.019546+00:00",
-    "last_viewed_at": "2026-07-24T11:43:09.008475+00:00",
+    "last_used_at": "2026-07-27T14:59:56.432719+00:00",
+    "last_viewed_at": "2026-07-27T14:59:56.421153+00:00",
     "patch_count": 7,
     "pinned": false,
     "state": "active",
-    "use_count": 3,
-    "view_count": 3
+    "use_count": 5,
+    "view_count": 5
   },
   "blog-trending-sop": {
     "archived_at": null,
@@ -934,6 +934,19 @@
     "state": "active",
     "use_count": 2,
     "view_count": 2
+  },
+  "ig-location-expansion": {
+    "archived_at": null,
+    "created_at": "2026-07-27T15:00:05.874170+00:00",
+    "created_by": "agent",
+    "last_patched_at": "2026-07-27T15:00:38.189393+00:00",
+    "last_used_at": null,
+    "last_viewed_at": null,
+    "patch_count": 2,
+    "pinned": false,
+    "state": "active",
+    "use_count": 0,
+    "view_count": 0
   },
   "imessage": {
     "archived_at": null,
