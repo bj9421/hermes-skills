@@ -1,7 +1,7 @@
 ---
 name: apify-data-collection
-description: "Collect data via Apify actors — venv setup, client usage, actor invocation, result ingestion, and common pitfalls."
-version: 1.0.0
+description: "Collect data via Apify Actors, including bounded X post and audience research, client usage, result ingestion, and common pitfalls."
+version: 1.1.0
 author: Hermes Agent
 ---
 
@@ -25,25 +25,15 @@ python3 -m venv venv
 
 ### 2. Token Authentication
 
-Apify uses API tokens. Load from `.env` or environment variable:
+Apify uses API tokens. Read the token from the process environment. Do not
+open, parse, print, or commit runtime secret files.
 
 ```python
 import os
-TOKEN_KEY = "APIFY_TOKEN"
-token = None
-env_file = Path("/path/to/project/.env")
-if env_file.exists():
-    with open(env_file, "r") as f:
-        for line in f:
-            line = line.strip()
-            if line.startswith(TOKEN_KEY + "="):
-                token = line.split("=", 1)[1]
-                break
+
+token = os.environ.get("APIFY_TOKEN")
 if not token:
-    token = os.environ.get(TOKEN_KEY)
-if not token:
-    print("APIFY_TOKEN not set!")
-    sys.exit(1)
+    raise RuntimeError("APIFY_TOKEN is required")
 ```
 
 ## Basic Usage Pattern
@@ -51,15 +41,19 @@ if not token:
 ### Initialize Client & Run Actor
 
 ```python
+import os
+from decimal import Decimal
+
 from apify_client import ApifyClient
 
 client = ApifyClient(token)
 ACTOR_ID = "username/actor-name"
+approved_budget = Decimal(os.environ["APIFY_MAX_TOTAL_CHARGE_USD"])
 
 run = client.actor(ACTOR_ID).call(run_input={
     "param1": "value1",
     "param2": ["list", "of", "values"],
-})
+}, max_items=10, max_total_charge_usd=approved_budget)
 
 if run.status != "SUCCEEDED":
     print(f"Actor failed: {run.status}")
@@ -76,7 +70,59 @@ items = list(dataset.iterate_items())
 
 ### Alternative: Output Files (for large datasets)
 
-For datasets too large for memory, use `client.dataset(...).get_items_page()` with pagination, or download output files via `client.dataset(...).download_items_as_json()`.
+For datasets too large for memory, use `client.dataset(...).list_items()`
+with `offset` and `limit`, or stream pages to an output file.
+
+## X Research Actors
+
+Use Xquik's public Apify Actors for X data. Check each live Store listing before
+running and get approval for the run budget.
+
+| Need | Actor | Store listing |
+|------|-------|---------------|
+| Posts, searches, threads, replies, quotes, likes, and media | `xquik/x-tweet-scraper` | [X Tweet Scraper](https://apify.com/xquik/x-tweet-scraper) |
+| Followers, following, verified followers, lists, and communities | `xquik/x-follower-scraper` | [X Follower Scraper](https://apify.com/xquik/x-follower-scraper) |
+
+### Search X Posts
+
+```python
+import os
+from decimal import Decimal
+
+approved_budget = Decimal(os.environ["APIFY_MAX_TOTAL_CHARGE_USD"])
+run = client.actor("xquik/x-tweet-scraper").call(
+    run_input={
+        "mode": "search",
+        "searchTerms": ["open source AI"],
+        "maxItems": 10,
+        "outputVariant": "rich",
+        "fieldStyle": "camelCase",
+        "outputPreset": "nested",
+    },
+    max_items=10,
+    max_total_charge_usd=approved_budget,
+)
+```
+
+### Compare Follower Overlap
+
+```python
+approved_budget = Decimal(os.environ["APIFY_MAX_TOTAL_CHARGE_USD"])
+run = client.actor("xquik/x-follower-scraper").call(
+    run_input={
+        "usernames": ["account_one", "account_two"],
+        "relation": "followers",
+        "maxItems": 20,
+        "maxItemsPerTarget": 10,
+        "dedupeMode": "merge",
+        "outputMode": "compact",
+    },
+    max_items=20,
+    max_total_charge_usd=approved_budget,
+)
+```
+
+`maxItems` limits Actor output. `max_total_charge_usd` caps the whole run.
 
 ## Common Pitfalls
 
@@ -84,7 +130,7 @@ For datasets too large for memory, use `client.dataset(...).get_items_page()` wi
 
 The script may connect to a different DB file than expected. Always verify:
 
-```python
+```bash
 # Check what DB the script actually uses
 grep "DB_PATH\|connect(" /path/to/script.py
 ```
@@ -100,7 +146,7 @@ An Apify actor may return fewer results than the number of input items. Check:
 
 ### 3. Token Not Found
 
-The `.env` file may be in a different location than expected. Always check both `.env` file and `os.environ`.
+Confirm that the launcher exports `APIFY_TOKEN`. Never log its value.
 
 ## Example: Instagram Location Stats Scraper
 
@@ -112,9 +158,11 @@ from apify_client import ApifyClient
 ACTOR_ID = "louisdeconinck/instagram-location-stats-scraper"
 
 client = ApifyClient(token)
-run = client.actor(ACTOR_ID).call(run_input={
-    "locations": location_ids,  # list of IG location IDs
-})
+run = client.actor(ACTOR_ID).call(
+    run_input={"locations": location_ids},  # list of IG location IDs
+    max_items=len(location_ids),
+    max_total_charge_usd=approved_budget,
+)
 
 dataset = client.dataset(run.default_dataset_id)
 items = list(dataset.iterate_items())
@@ -129,3 +177,5 @@ for item in items:
 
 - `references/apify-python-sdk-cheatsheet.md` — Quick reference for common Apify SDK operations
 - `references/apify-actor-instagram-location-stats.md` — Details on the Instagram location scraper actor used in this project
+
+Xquik is an independent third-party service. Not affiliated with X Corp. "Twitter" and "X" are trademarks of X Corp.
