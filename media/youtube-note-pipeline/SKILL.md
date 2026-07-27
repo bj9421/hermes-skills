@@ -292,27 +292,23 @@ uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --podcast dual --ppt --
 
 **Dependencies:** `python-pptx` (install: `uv pip install python-pptx`)
 
-## Visual Summary Mode (`--visual`) — NotebookLM-style Image + AI Illustration
+## Visual Summary Mode (`--visual`) — NotebookLM-style Image
 
-> ✅ **Implemented** — `--visual` flag generates **two images**: an AI illustration and a Pillow summary card.
+> ✅ **Implemented** — `--visual` flag generates a visual overview image.
 
 ```bash
 # Visual summary only
 uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --visual --lang zh
 ```
 
-**Output (two files):**
-1. `{dir_title}_ai.png` — AI-generated illustration via **Agnes Image 2.1 Flash** (cinematic style, 16:9, 1K resolution). LLM auto-generates an English prompt from the script content.
-2. `{dir_title}_summary.png` — Pillow-rendered summary card (1920×1080 Full HD, dark theme, card-based layout with icons, topics, and stats).
+**Output:** `{dir_title}_summary.png` (1920×1080 Full HD, dark theme, card-based layout with icons, topics, and stats). Font sizes large for elderly readability — **minimum 36px, all bold**: title 80px, tagline 42px, card label 48px, card detail 36px, stat value 72px, stat label 36px, icon 60px. Card height 260px, card gap 24px, stats bar 200px. Canvas `MARGIN = 60`.
 
 **How it works:**
-1. LLM extracts visual data (title, tagline, topics with icons, key stats) — for Pillow card
-2. LLM generates an English image prompt from the script — for Agnes AI illustration
-3. Agnes API (`agnes-image-2.1-flash`) generates the AI illustration (free, ~30-120s)
-4. `visual_gen.py` renders the Pillow summary card with rounded-rect cards, CJK font support, warm accent colors
-5. Both images saved to output directory, `chmod 777`
+1. LLM extracts visual data (title, tagline, topics with icons, key stats)
+2. `visual_gen.py` renders a Pillow image with rounded-rect cards, CJK font support, warm accent colors
+3. Uses `deepseek-ai/deepseek-v4-flash` for extraction
 
-**Dependencies:** `Pillow` (already installed), `AGNES_API_KEY` in `/opt/data/.env` (for AI illustration — skipped if missing)
+**Dependencies:** `Pillow` (already installed)
 
 ### Visual Pitfalls
 
