@@ -187,6 +187,121 @@ def _rate_limit():
     _last_api_call = time.time()
 
 
+# ---------------------------------------------------------------------------
+# Agnes AI illustration generation
+# ---------------------------------------------------------------------------
+def _load_env_key(key: str) -> str:
+    """Load an API key from env var, falling back to .env file."""
+    val = os.environ.get(key, "")
+    if val:
+        return val
+    env_path = "/opt/data/.env"
+    if os.path.exists(env_path):
+        with open(env_path) as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith(f"{key}="):
+                    return line.split("=", 1)[1].strip().strip('"').strip("'")
+    return ""
+
+
+def _generate_agnes_illustration(script: str, title: str, lang: str = "zh", out_dir: str = ".") -> str | None:
+    """Generate an AI illustration via Agnes Image 2.1 Flash.
+    
+    Returns path to the saved .png file, or None on failure.
+    The illustration is saved alongside the Pillow card with suffix '_ai'.
+    """
+    import urllib.request
+    import time as _time
+
+    api_key = _load_env_key("AGNES_API_KEY")
+    if not api_key:
+        print("[WARN] AGNES_API_KEY not found, skipping AI illustration", file=sys.stderr)
+        return None
+
+    # Step 1: Use LLM to generate an image prompt from the script
+    client_info = _get_llm_client()
+    if not client_info:
+        print("[WARN] LLM client unavailable for image prompt, skipping AI illustration", file=sys.stderr)
+        return None
+    client, _ = client_info
+
+    lang_hint = "繁體中文" if lang in ("zh", "zh-TW") else "English"
+    prompt_for_llm = f"""根據以下口播腳本，生成一段簡潔的英文圖片描述 prompt（用於 AI 圖片生成）。
+
+規則：
+- 輸出純英文，不加引號、不加多餘文字
+- 描述風格：cinematic, detailed, vibrant colors
+- 50-80 字
+- 抓住腳本的核心主題和視覺意象
+
+腳本前 3000 字：
+{script[:3000]}
+"""
+    print("[INFO] Generating Agnes illustration prompt...", file=sys.stderr)
+    image_prompt = _call_llm_with_retry(client, prompt_for_llm)
+    if not image_prompt:
+        print("[WARN] Failed to generate image prompt, skipping AI illustration", file=sys.stderr)
+        return None
+
+    # Clean up any markdown or extra whitespace
+    image_prompt = image_prompt.strip().strip('"').strip("'").strip("`")
+    if image_prompt.startswith("```"):
+        image_prompt = image_prompt.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+    print(f"[INFO] Image prompt: {image_prompt[:100]}...", file=sys.stderr)
+
+    # Step 2: Call Agnes API
+    import json as _json
+    payload = _json.dumps({
+        "model": "agnes-image-2.1-flash",
+        "prompt": image_prompt,
+        "size": "1K",
+        "ratio": "16:9",
+        "extra_body": {
+            "response_format": "url"
+        }
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        "https://apihub.agnes-ai.com/v1/images/generations",
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+
+    print("[INFO] Calling Agnes image API (may take 30-120s)...", file=sys.stderr)
+    try:
+        with urllib.request.urlopen(req, timeout=300) as resp:
+            result = _json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        print(f"[WARN] Agnes API error: {e}", file=sys.stderr)
+        return None
+
+    # Step 3: Extract URL and download
+    image_url = None
+    if isinstance(result.get("data"), list) and result["data"]:
+        image_url = result["data"][0].get("url")
+    if not image_url:
+        print("[WARN] No image URL in Agnes response", file=sys.stderr)
+        return None
+
+    safe_title = title.replace("/", "_").replace("\\", "_")[:60]
+    png_path = os.path.join(out_dir, f"{safe_title}_ai.png")
+
+    print(f"[INFO] Downloading AI illustration from Agnes...", file=sys.stderr)
+    try:
+        urllib.request.urlretrieve(image_url, png_path)
+        os.chmod(png_path, 0o777)
+        print(f"[OK] AI illustration saved: {png_path}", file=sys.stderr)
+        return png_path
+    except Exception as e:
+        print(f"[WARN] Failed to download AI illustration: {e}", file=sys.stderr)
+        return None
+
+
 def _rounded_rect(draw, xy, radius, fill):
     """Draw a rounded rectangle."""
     x0, y0, x1, y1 = xy
@@ -225,7 +340,11 @@ def _wrap_text(text: str, font, max_width: int, draw) -> list[str]:
 # Generate visual summary image
 # ---------------------------------------------------------------------------
 def generate_visual(script: str, title: str, lang: str = "zh", out_dir: str = ".") -> str | None:
-    """Generate a visual summary image from a podcast script.
+    """Generate visual summary images from a podcast script.
+    
+    Produces two outputs:
+    1. AI illustration via Agnes Image 2.1 Flash (saved as *_ai.png)
+    2. Pillow summary card (saved as *_summary.png)
     
     Args:
         script: podcast script text
@@ -234,8 +353,12 @@ def generate_visual(script: str, title: str, lang: str = "zh", out_dir: str = ".
         out_dir: output directory
     
     Returns:
-        Path to the generated .png file, or None on failure.
+        Path to the Pillow summary .png file, or None on failure.
     """
+    # --- AI illustration (Agnes) — runs in parallel conceptually, but sequential here ---
+    agnes_path = _generate_agnes_illustration(script, title, lang, out_dir)
+    
+    # --- Pillow summary card ---
     print("[INFO] Extracting visual summary data...", file=sys.stderr)
     data = _extract_visual_data(script, title, lang)
     if not data:
@@ -346,5 +469,9 @@ def generate_visual(script: str, title: str, lang: str = "zh", out_dir: str = ".
     png_path = os.path.join(out_dir, f"{safe_title}_summary.png")
     img.save(png_path, "PNG", quality=95)
     os.chmod(png_path, 0o777)
-    print(f"[OK] Visual summary saved: {png_path}", file=sys.stderr)
+    print(f"[OK] Visual summary card saved: {png_path}", file=sys.stderr)
+    if agnes_path:
+        print(f"[OK] AI illustration saved: {agnes_path}", file=sys.stderr)
+    else:
+        print("[INFO] AI illustration was not generated (skipped or failed)", file=sys.stderr)
     return png_path
