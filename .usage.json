@@ -4,13 +4,13 @@
     "created_at": "2026-07-27T04:18:38.804875+00:00",
     "created_by": null,
     "last_patched_at": null,
-    "last_used_at": "2026-07-27T07:04:52.031630+00:00",
-    "last_viewed_at": "2026-07-27T07:04:52.019104+00:00",
+    "last_used_at": "2026-07-27T10:49:53.019473+00:00",
+    "last_viewed_at": "2026-07-27T10:49:53.006294+00:00",
     "patch_count": 0,
     "pinned": false,
     "state": "active",
-    "use_count": 2,
-    "view_count": 2
+    "use_count": 4,
+    "view_count": 4
   },
   "ai-stock-screener": {
     "archived_at": null,
@@ -1538,13 +1538,13 @@
     "created_at": "2026-06-05T04:42:21.059808+00:00",
     "created_by": "agent",
     "last_patched_at": "2026-07-24T20:50:25.778861+00:00",
-    "last_used_at": "2026-07-24T20:50:06.064520+00:00",
-    "last_viewed_at": "2026-07-24T20:50:06.052153+00:00",
+    "last_used_at": "2026-07-27T09:35:58.225050+00:00",
+    "last_viewed_at": "2026-07-27T09:35:58.209620+00:00",
     "patch_count": 220,
     "pinned": false,
     "state": "active",
-    "use_count": 248,
-    "view_count": 248
+    "use_count": 249,
+    "view_count": 249
   },
   "taiwan-stock-finmind-pipeline": {
     "archived_at": "2026-07-09T13:55:42.635991+00:00",
@@ -1590,13 +1590,13 @@
     "created_at": "2026-07-14T12:44:30.038385+00:00",
     "created_by": null,
     "last_patched_at": "2026-07-16T21:12:19.927993+00:00",
-    "last_used_at": "2026-07-27T08:59:33.019629+00:00",
-    "last_viewed_at": "2026-07-27T08:59:33.006689+00:00",
+    "last_used_at": "2026-07-27T10:49:23.708329+00:00",
+    "last_viewed_at": "2026-07-27T10:49:23.693526+00:00",
     "patch_count": 62,
     "pinned": false,
     "state": "active",
-    "use_count": 65,
-    "view_count": 65
+    "use_count": 68,
+    "view_count": 68
   },
   "teams-meeting-pipeline": {
     "archived_at": null,
@@ -1745,14 +1745,14 @@
     "archived_at": null,
     "created_at": "2026-07-07T04:37:44.994692+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-07-27T04:58:14.859096+00:00",
-    "last_used_at": "2026-07-27T04:57:55.046246+00:00",
-    "last_viewed_at": "2026-07-27T04:57:55.035009+00:00",
-    "patch_count": 83,
+    "last_patched_at": "2026-07-27T10:50:32.505345+00:00",
+    "last_used_at": "2026-07-27T10:50:11.934383+00:00",
+    "last_viewed_at": "2026-07-27T10:50:11.919305+00:00",
+    "patch_count": 84,
     "pinned": false,
     "state": "active",
-    "use_count": 65,
-    "view_count": 65
+    "use_count": 66,
+    "view_count": 66
   },
   "yuanbao": {
     "archived_at": null,

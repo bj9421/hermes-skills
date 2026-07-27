@@ -416,6 +416,68 @@ See `references/nvidia-api-rate-limits.md` for NVIDIA's rate limit mechanism, co
 
 All outputs in the podcast directory get `chmod -R 777` after generation, ensuring Syncthing compatibility across devices (Docker hermes user vs phone uid 1000).
 
+## PPT-to-Video Conversion (Manual Workflow)
+
+> ⚠️ **Not yet automated in NoteHub** — this is a manual workflow discovered on 2026-07-27. Use when the user wants to convert a PPT presentation + audio narration into an MP4 video.
+
+### Pipeline
+
+```
+python-pptx (create slides)
+  → Pillow (render slides to PNG frames, CJK font support)
+  → Edge-TTS (generate narration audio)
+  → ffmpeg (combine frames + audio → MP4)
+```
+
+### Step-by-step
+
+```bash
+# 1. Create PPT with python-pptx (16:9 widescreen)
+# 2. Render each slide to 1920×1080 PNG using Pillow:
+#    - Use NotoSansSC-Bold for CJK text (/opt/data/fonts/NotoSansSC-Bold.ttf)
+#    - Use NotoEmoji-Regular for emoji icons (/opt/data/fonts/NotoEmoji-Regular.ttf)
+#    - Manual word wrapping (Pillow has no auto-wrap)
+#    - Each draw.text() call uses ONE font — cannot mix CJK + emoji in one call
+# 3. Generate audio with Edge-TTS:
+source /opt/data/.venv/bin/activate
+python3 -c "
+import edge_tts, asyncio
+async def main():
+    c = edge_tts.Communicate('narration text', 'zh-TW-HsiaoChenNeural')
+    await c.save('narration.mp3')
+asyncio.run(main())
+"
+# 4. Create per-slide clips (each frame displayed for audio_duration/N seconds):
+ffmpeg -y -loop 1 -i frame_000.png -t 7.05 -c:v libx264 -pix_fmt yuv420p -r 30 clip_000.mp4
+# 5. Concatenate clips + add audio:
+ffmpeg -y -i clip_000.mp4 -i clip_001.mp4 -i clip_002.mp4 \
+  -filter_complex "[0:v][1:v][2:v]concat=n=3:v=1:a=0[outv]" -map "[outv]" video_only.mp4
+ffmpeg -y -i video_only.mp4 -i narration.mp3 -c:v copy -c:a aac -shortest output.mp4
+```
+
+### CJK Rendering Pitfalls
+
+1. **AI-generated images cannot render CJK text** — Any image from Agnes/NVIDIA/Gemini with Chinese characters in the prompt produces garbled squares. Always generate text-free illustrations, then overlay CJK text with Pillow.
+
+2. **Emoji in CJK context shows squares** — Even with NotoSansSC, emoji characters (📍🗺️🏯) render as replacement characters (□). Use NotoEmoji-Regular.ttf loaded as a SEPARATE font for each emoji draw call.
+
+3. **Text overflow / truncation** — Pillow has no automatic word wrapping. Must manually split text into lines that fit within `max_width` pixels. CJK characters are ~2x width of ASCII characters.
+
+4. **Font size too small / too much whitespace** — Minimum recommended sizes for 1920×1080: title 100px+, body 48px+, list items 44px+. Fill the frame — don't leave large empty areas.
+
+5. **LibreOffice not available in Docker** — Cannot use `libreoffice --headless --convert-to png` to render PPT slides. Must use Pillow to manually draw the content.
+
+### Dependencies
+
+```bash
+# All already installed in the environment:
+# python-pptx, Pillow, edge-tts, ffmpeg
+# Verify:
+python3 -c "import pptx; print('python-pptx OK')"
+python3 -c "from PIL import Image; print('Pillow OK')"
+ffmpeg -version | head -1
+```
+
 ## See Also
 ## Voice Shortcuts (NoteHub CLI)
 
