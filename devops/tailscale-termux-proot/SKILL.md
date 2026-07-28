@@ -112,7 +112,25 @@ proot -b /proc -b /sys tailscaled \
     --socks5-server=localhost:1080
 ```
 
-### 4. 認證
+### 4. 認證（方式 A：不須 Auth Key）✅ 最簡單
+
+在手機瀏覽器完成登入，適合一次性設定或 key 已過期時：
+
+```bash
+tailscale --socket="$HOME/.tailscale/tailscaled.sock" up
+```
+
+執行後終端機會印出一個連結：
+
+```
+https://login.tailscale.com/a/XXXXXXXXX
+```
+
+用手機瀏覽器打開該連結 → 登入 Tailscale 帳號 → 授權完成。**不需產生 auth key。**
+
+### 5. 認證（方式 B：Auth Key — 適合自動化腳本）
+
+如果需要讓 haup.sh 自動認證（無頭模式），用 auth key：
 
 ```bash
 tailscale --socket="$HOME/.tailscale/tailscaled.sock" up --auth-key=tskey-auth-xxxxx
