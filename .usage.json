@@ -1590,13 +1590,13 @@
     "created_at": "2026-07-16T20:53:13.821893+00:00",
     "created_by": "agent",
     "last_patched_at": "2026-07-16T21:03:23.034869+00:00",
-    "last_used_at": "2026-07-16T21:03:33.890265+00:00",
-    "last_viewed_at": "2026-07-16T21:03:33.866311+00:00",
+    "last_used_at": "2026-07-28T08:16:36.437183+00:00",
+    "last_viewed_at": "2026-07-28T08:16:36.425244+00:00",
     "patch_count": 3,
     "pinned": false,
     "state": "active",
-    "use_count": 3,
-    "view_count": 3
+    "use_count": 4,
+    "view_count": 4
   },
   "taiwan-travel-food-writer": {
     "archived_at": null,
