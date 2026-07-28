@@ -57,18 +57,18 @@ See `references/notehub-architecture.md` for full architecture details.
 
 > `openai` SDK required for `--organize` (NVIDIA API). Install: `uv pip install openai`
 
-## Pipeline Overview (3-stage auto-fallback)
+## Pipeline Overview (NoteHub: 2-stage; legacy yt2md_pipeline: 3-stage)
+
+> ⚠️ **NoteHub YouTubeExtractor has only 2 stages** (transcript-api → VTT). The 3rd stage (yt-dlp + Whisper) exists ONLY in the legacy `yt2md_pipeline.py`. When NoteHub fails on both, use the Groq Whisper workaround (pitfall #13 below).
 
 ```
 YouTube URL
   |
-  +-- 1. youtube-transcript-api (cleanest) ----> timestamped Markdown
-  |      (preferred: zh-TW → zh-Hans → en)
+  LEGACY (yt2md_pipeline.py only)
   |
-  +-- 2. yt-dlp VTT subtitles (fallback) -----> cleaned text
-  |      (auto-generated captions)
-  |
-  +-- 3. yt-dlp + Whisper (last resort) -------> transcribed audio
+  +-- 1. youtube-transcript-api (cleanest)
+  +-- 2. yt-dlp VTT subtitles (fallback)
+  +-- 3. yt-dlp + Whisper (legacy only, last resort)
   |
   v
   Markdown with [MM:SS] timestamps + YAML frontmatter
@@ -80,7 +80,7 @@ YouTube URL
 **Vault root:** `/opt/data/obsidian-vault/` — no intermediate `Holographic/` layer.
 ```
 
-**Pipeline priority:** `transcript-api` > `VTT` > `Whisper`. First to produce output wins.
+**Pipeline priority:** `transcript-api` > `VTT` > `Whisper/Groq`. First to produce output wins.
 
 **Language priority:** zh-TW → zh-Hant → zh-Hans → en → (auto-detect)
 
@@ -186,6 +186,7 @@ See `references/organize-architecture.md` for full design (prompt template, chun
 ## Error Handling
 
 - **No subs and no audio**: video is private/deleted — tell the user
+- **No subs but audio available**: route to Groq Whisper workflow (pitfall #13) instead of giving up
 - **Whisper OOM**: retry with `--model tiny` or segment audio into shorter clips
 - **ffmpeg missing**: `sudo apt install ffmpeg`
 - **yt-dlp sign-in wall**: try `--extractor-args "youtube:skip=webpage"` or cookie import
@@ -245,25 +246,34 @@ uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --podcast dual --voice-
 
 12. **notehub must use shared podcast.py, NOT its own prompt**: The notehub pipeline (`notehub/core/pipeline.py`) MUST import and call `podcast.py`'s `produce_podcast()` directly — never use a wrapper with a generic LLM prompt. Reason: `podcast.py`'s `_SOLO_PROMPT` / `_DUAL_PROMPT` are specifically designed for clean spoken-text output (no meta-commentary like "好的，沒問題！...", no `**` markdown markers, no stage directions). A generic prompt produces text with formatting that Edge-TTS reads literally as "asterisk asterisk". The correct import: `from podcast import produce_podcast` (from `notehub/core/pipeline.py`), NOT `from ..generators.podcast import produce_podcast`. Parameter order: `(transcript, title, url, lang, mode, voice_a, voice_b, out_dir, video_id)`. Return value is `mp3_path` (single string), not a tuple.
 
-13. **Non-YouTube sources (Bilibili, Vimeo, etc.)**: YouTube extractor only works with youtube.com URLs. For other video platforms, use yt-dlp + Groq Whisper:
+13. **YouTube without captions / Non-YouTube sources (Bilibili, Vimeo, etc.)**: The notehub YouTubeExtractor only has 2 strategies (youtube-transcript-api → yt-dlp VTT). It does NOT have a 3rd Whisper fallback — if both fail it raises `RuntimeError`. The skill's pipeline diagram showing "yt-dlp + Whisper (last resort)" describes the legacy `yt2md_pipeline.py` only. For any video without captions (YouTube or otherwise), use the manual Groq Whisper workflow:
 
     ```bash
-    # Step 1: yt-dlp download audio (supports Bilibili, Vimeo, 1000+ sites)
-    yt-dlp -x --audio-format m4a -o "output/audio/%(id)s.%(ext)s" "BILIBILI_URL"
+    # Step 1: yt-dlp download audio (supports Bilibili, Vimeo, YouTube, 1000+ sites)
+    yt-dlp -x --audio-format m4a -o "/tmp/audio/%(id)s.%(ext)s" "URL"
+
+    # ⚠️ Groq 413 fix: Groq rejects files >~10MB with "Request Entity Too Large".
+    # Convert to opus at 32k to shrink ~14MB m4a → ~4.5MB opus:
+    ffmpeg -y -i /tmp/audio/<id>.m4a -c:a libopus -b:a 32k /tmp/audio/<id>.opus
 
     # Step 2: Groq Whisper transcribe (free, fast, supports Chinese)
     # GROQ_API_KEY must be set in /opt/data/.env
     python3 -c "
     from groq import Groq
-    client = Groq(api_key=open('/opt/data/.env').read().split('GROQ_API_KEY=')[1].split()[0])
-    with open('audio.m4a','rb') as f:
-        r = client.audio.transcriptions.create(file=('a.m4a',f), model='whisper-large-v3', language='zh')
-    with open('transcript.md','w') as f: f.write(r.text)
+    env = open('/opt/data/.env').read()
+    key = [l.split('=')[1].strip() for l in env.split(chr(10)) if 'GROQ_API_KEY' in l][0]
+    client = Groq(api_key=key)
+    with open('/tmp/audio/<id>.opus','rb') as f:
+        r = client.audio.transcriptions.create(file=('audio.opus',f), model='whisper-large-v3', language='zh')
+    with open('/tmp/<id>-transcript.md','w') as f: f.write(r.text)
+    print(f'Transcribed: {len(r.text)} chars')
     "
 
     # Step 3: Run notehub on transcript
-    python -m notehub transcript.md --podcast solo --ppt --visual
+    python -m notehub /tmp/<id>-transcript.md --podcast solo --lang zh 台女
     ```
+
+    **⚠️ Garbled directory name from text source — user will say "沒看到檔案":** When feeding a text file to notehub (instead of a YouTube URL), the output directory name is derived from the **filename**, not the actual video title. Example: `Lun Yydhpyy 抄本 [1187f09b51b4]/` instead of `AI Coding的最後一道牆 [luN-yydHpYY]/`. **This is the #1 cause of "找不到檔案" confusion.** The user sees the garbled name and cannot find their podcast. Always verify the title via `yt-dlp --print title "original_URL"` and rename the directory before reporting output to user. See **Post-Pipeline: Output Organization & Cleanup** above for the full rename workflow.
 
     **⚠️ Common mistake:** Do NOT manually scrape web content for video platforms — always use yt-dlp + Whisper. Manual scraping loses audio tone, timing, and nuance that Whisper captures. The user explicitly called this out: "所以step1-5也沒用groq whisper啊".
 
@@ -526,6 +536,27 @@ python -m notehub --search "AI"
 python -m notehub --list
 python -m notehub --stats
 ```
+
+## Post-Pipeline: Output Organization & Cleanup
+
+notehub outputs podcast files to `/opt/data/obsidian-vault/notes/`. The user expects completed podcasts organized under `/opt/data/obsidian-vault/口播/`. After every pipeline run, follow this workflow:
+
+1. **Inspect output**: check directory under `/opt/data/obsidian-vault/notes/` for `script.md` + `口播音檔.mp3` (or `_podcast.mp3`)
+2. **Identify the real title**: run `/opt/data/.venv/bin/yt-dlp --print title "URL"` to get the actual video title
+3. **Rename & move**:
+   ```bash
+   TITLE="真實影片標題"
+   VID="videoID"
+   DIR="/opt/data/obsidian-vault/口播/${TITLE} [${VID}]"
+   mkdir -p "$DIR"
+   cp "notes/原始目錄/script.md" "$DIR/script.md"
+   cp "notes/原始目錄/口播音檔.mp3" "$DIR/口播音檔.mp3"
+   chmod -R 777 "$DIR"
+   ```
+4. **Clean up**: `rm -rf notes/原始目錄` then `rmdir /opt/data/obsidian-vault/notes/` if empty
+5. **Report to user**: include the final path (`**路徑：** /opt/data/obsidian-vault/口播/...`)
+
+> ⚠️ **Garbled title from text source**: When notehub processes a text file (Whisper transcript), the output directory name is derived from the **filename**, not the video title (e.g. `Lun Yydhpyy 抄本 [hash]/` instead of the real title). All content inside is correct — the garbled name is cosmetic. **Always** inspect the directory contents and rename before reporting to the user. The user will say "沒看到檔案" if the garbled name hides the output.
 
 ## Legacy entry point (backward compatible)
 
