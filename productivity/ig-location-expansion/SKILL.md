@@ -47,6 +47,27 @@ SQLite `datetime('now')` = UTC，Python `datetime.now()` = 本地時間（UTC+8�
 ### DB Schema 注意
 `locations` 表**沒有** `last_checked_at` 欄位。不要寫 UPDATE 去更新它。
 
+## 景點選取與替換
+
+### 🔴 城市分布上限（必守）
+選取景點時**必須**限制每個縣市數量，否則按 `image_count` 排序會導致單一城市壟斷（實測：彰化佔了 51/100）。
+
+**規則：**
+- 每縣市最多 **4-5 個**（人口多的城市如臺北/臺中/臺南/高雄/新北可給 5 個，其餘 4 個）
+- 先選核心景點（不論城市），再按剩餘名額從高 `image_count` 補滿
+- 補滿時若某城市已達上限，跳過繼續找下一個
+
+### IG 搜不到的景點替換流程
+觀光署景點名稱太長或太冷門時，Instagram location search 搜不到。替換步驟：
+1. 確認失敗名單（daily_collect 中搜尋無結果的）
+2. 從 `taiwan_attractions` 表中找**同縣市**的著名景點（如赤崁樓、安平古堡、潮境公園等）
+3. 執行 `DELETE FROM locations WHERE location_id=?` + `INSERT INTO locations VALUES (...)` 
+4. 確認總數不變
+5. 若同縣市找不到好替代，可跨縣市找（但注意分布均衡）
+
+**常見失敗類型：** 名稱太長（含括號、全名）、小型藝文空間、離島小景點、季節性活動
+**常見替代策略：** 用簡稱搜（如「古崗洋樓」而非全名）或直接換成同縣市知名大景點
+
 ## 安全注意
 DROP TABLE 為 destructive 操作，執行前需使用者明確確認。建議先 rename 保留舊表再建新表。
 
