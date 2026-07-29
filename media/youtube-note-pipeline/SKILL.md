@@ -260,8 +260,7 @@ uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --podcast dual --voice-
     # GROQ_API_KEY must be set in /opt/data/.env
     python3 -c "
     from groq import Groq
-    env = open('/opt/data/.env').read()
-    key = [l.split('=')[1].strip() for l in env.split(chr(10)) if 'GROQ_API_KEY' in l][0]
+    key = [l.strip().split('=', 1)[1] for l in open('/opt/data/.env').read().split(chr(10)) if l.strip().startswith('GROQ_API_KEY=')][0]
     client = Groq(api_key=key)
     with open('/tmp/audio/<id>.opus','rb') as f:
         r = client.audio.transcriptions.create(file=('audio.opus',f), model='whisper-large-v3', language='zh')
@@ -542,7 +541,9 @@ python -m notehub --stats
 notehub outputs podcast files to `/opt/data/obsidian-vault/notes/`. The user expects completed podcasts organized under `/opt/data/obsidian-vault/口播/`. After every pipeline run, follow this workflow:
 
 1. **Inspect output**: check directory under `/opt/data/obsidian-vault/notes/` for `script.md` + `口播音檔.mp3` (or `_podcast.mp3`)
-2. **Identify the real title**: run `/opt/data/.venv/bin/yt-dlp --print title "URL"` to get the actual video title
+2. **Identify the real title**: run `/opt/data/.venv/bin/yt-dlp --print title,description "URL"` to get the actual video title.
+   - ⚠️ **Instagram caveat:** `--print title` returns "Video by @username" (useless). Use the **first line of the description** instead (e.g. `理解能力差的根本原因是什么？#逻辑思维` → clean to `理解能力差的根本原因`).
+   - For YouTube: `--print title` gives the exact video title; no extra step needed.
 3. **Rename & move**:
    ```bash
    TITLE="真實影片標題"

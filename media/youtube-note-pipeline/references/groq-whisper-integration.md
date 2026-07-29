@@ -24,8 +24,9 @@ from groq import Groq
 api_key = None
 with open('/opt/data/.env') as f:
     for line in f:
-        if line.startswith('GROQ_API_KEY='):
-            api_key = line.strip().split('=', 1)[1]
+        stripped = line.strip()
+        if stripped.startswith('GROQ_API_KEY='):
+            api_key = stripped.split('=', 1)[1]
             break
 
 client = Groq(api_key=api_key)
