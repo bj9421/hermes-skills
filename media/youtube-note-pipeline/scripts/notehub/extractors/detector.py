@@ -2,6 +2,8 @@
 
 from .base import BaseExtractor
 from .youtube import YouTubeExtractor
+from .bilibili import BilibiliExtractor
+from .instagram import InstagramExtractor
 from .url import URLExtractor
 from .pdf import PDFExtractor
 from .text import TextExtractor
@@ -9,6 +11,8 @@ from .text import TextExtractor
 # Ordered by priority — first match wins
 _EXTRACTORS = [
     YouTubeExtractor(),
+    BilibiliExtractor(),
+    InstagramExtractor(),
     URLExtractor(),
     PDFExtractor(),
     TextExtractor(),

@@ -974,6 +974,19 @@
     "use_count": 0,
     "view_count": 0
   },
+  "instagram-reel-podcast": {
+    "archived_at": null,
+    "created_at": "2026-07-29T13:32:45.156401+00:00",
+    "created_by": null,
+    "last_patched_at": null,
+    "last_used_at": "2026-07-29T14:26:55.015353+00:00",
+    "last_viewed_at": "2026-07-29T14:26:54.995773+00:00",
+    "patch_count": 0,
+    "pinned": false,
+    "state": "active",
+    "use_count": 4,
+    "view_count": 4
+  },
   "jupyter-live-kernel": {
     "archived_at": null,
     "created_at": "2026-06-17T14:47:41.058502+00:00",
@@ -1187,13 +1200,13 @@
     "created_at": "2026-07-26T11:18:34.023059+00:00",
     "created_by": null,
     "last_patched_at": null,
-    "last_used_at": "2026-07-29T12:56:57.351581+00:00",
-    "last_viewed_at": "2026-07-29T12:56:57.322722+00:00",
+    "last_used_at": "2026-07-29T14:26:55.067752+00:00",
+    "last_viewed_at": "2026-07-29T14:26:55.036013+00:00",
     "patch_count": 0,
     "pinned": false,
     "state": "active",
-    "use_count": 17,
-    "view_count": 17
+    "use_count": 19,
+    "view_count": 19
   },
   "notion": {
     "archived_at": null,
@@ -1702,6 +1715,19 @@
     "use_count": 4,
     "view_count": 4
   },
+  "understanding-thinking-framework": {
+    "archived_at": null,
+    "created_at": "2026-07-29T15:00:05.164460+00:00",
+    "created_by": null,
+    "last_patched_at": null,
+    "last_used_at": "2026-07-29T15:00:05.179518+00:00",
+    "last_viewed_at": "2026-07-29T15:00:05.164507+00:00",
+    "patch_count": 0,
+    "pinned": false,
+    "state": "active",
+    "use_count": 1,
+    "view_count": 1
+  },
   "vault-maintenance": {
     "archived_at": null,
     "created_at": "2026-07-07T15:20:47.482251+00:00",
@@ -1784,14 +1810,14 @@
     "archived_at": null,
     "created_at": "2026-07-07T04:37:44.994692+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-07-29T13:03:33.731029+00:00",
-    "last_used_at": "2026-07-29T13:03:44.701719+00:00",
-    "last_viewed_at": "2026-07-29T13:03:44.688677+00:00",
-    "patch_count": 93,
+    "last_patched_at": "2026-07-29T14:27:57.270890+00:00",
+    "last_used_at": "2026-07-29T14:27:19.093489+00:00",
+    "last_viewed_at": "2026-07-29T14:27:19.079266+00:00",
+    "patch_count": 105,
     "pinned": false,
     "state": "active",
-    "use_count": 76,
-    "view_count": 76
+    "use_count": 79,
+    "view_count": 79
   },
   "yuanbao": {
     "archived_at": null,

@@ -44,7 +44,7 @@ def _translate_title(title: str, target_lang: str) -> str | None:
     from ..extractors.base import ExtractResult  # avoid circular
 
     lang_names = {
-        "zh": "繁體中文", "zh-TW": "繁體中文", "zh-CN": "简体中文",
+        "zh": "繁體中文", "zh-TW": "繁體中文", "zh-CN": "簡體中文",
         "ja": "日本語", "ko": "한국어", "en": "English",
     }
     lang_name = lang_names.get(target_lang, target_lang)
@@ -71,6 +71,31 @@ def _chunk_text(text: str, max_chars: int = 25000, overlap: int = 1000) -> list[
         chunks.append(chunk)
         start = end - overlap
     return chunks
+
+
+def _convert_to_traditional(dir_path: str):
+    """Convert all markdown files in dir_path from Simplified to Traditional Chinese (Taiwan)."""
+    try:
+        import opencc
+        converter = opencc.OpenCC('s2twp')
+        for fname in os.listdir(dir_path):
+            if fname.endswith('.md'):
+                fpath = os.path.join(dir_path, fname)
+                with open(fpath, 'r', encoding='utf-8') as f:
+                    text = f.read()
+                converted = converter.convert(text)
+                # Fix opencc over-conversions
+                converted = converted.replace('指令碼', '腳本')
+                converted = converted.replace('全域性', '全局')
+                converted = converted.replace('演演算法', '演算法')
+                if converted != text:
+                    with open(fpath, 'w', encoding='utf-8') as f:
+                        f.write(converted)
+                    print(f"[INFO] Converted to TC: {fname}", file=sys.stderr)
+    except ImportError:
+        print("[WARN] opencc not installed, skipping TC conversion", file=sys.stderr)
+    except Exception as e:
+        print(f"[WARN] TC conversion failed: {e}", file=sys.stderr)
 
 
 def _organize_content(text: str, title: str = "") -> str | None:
@@ -138,7 +163,7 @@ def run_pipeline(source: str, organize: bool = False,
 
     # 3. Create output directory
     safe_dir_title = _sanitize_filename(dir_title)
-    if result.source_type == "youtube":
+    if result.source_type in ("youtube", "bilibili", "instagram"):
         out_dir = os.path.join(OBSIDIAN_BASE, PODCAST_SUBDIR, f"{safe_dir_title} [{source_id}]")
     else:
         out_dir = os.path.join(OBSIDIAN_BASE, "notes", f"{safe_dir_title} [{source_id}]")
@@ -234,7 +259,11 @@ def run_pipeline(source: str, organize: bool = False,
         except Exception as e:
             print(f"[ERROR] Visual failed: {e}", file=sys.stderr)
 
-    # 8. chmod all outputs
+    # 8. Convert to Traditional Chinese for zh/zh-TW outputs
+    if lang and lang.startswith("zh"):
+        _convert_to_traditional(out_dir)
+
+    # 9. chmod all outputs
     import subprocess
     for p in [out_dir, podcast_out_dir, ppt_out, vis_out]:
         if p and os.path.exists(p):

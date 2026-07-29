@@ -13,6 +13,7 @@ compatibility:
   - python-pptx (for --ppt)
   - Pillow (for --visual)
   - Noto Emoji monochrome font (for --visual emoji icons, installed at /opt/data/fonts/NotoEmoji-Regular.ttf)
+  - opencc (for auto SC→TC conversion on --lang zh)
 related_skills: [youtube-content, obsidian]
 ---
 
@@ -26,7 +27,7 @@ This skill complements `youtube-content` (transcript → summary/thread/blog) by
 
 ## NoteHub (New Multi-Source Entry Point)
 
-> ✅ **As of 2026-07-26** — The pipeline has been upgraded to **NoteHub** (`notehub/` package) which supports YouTube, URLs, PDFs, and local text files. The old `yt2md_pipeline.py` still works for backward compatibility.
+> ✅ **As of 2026-07-29** — NoteHub supports **YouTube, Instagram, URLs, PDFs, and text files**. The `InstagramExtractor` auto-downloads audio + transcribes via Groq Whisper. All outputs auto-convert to Traditional Chinese when `--lang zh`. The old `yt2md_pipeline.py` still works for backward compatibility.
 
 ```bash
 # New entry point (recommended)
@@ -41,9 +42,9 @@ python -m notehub --list
 python -m notehub --stats
 ```
 
-**Architecture:** `notehub/extractors/` (Strategy Pattern) → `notehub/core/pipeline.py` → `notehub/db/models.py` (SQLite FTS5) → `notehub/generators/` (podcast/ppt/visual) → `notehub/mcp/server.py` (9 MCP tools for AI agents).
+**Architecture:** `notehub/extractors/` (Strategy Pattern: youtube → instagram → url → pdf → text) → `notehub/core/pipeline.py` (incl. `_convert_to_traditional()` post-processing) → `notehub/db/models.py` (SQLite FTS5) → `notehub/generators/` (podcast/ppt/visual) → `notehub/mcp/server.py` (9 MCP tools for AI agents).
 
-**New dependencies:** `pymupdf4llm` (PDF), `mcp` (MCP Server SDK).
+**New dependencies:** `pymupdf4llm` (PDF), `mcp` (MCP Server SDK), `opencc` (SC→TC conversion).
 
 See `references/notehub-architecture.md` for full architecture details.
 
@@ -57,27 +58,44 @@ See `references/notehub-architecture.md` for full architecture details.
 
 > `openai` SDK required for `--organize` (NVIDIA API). Install: `uv pip install openai`
 
-## Pipeline Overview (NoteHub: 2-stage; legacy yt2md_pipeline: 3-stage)
+## Pipeline Overview
 
-> ⚠️ **NoteHub YouTubeExtractor has only 2 stages** (transcript-api → VTT). The 3rd stage (yt-dlp + Whisper) exists ONLY in the legacy `yt2md_pipeline.py`. When NoteHub fails on both, use the Groq Whisper workaround (pitfall #13 below).
+### NoteHub (3 extractor types)
 
 ```
 YouTube URL
-  |
-  LEGACY (yt2md_pipeline.py only)
-  |
+  │
+  └─ YouTubeExtractor (2 strategies: transcript-api → yt-dlp VTT)
+       │
+       └─ Markdown + frontmatter → 口播/ (or notes/)
+
+Instagram Reel URL
+  │
+  └─ InstagramExtractor (yt-dlp audio → Groq Whisper)
+       │
+       └─ Markdown + frontmatter → 口播/ (or notes/)
+
+URL / PDF / text
+  │
+  └─ URLExtractor / PDFExtractor / TextExtractor
+       │
+       └─ Markdown + frontmatter → notes/
+```
+
+### Legacy yt2md_pipeline.py (3-stage fallback; YouTube only)
+
+```
+YouTube URL
+  │
   +-- 1. youtube-transcript-api (cleanest)
   +-- 2. yt-dlp VTT subtitles (fallback)
-  +-- 3. yt-dlp + Whisper (legacy only, last resort)
-  |
+  +-- 3. yt-dlp + Whisper (last resort)
+  │
   v
   Markdown with [MM:SS] timestamps + YAML frontmatter
-  |
+  │
   v
   /opt/data/obsidian-vault/{subfolder}/<title>.md
-  (default: YouTube/; customize with --obsidian "path/to/subfolder")
-
-**Vault root:** `/opt/data/obsidian-vault/` — no intermediate `Holographic/` layer.
 ```
 
 **Pipeline priority:** `transcript-api` > `VTT` > `Whisper/Groq`. First to produce output wins.
@@ -246,7 +264,7 @@ uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --podcast dual --voice-
 
 12. **notehub must use shared podcast.py, NOT its own prompt**: The notehub pipeline (`notehub/core/pipeline.py`) MUST import and call `podcast.py`'s `produce_podcast()` directly — never use a wrapper with a generic LLM prompt. Reason: `podcast.py`'s `_SOLO_PROMPT` / `_DUAL_PROMPT` are specifically designed for clean spoken-text output (no meta-commentary like "好的，沒問題！...", no `**` markdown markers, no stage directions). A generic prompt produces text with formatting that Edge-TTS reads literally as "asterisk asterisk". The correct import: `from podcast import produce_podcast` (from `notehub/core/pipeline.py`), NOT `from ..generators.podcast import produce_podcast`. Parameter order: `(transcript, title, url, lang, mode, voice_a, voice_b, out_dir, video_id)`. Return value is `mp3_path` (single string), not a tuple.
 
-13. **YouTube without captions / Non-YouTube sources (Bilibili, Vimeo, etc.)**: The notehub YouTubeExtractor only has 2 strategies (youtube-transcript-api → yt-dlp VTT). It does NOT have a 3rd Whisper fallback — if both fail it raises `RuntimeError`. The skill's pipeline diagram showing "yt-dlp + Whisper (last resort)" describes the legacy `yt2md_pipeline.py` only. For any video without captions (YouTube or otherwise), use the manual Groq Whisper workflow:
+13. **Non-YouTube sources without captions (Bilibili, Vimeo, etc.)**: The `InstagramExtractor` handles Instagram natively (yt-dlp audio → Groq Whisper). For other non-YouTube platforms (Bilibili, Vimeo, etc.), the YouTubeExtractor won't match and the URLExtractor may fail to extract meaningful content. Use the manual Groq Whisper workflow:
 
     ```bash
     # Step 1: yt-dlp download audio (supports Bilibili, Vimeo, YouTube, 1000+ sites)
@@ -421,6 +439,28 @@ See `references/nvidia-api-rate-limits.md` for NVIDIA's rate limit mechanism, co
 
 **NVIDIA API note:** The 503 `ResourceExhausted` error is **worker-level** (shared 48-request pool across ALL models), NOT per-model. All models share the same rate limit. The retry+fallback buys time (total wait ~63s per model × 3 models = ~3 min max), which is usually enough for the worker pool to recover.
 
+## Auto Traditional Chinese Conversion
+
+> ⚠️ **User preference (hard rule):** All Chinese output must be Traditional Chinese (Taiwan). Do not leave Simplified Chinese in any output file.
+
+When `--lang zh` or `--lang zh-TW` is used, pipeline.py's `_convert_to_traditional()` runs as a post-processing step after all output generation. It uses `opencc` with `s2twp` config to convert all `.md` files in the output directory from Simplified Chinese → Traditional Chinese (Taiwan).
+
+**Known opencc `s2twp` over-conversions (auto-fixed in `_convert_to_traditional()`):**
+- `指令碼` → `腳本` (opencc converts "脚本" → "指令碼", but "腳本" is correct in Taiwan)
+- `全域性` → `全局` (opencc converts "全局" → "全域性", but "全局" is standard in both)
+- `演演算法` → `演算法` (opencc double-converts "算法" → "演算法" → "演演算法")
+
+See `references/opencc-over-conversions.md` for details and fixes.
+
+The Groq Whisper transcript (raw.md) is always Simplified Chinese; the LLM-generated script (script.md) depends on the model but DeepSeek often outputs Simplified Chinese too. This step ensures both are consistently Traditional Chinese.
+
+**Bulk conversion (existing folders):** To scan and convert all files under any directory, use opencc directly:
+```python
+import opencc
+converter = opencc.OpenCC("s2twp")
+# Apply to each .md file, then fix over-conversions with .replace()
+```
+
 ## Final chmod Sweep
 
 All outputs in the podcast directory get `chmod -R 777` after generation, ensuring Syncthing compatibility across devices (Docker hermes user vs phone uid 1000).
@@ -519,7 +559,10 @@ Implementation: `notehub/__main__.py` scans `pipeline_args` for any value in `VO
 # YouTube
 python -m notehub "https://youtube.com/watch?v=xxx" --podcast dual --ppt --visual --lang zh 台女 台男
 
-# Bilibili / non-YouTube video (yt-dlp + Groq Whisper)
+# Instagram Reel (auto-downloads audio + Groq Whisper + TC conversion)
+python -m notehub "https://www.instagram.com/reel/xxx" --podcast solo --lang zh 台女
+
+# Bilibili / non-YouTube video (manual Groq Whisper)
 yt-dlp -x --audio-format m4a -o "audio/%(id)s.%(ext)s" "BILIBILI_URL"
 # Then: python -m notehub transcript.md --podcast solo --ppt --visual 台女
 
@@ -538,26 +581,14 @@ python -m notehub --stats
 
 ## Post-Pipeline: Output Organization & Cleanup
 
-notehub outputs podcast files to `/opt/data/obsidian-vault/notes/`. The user expects completed podcasts organized under `/opt/data/obsidian-vault/口播/`. After every pipeline run, follow this workflow:
+notehub outputs podcast files to `/opt/data/obsidian-vault/口播/` for YouTube and Instagram sources, and to `/opt/data/obsidian-vault/notes/` for URL/PDF/text sources. After every pipeline run, verify the output:
 
-1. **Inspect output**: check directory under `/opt/data/obsidian-vault/notes/` for `script.md` + `口播音檔.mp3` (or `_podcast.mp3`)
-2. **Identify the real title**: run `/opt/data/.venv/bin/yt-dlp --print title,description "URL"` to get the actual video title.
-   - ⚠️ **Instagram caveat:** `--print title` returns "Video by @username" (useless). Use the **first line of the description** instead (e.g. `理解能力差的根本原因是什么？#逻辑思维` → clean to `理解能力差的根本原因`).
-   - For YouTube: `--print title` gives the exact video title; no extra step needed.
-3. **Rename & move**:
-   ```bash
-   TITLE="真實影片標題"
-   VID="videoID"
-   DIR="/opt/data/obsidian-vault/口播/${TITLE} [${VID}]"
-   mkdir -p "$DIR"
-   cp "notes/原始目錄/script.md" "$DIR/script.md"
-   cp "notes/原始目錄/口播音檔.mp3" "$DIR/口播音檔.mp3"
-   chmod -R 777 "$DIR"
-   ```
-4. **Clean up**: `rm -rf notes/原始目錄` then `rmdir /opt/data/obsidian-vault/notes/` if empty
-5. **Report to user**: include the final path (`**路徑：** /opt/data/obsidian-vault/口播/...`)
+1. **Check output directory**: 
+   - YouTube & Instagram → `口播/{title} [{video_id}]/`
+   - URL/PDF/text → `notes/{title} [{hash}]/`
+2. **Report to user**: include the final path (`**路徑：** /opt/data/obsidian-vault/口播/...`)
 
-> ⚠️ **Garbled title from text source**: When notehub processes a text file (Whisper transcript), the output directory name is derived from the **filename**, not the video title (e.g. `Lun Yydhpyy 抄本 [hash]/` instead of the real title). All content inside is correct — the garbled name is cosmetic. **Always** inspect the directory contents and rename before reporting to the user. The user will say "沒看到檔案" if the garbled name hides the output.
+> ⚠️ **Garbled title from text source (only):** When notehub processes a **text file** (Whisper transcript that was manually fed in), the output directory name is derived from the **filename**, not the video title (e.g. `Lun Yydhpyy 抄本 [hash]/` instead of the real title). This does NOT happen with YouTube or Instagram sources — those extractors get the real title. If feeding a text/Whisper file manually, see the manual workflow in `instagram-reel-podcast` skill.
 
 ## Legacy entry point (backward compatible)
 
@@ -566,6 +597,8 @@ uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --podcast dual --ppt --
 ```
 
 ## See Also
+- `instagram-reel-podcast` skill — legacy manual Instagram workflow (pre-notehub-integration reference)
+- `references/opencc-over-conversions.md` — opencc s2twp over-conversion fixes when converting SC→TC
 - `references/groq-whisper-integration.md` — Groq Whisper STT for non-YouTube sources (Bilibili, Vimeo, local video). Free tier, setup, usage pattern.
 - `references/voice-shortcuts.md` — Voice alias reference, Edge-TTS reliability notes, pipeline integration details.
 - `references/cjk-font-rendering.md` — CJK font inventory, emoji rendering patterns, Pillow font mixing, Docker font installation.
