@@ -4,7 +4,7 @@ description: >-
   台股每日收盤價資料管線 — 實際部署於 Hermes RPi4 上的
   SQLite 增量更新方案。包含 cron 排程、限流策略、
   DB 庫存管理與除錯 SOP。
-version: 2.3
+version: 2.4
 author: Hermes Agent
 metadata:
   hermes:
@@ -30,6 +30,7 @@ metadata:
 | **OHLC 報告路徑** | `screening/output/ohlc_verification_latest.json`（每次全量比對結果） |
 | **OHLC 協定** | `references/ohlc-verify-protocol.md`（架構、bug 記錄、已知限制） |
 | **全量比對記錄** | `references/ohlc-full-run-2026-07-24.md`（2026-07-24 實測：1925 檔 matched=774, mismatched=1146, errors=5） |
+| **全量比對記錄** | `references/ohlc-full-run-2026-07-28.md`（2026-07-28 實測：1925 檔 matched=1890, mismatched=30, errors=5, deviation=0） |
 | **Missing Data 調查** | `references/ohlc-missing-data-investigation-2026-07-24.md`（1146 missing_data 根因分析：timing race condition + screen_cache.date mismatch） |
 | **查詢優化** | `references/daily-prices-query-optimization.md`（固定日期 join → 229× 加速）|
 | **API 測試** | `scripts/test_twse_openapi.py`、`scripts/test_tdcc_openapi.py`、`scripts/test_tpex_openapi.py`（端點可用性驗證）|
@@ -322,14 +323,14 @@ grep -n "and s\[" /opt/data/projects/taiwan-stock-cashflow-api/screening/auto_sc
   - 差異可藉 `SELECT stock_code, date, close FROM daily_prices WHERE stock_code=? AND date=?` 分辨
 - **sporadic `api_fetch_failed` 若 < 10 筆：** 通常是已下市股（1591, 3426, 4130, 4804, 4987, 6806 等）未自 screen_cache 清除，非真實異常。yfinance API 回傳 HTTP 404 + "possibly delisted" 警告但程式會容錯繼續跑。
 - **2026-07-25 全量實測結果：** 1925 檔中 matched=1891, mismatched=27, errors=7。mismatched 全部為 missing_data（DB close=null），零筆實際價格偏差。7 筆 errors 為已下市股。覆蓋率從 40.2% 提升至 98.2%。
+- **2026-07-28 全量實測結果（07-29 執行）：** 1925 檔中 matched=1890, mismatched=30, errors=5，Deviation>1%=0。連續 4 次 FULL 比對皆為 0 實際偏差。27 支 both_missing + 3 支 db_only_missing（5236 凌陽資料缺口值得關注）+ 5 支 api_fetch_failed（已下市股）。執行耗時約 76 分鐘。
 - **異常詳細分類（2026-07-25）：**
   - **API 取得失敗 (7 支)：** `1459, 1589, 3426, 4130, 4804, 4987, 6806` — twstock + yfinance 均無法取得資料，多為已下市或停止交易股
   - **資料缺失 (20 支)：** `2035, 2937, 3064, 3067, 3085, 3158, 3226, 3531, 3664, 4183, 4305, 4406, 5520, 6171, 6210, 6228, 6236, 6242, 6856, 6865, 7743, 7782, 8342, 8477, 8905, 8923` — DB close=null，twstock 也回傳 null（可能為新上市尚未有完整交易資料）
   - **唯一值得關注的個案：** `5236（凌陽）` — yfinance 回傳 close=150.5，但 DB 為 null → 資料管線可能漏抓，建議下次更新排程時補入
 - **結論：** 實際 OHLC 價格一致率 100%（所有有數值的股票均比對通過）。27 支異常全為「DB 無資料」而非「資料錯誤」，屬於資料完整性問題（pipeline 覆蓋率），非準確性問題。
-- **30% 資料缺口（590/1925）：** 若 mismatch 全部是 missing_data 且無 deviation，代表 `daily_prices` 增量更新漏了大量股票，應優先修復更新管線而非懷疑價格正確性
-- **30% 資料缺口（590/1925）：** 若 mismatch 全部是 missing_data 且無 deviation，代表 `daily_prices` 增量更新漏了大量股票，應優先修復更新管線而非懷疑價格正確性
-- **近期趨勢（2026-07-16 抽樣檢查）：** 針對 2026-07-15 資料的 80 支抽樣顯示 77/80 一致（96.25%），僅 3 筆 missing_data（3064 泰偉、3067 全域、8923 時報 — 均有 daily_prices row 但 close=null，疑似暫停交易），API 錯誤 0 — 資料覆蓋率較 2026-07-14 全量檢查（68.2%）顯著改善，增量更新管線運作正常
+- **資料缺口已從 ~30% 降至 ~1.6%（590→30 檔）：** 2026-07-14 全量還有 590 檔 `missing_data`（30%），到 2026-07-28 已降為 30 檔（1.6%），其中 27 檔為 `both_missing`（兩端皆 null，暫停交易股）。增量更新管線已有效補回絕大多數資料缺口。
+- **比對結果判讀：** `mismatched` 絕大部分是 `missing_data`（DB 中該日價格為 null），非實際價格偏差。`missing_data` 有兩種子型態需區分：
 
 #### ⚠️ 2026-07-10 事件：twstock API 全面失靈（0/80）
 

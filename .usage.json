@@ -1187,13 +1187,13 @@
     "created_at": "2026-07-26T11:18:34.023059+00:00",
     "created_by": null,
     "last_patched_at": null,
-    "last_used_at": "2026-07-28T20:41:44.240830+00:00",
-    "last_viewed_at": "2026-07-28T20:41:44.213307+00:00",
+    "last_used_at": "2026-07-29T09:11:00.447308+00:00",
+    "last_viewed_at": "2026-07-29T09:11:00.435119+00:00",
     "patch_count": 0,
     "pinned": false,
     "state": "active",
-    "use_count": 15,
-    "view_count": 15
+    "use_count": 16,
+    "view_count": 16
   },
   "notion": {
     "archived_at": null,
@@ -1576,14 +1576,14 @@
     "archived_at": null,
     "created_at": "2026-06-05T04:42:21.059808+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-07-24T20:50:25.778861+00:00",
-    "last_used_at": "2026-07-27T09:35:58.225050+00:00",
-    "last_viewed_at": "2026-07-27T09:35:58.209620+00:00",
-    "patch_count": 220,
+    "last_patched_at": "2026-07-29T10:20:14.577652+00:00",
+    "last_used_at": "2026-07-29T10:20:23.158702+00:00",
+    "last_viewed_at": "2026-07-29T10:20:23.143116+00:00",
+    "patch_count": 227,
     "pinned": false,
     "state": "active",
-    "use_count": 249,
-    "view_count": 249
+    "use_count": 253,
+    "view_count": 253
   },
   "taiwan-stock-finmind-pipeline": {
     "archived_at": "2026-07-09T13:55:42.635991+00:00",
