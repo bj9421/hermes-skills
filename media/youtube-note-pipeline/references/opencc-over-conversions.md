@@ -13,6 +13,10 @@ These are auto-fixed in `notehub/core/pipeline.py`'s `_convert_to_traditional()`
 | `演演算法` | `演算法` | Double conversion bug: 算(SC)→算法→演算法→演演算法. Single "演算法" is correct. |
 | `後續連線` | `後續連接` | s2twp incorrectly maps "連接" → "連線" even when context means connection/linkage |
 
+## Notes
+
+- **`程序員` → `程式設計師`** (2026-07-30 observed): This is a **correct** s2twp conversion (Taiwan standard = 程式設計師, PRC = 程序員). However, it creates filename inconsistency: the directory name uses the LLM's pre-conversion title (程序員) while the MP3/filename uses the TC-converted title (程式設計師). Cosmetic only — files play fine.
+
 ## How to apply when writing conversion code
 
 ```python

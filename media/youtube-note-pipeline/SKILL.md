@@ -74,7 +74,31 @@ See `references/notehub-architecture.md` for full architecture details.
 uv run python -m notehub ...
 ```
 
-**所有依賴已在 `/opt/data/.venv/` 安裝完畢，無需手動安裝。** 如果執行 notehub 報錯 `No module named ...`，先確認是否用了正確的 Python。驗證方式：
+### ⚠️ PYTHONPATH Required — notehub 不是 pip 套件
+
+notehub 是本地模組（非 pip 安裝），所在路徑：
+
+```
+/opt/data/skills/media/youtube-note-pipeline/scripts/notehub/
+```
+
+執行 `python -m notehub` 時**必須讓 Python 能找到它**。兩種方式：
+
+**方式 A — cd 到 scripts 目錄（推薦）：**
+```bash
+cd /opt/data/skills/media/youtube-note-pipeline/scripts && \
+  /opt/data/.venv/bin/python -m notehub "URL" --podcast solo --lang zh 台女
+```
+
+**方式 B — 設 PYTHONPATH：**
+```bash
+PYTHONPATH=/opt/data/skills/media/youtube-note-pipeline/scripts \
+  /opt/data/.venv/bin/python -m notehub "URL" --podcast solo --lang zh 台女
+```
+
+如果報 `No module named notehub`，先確認是否忘了設 PYTHONPATH 或 cd 到正確目錄。
+
+**所有依賴已在 `/opt/data/.venv/` 安裝完畢，無需手動安裝。** 驗證方式：
 
 ```bash
 /opt/data/.venv/bin/python -c "import edge_tts, pydub, openai, opencc; print('all deps OK ✅')"
@@ -322,7 +346,14 @@ uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --podcast dual --voice-
 
 14. **Wrong Python venv — `No module named ...` despite deps being installed**: The system has multiple Python venvs. `/opt/data/.venv/bin/python` is the one with all notehub dependencies. Do NOT use `/opt/hermes/.venv/bin/python3` (Hermes system venv, no notehub deps), `/opt/data/projects/*/.venv/bin/python` (project-specific, no notehub deps), or `uv run python3` (uv fails in this Docker container — permission denied on `/root/.cache/uv`). If you get `ModuleNotFoundError`, first check which Python you're using. The fix is almost always switching to `/opt/data/.venv/bin/python`. Verify: `/opt/data/.venv/bin/python -c "import edge_tts, pydub, openai, opencc; print('all deps OK')"`
 
-15. **Text source → output goes to `notes/` not `口播/`**: When running notehub with a text/.md source (e.g. Whisper transcript, local file), the output directory is under `notes/` not `口播/`. If the user's intent is clearly a podcast (they specified `--podcast`), **proactively move the output to `口播/`** and note it in your response. Do not wait for the user to ask. The correct move: `mv "notes/{title} [hash]/" "口播/{title} [hash]/"` + `chmod -R 777`.
+15. **Text source → output goes to notes/ not 口播/** — When running notehub with a text/.md source (e.g. Whisper transcript, local file), the output directory is under notes/ not 口播/. If the user's intent is clearly a podcast, proactively move the output to 口播/ and note it in your response. Do not wait for the user to ask. The correct move: mv + chmod -R 777.
+
+16. **Chinese URL sources produce excessively long directory names** — When notehub processes a Chinese web article (URLExtractor), the translated title can be 30–50+ characters. Mobile Syncthing truncates the directory — user says 沒看到檔案. Fix: After moving to 口播/, rename to a shorter clean name. Also rename internal files to match.
+
+17. **LLM-generated script.md often lacks Chinese punctuation** — The notehub podcast script produces paragraphs without commas or periods. Edge-TTS reads each paragraph as one breath with no natural pauses.
+    - Detection: Scan for sentences >50 chars without Chinese punctuation.
+    - Fix: Manually add 逗號句號 at clause boundaries. Then write standalone gen_tts.py to regenerate MP3. Do NOT re-run notehub — that loses your edits.
+    - Workflow: patch script.md, write gen_tts.py, run it, deliver MP3, clean up gen_tts.py.
 
 ## PPT Mode (`--ppt`) — PowerPoint Presentation
 
@@ -590,10 +621,15 @@ Implementation: `notehub/__main__.py` scans `pipeline_args` for any value in `VO
 
 ## Usage (NoteHub — recommended entry point)
 
-> ⚠️ **所有 notehub 指令一律使用 `/opt/data/.venv/bin/python`**，不要用 system venv 或 uv run。
+> ⚠️ **所有 notehub 指令務必先 cd 到 scripts 目錄或設 PYTHONPATH**（見上方 Python Environment 章節）。
+> ⚠️ **一律使用 `/opt/data/.venv/bin/python`**，不要用 system venv 或 uv run。
 > 驗證：`/opt/data/.venv/bin/python -c "import edge_tts, pydub, openai, opencc; print('ok')"`
 
 ```bash
+# 先切到正確目錄（必要！）
+NOTEHUB_DIR=/opt/data/skills/media/youtube-note-pipeline/scripts
+cd "$NOTEHUB_DIR"
+
 # YouTube
 /opt/data/.venv/bin/python -m notehub "https://youtube.com/watch?v=xxx" --podcast dual --ppt --visual --lang zh 台女 台男
 
@@ -635,6 +671,8 @@ notehub outputs podcast files to `/opt/data/obsidian-vault/口播/` for YouTube 
 
 > ⚠️ **Garbled title from text source (only):** When notehub processes a **text file** (Whisper transcript that was manually fed in), the output directory name is derived from the **filename**, not the video title (e.g. `Lun Yydhpyy 抄本 [hash]/` instead of the real title). This does NOT happen with YouTube or Instagram sources — those extractors get the real title. If feeding a text/Whisper file manually, see the manual workflow in `instagram-reel-podcast` skill.
 
+> ⚠️ **Long Chinese title from URL source:** When notehub processes a Chinese web article (URLExtractor), the translated title can be 40+ characters (e.g. `Hermes Agent v0.19.0 水銀版深度解剖：80%速度提升背後的自進化架構革命-程序員茄子 [hash]/`). Mobile Syncthing may truncate or not display the directory. **Fix:** After moving to 口播/, rename to a shorter clean title like `產品 v{ver} 主題 [hash]/`. Rename internal files to match.
+
 ### Key learnings (2026-07-30):
 
 1. **正確 Python 直譯器**：所有 notehub 指令必須用 `/opt/data/.venv/bin/python`。
@@ -643,11 +681,17 @@ notehub outputs podcast files to `/opt/data/obsidian-vault/口播/` for YouTube 
    - ❌ `uv run python3`（Docker 中無權限寫 cache）
    - ✅ `/opt/data/.venv/bin/python`（所有相依已安裝）
 
-2. **文字檔 → 口播流程**：`python -m notehub file.md --podcast solo --lang zh 台女`
-   - 輸出到 `notes/`，完成後要搬到 `口播/`
-   - 檔名會用 LLM 翻譯的標題
+2. **PYTHONPATH 是必要條件**：notehub 不是 pip 套件，是本地模組在 `scripts/notehub/`。
+   - 執行前必須 `cd /opt/data/skills/media/youtube-note-pipeline/scripts` 或設 `PYTHONPATH`
+   - 直接 `python -m notehub` 會報 `No module named notehub`
 
-3. **品牌名稱不翻譯**：`Hermes Agent`、`NoteHub`、`Gateway` 等在 `pipeline.py` 的 `PROTECTED_TERMS` 保護，翻譯前用佔位符取代，翻譯後還原。
+3. **URL → 口播流程已驗證**（2026-07-30）：URLExtractor 可直接抓取網頁文章，經 LLM 生成口播稿 → Edge-TTS podcast。
+   - 輸出到 `notes/`，完成後要搬到 `口播/`
+   - 品牌名 `Hermes Agent` 未被翻譯 ✅
+
+4. **品牌名稱不翻譯**：`Hermes Agent`、`NoteHub`、`Gateway` 等在 `pipeline.py` 的 `PROTECTED_TERMS` 保護，翻譯前用佔位符取代，翻譯後還原。
+
+5. **OpenCC 額外過轉換**：`程序員` → `程式設計師`（s2twp 模式），需視為已知過轉換案例。
 
 ## Legacy entry point (backward compatible)
 
