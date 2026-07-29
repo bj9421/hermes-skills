@@ -675,6 +675,19 @@
     "use_count": 0,
     "view_count": 0
   },
+  "graphify": {
+    "archived_at": null,
+    "created_at": "2026-07-29T05:10:35.499249+00:00",
+    "created_by": null,
+    "last_patched_at": null,
+    "last_used_at": "2026-07-29T05:34:09.425427+00:00",
+    "last_viewed_at": "2026-07-29T05:34:09.412179+00:00",
+    "patch_count": 0,
+    "pinned": false,
+    "state": "active",
+    "use_count": 3,
+    "view_count": 3
+  },
   "grill-me": {
     "archived_at": null,
     "created_at": "2026-07-24T21:47:51.637438+00:00",
@@ -1025,6 +1038,19 @@
     "state": "active",
     "use_count": 2,
     "view_count": 2
+  },
+  "knowledge-graph-pipeline": {
+    "archived_at": null,
+    "created_at": "2026-07-29T05:11:55.418379+00:00",
+    "created_by": "agent",
+    "last_patched_at": "2026-07-29T05:36:12.213553+00:00",
+    "last_used_at": "2026-07-29T05:35:54.597394+00:00",
+    "last_viewed_at": "2026-07-29T05:35:54.580460+00:00",
+    "patch_count": 7,
+    "pinned": false,
+    "state": "active",
+    "use_count": 3,
+    "view_count": 3
   },
   "legacy-script-cleanup": {
     "archived_at": null,
