@@ -775,3 +775,133 @@ git checkout abc123 -- software-development/ha-powers/SKILL.md
 - ⚠️ **Session history is NOT a substitute:** Session search can find past changes via tool_calls, but it's slow, imprecise, and can't do one-click file restore. Git is the proper mechanism.
 
 **Prevention:** After initial setup, verify with `git status --short` in the skills directory. If it shows "not a git repository", initialize immediately.
+
+---
+
+### 22. Third-Party CLI Tool Installation in Docker Container
+
+Third-party CLI tools installed via `uv tool install` often fail in the Docker container because `uv` defaults to paths under `/root/` (which are read-only for the `hermes` user). A general-purpose workaround:
+
+**Setup — writeable XDG paths under the volume mount:**
+```bash
+export XDG_DATA_HOME=/opt/data/.xdg/data
+export XDG_CACHE_HOME=/opt/data/.xdg/cache
+export XDG_STATE_HOME=/opt/data/.xdg/state
+export UV_PYTHON_INSTALL_DIR=/opt/data/.xdg/data/uv/python
+```
+
+**Install:**
+```bash
+uv tool install <package-name>
+# Binaries land in /opt/data/.xdg/bin/ (automatically created)
+```
+
+**Add to PATH:**
+```bash
+export PATH="/opt/data/.xdg/bin:$PATH"
+```
+
+**Persistence:** Add the above exports to a bash alias or wrapper script. They are session-scoped — each new shell needs them set.
+
+---
+
+#### Problem: Tool Installs but `command not found`
+
+The `uv tool install` output warns about this:
+```
+warning: `/opt/data/.xdg/data/bin` is not on your PATH
+```
+The actual bin dir is usually `/opt/data/.xdg/data/bin` or `/opt/data/.xdg/bin`. Find it:
+```bash
+find /opt/data/.xdg -name "bin" -type d
+```
+
+---
+
+#### Problem: Tool Writes to `~/.<name>/` Using `Path.home()`
+
+Many tools (graphify, cursor CLI, etc.) call `pathlib.Path.home()` to locate their config/skill directories. In the Docker container, `HOME=/root`, so they try to write to `/root/.<name>/` — which fails with `PermissionError`.
+
+**Fix — proxy HOME to a writable dir:**
+```bash
+export HOME=/opt/data   # Redirects Path.home() to the volume mount
+```
+This makes `Path.home()` return `/opt/data` instead of `/root`. Most Python tools don't use `$HERMES_HOME` — they use `HOME` directly.
+
+**Verification:**
+```bash
+python3 -c "from pathlib import Path; print(Path.home())"
+# → /opt/data (not /root)
+```
+
+**Pitfall:** After `export HOME=/opt/data`, point to the existing config if needed:
+```bash
+export HERMES_HOME=/opt/data  # Hermes already uses this
+```
+
+---
+
+#### Problem: Auto-Installer Fails (Skips Skill Copy)
+
+Some tools have an installer subcommand (e.g., `graphify install --platform hermes`) that tries to write skill files to `Path.home() / ".hermes" / "skills"` — which resolves to `/root/.hermes/` even with `HERMES_HOME=/opt/data`.
+
+**Manual skill placement — universal pattern:**
+```bash
+# Source = tool's package directory
+PKG=$(find /opt/data/.xdg/data/uv/tools -name "skill-*.md" -path "*/lib/python*/site-packages/<package>/*" | head -1 | xargs dirname)
+DST=/opt/data/skills/<tool-name>
+mkdir -p $DST/references
+cp $PKG/skill-*.md $DST/SKILL.md
+# Copy references sidecar if they exist
+ls $PKG/skills/ 2>/dev/null && cp -r $PKG/skills/*/references/*.md $DST/references/
+```
+
+**Verify skill frontmatter is valid:**
+```bash
+python3 -c "import yaml; parts=open('/opt/data/skills/<tool-name>/SKILL.md').read().split('---',2); print('OK:', yaml.safe_load(parts[1]).get('name'))"
+```
+
+**Pitfall:** Skill files live at `/opt/data/skills/<name>/SKILL.md`, NOT at `~/.hermes/skills/`. Hermes reads from the former; the installer writes to the latter. Always bypass the auto-installer and place manually.
+
+---
+
+#### Problem: Tool Needs LLM API Key but Only Processes Code
+
+Tools like Graphify do code processing for FREE (local tree-sitter AST, no API key needed), but their default pipeline tries to run LLM semantic extraction on doc/image files.
+
+**Code-only mode:**
+```bash
+graphify . --code-only    # Skips non-code files, no API key needed
+```
+
+**Fresh install API key test for any provider:**
+```bash
+python3 -c "
+import urllib.request, json, os
+req = urllib.request.Request(
+    'https://api.groq.com/openai/v1/chat/completions',
+    data=json.dumps({'model':'llama-3.3-70b-versatile','messages':[{'role':'user','content':'hi'}],'max_tokens':5}).encode(),
+    headers={'Content-Type':'application/json','Authorization':'Bearer '+os.environ['GROQ_API_KEY']},
+    method='POST'
+)
+try:
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        print(f'OK: {resp.status}')
+except Exception as e:
+    print(f'FAIL: {e}')
+"
+```
+
+---
+
+#### Known Tools Installed via This Pattern
+
+| Tool | Package | Install Cmd | Manual Steps |
+|------|---------|-------------|-------------|
+| **Graphify** | `graphifyy` | `uv tool install graphifyy` | `HOME=/opt/data`; manual skill copy to `/opt/data/skills/graphify/`; code-only flag for no-API runs. See `references/graphify-install-rpi4.md` for full details. |
+
+**Pitfalls:**
+- ⚠️ `graphify install --platform hermes` writes to `/root/.hermes/skills/` — cannot use auto-installer
+- ⚠️ Default `graphify .` requires an LLM API key for non-code files; use `--code-only` to skip
+- ⚠️ The `graphifyy` wheel is `py3-none-any` — no architecture issues on ARM64
+- ⚠️ piwheels has prebuilt wheels for all tree-sitter deps on Bookworm/Trixie
