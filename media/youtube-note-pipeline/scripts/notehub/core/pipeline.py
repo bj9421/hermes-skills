@@ -39,6 +39,14 @@ def _sanitize_filename(s: str) -> str:
     return s[:120]
 
 
+PROTECTED_TERMS = {
+    "Hermes Agent": None,  # 品牌名不翻譯
+    "NoteHub": None,
+    "Quicksilver": None,
+    "Judgment": None,
+    "Gateway": None,
+}
+
 def _translate_title(title: str, target_lang: str) -> str | None:
     """Translate title for directory naming."""
     from ..extractors.base import ExtractResult  # avoid circular
@@ -49,13 +57,25 @@ def _translate_title(title: str, target_lang: str) -> str | None:
     }
     lang_name = lang_names.get(target_lang, target_lang)
 
+    # 保護不應翻譯的專有名詞
+    protected_placeholders = {}
+    working_title = title
+    for i, (term, _) in enumerate(PROTECTED_TERMS.items()):
+        placeholder = f"__PROTECTED_{i}__"
+        protected_placeholders[placeholder] = term
+        working_title = working_title.replace(term, placeholder)
+
     messages = [
         {"role": "system", "content": "你是翻譯專家。只翻譯標題，不加任何解釋。"},
-        {"role": "user", "content": f"將以下標題翻譯成{lang_name}，直接輸出翻譯結果：\n\n{title}"},
+        {"role": "user", "content": f"將以下標題翻譯成{lang_name}，直接輸出翻譯結果：\n\n{working_title}"},
     ]
     result = call_llm(messages, max_tokens=TRANSLATE_MAX_TOKENS, temperature=0.3)
     if result:
-        return result.strip().strip('"').strip("'").strip("《》")
+        translated = result.strip().strip('"').strip("'").strip("《》")
+        # 把佔位符還原回英文
+        for placeholder, original in protected_placeholders.items():
+            translated = translated.replace(placeholder, original)
+        return translated
     return None
 
 

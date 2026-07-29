@@ -1,6 +1,6 @@
 ---
 name: youtube-note-pipeline
-description: "Full pipeline: YouTube video → subtitle/transcript → clean Markdown → Obsidian vault export. Three-stage auto-fallback: youtube-transcript-api (cleanest) → yt-dlp VTT → Whisper transcription. Optional --organize for LLM structuring, --podcast for solo/dual-host TTS audio, --ppt for PowerPoint slides, --visual for NotebookLM-style summary image. For note-taking, research, or creating durable knowledge from any YouTube video."
+description: "Full pipeline: YouTube / Instagram / 純文字檔 / PDF / URL → podcast MP3 + Markdown + PPT + 視覺摘要。支援文字檔直接產出 podcast（輸出到 notes/ 需手動搬回 口播/）。Python venv 必須用 /opt/data/.venv/bin/python。"
 platforms: [linux]
 compatibility:
   - yt-dlp
@@ -51,12 +51,34 @@ See `references/notehub-architecture.md` for full architecture details.
 ## Setup (all done — ready to use)
 
 ```bash
-# Dependencies already installed:
+# Dependencies already installed in /opt/data/.venv/:
 # yt-dlp, youtube-transcript-api, faster-whisper, ffmpeg, markitdown, openai
-# pymupdf4llm, mcp (for notehub)
+# pymupdf4llm, mcp, edge-tts, pydub, opencc-py, audioop-lts (for notehub)
 ```
 
-> `openai` SDK required for `--organize` (NVIDIA API). Install: `uv pip install openai`
+## Python Environment (重要 — 必讀)
+
+所有 notehub / yt2md_pipeline 指令**必須使用正確的 Python 直譯器**：
+
+```bash
+# ✅ 正確 — 所有依賴已安裝在此
+/opt/data/.venv/bin/python -m notehub "URL" --podcast solo --lang zh
+
+# ❌ 錯誤 — system venv 沒有 edge-tts/pydub/openai/opencc
+/opt/hermes/.venv/bin/python -m notehub ...
+
+# ❌ 錯誤 — 專案 venv 也沒有 notehub 依賴
+/opt/data/projects/17uu-hotels/.venv/bin/python -m notehub ...
+
+# ❌ 錯誤 — uv 在 Docker 中無權限寫 cache
+uv run python -m notehub ...
+```
+
+**所有依賴已在 `/opt/data/.venv/` 安裝完畢，無需手動安裝。** 如果執行 notehub 報錯 `No module named ...`，先確認是否用了正確的 Python。驗證方式：
+
+```bash
+/opt/data/.venv/bin/python -c "import edge_tts, pydub, openai, opencc; print('all deps OK ✅')"
+```
 
 ## Pipeline Overview
 
@@ -298,6 +320,10 @@ uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --podcast dual --voice-
 
     **Verified output** (2026-07-26, Bilibili BV1Gv7V6BEjL, 12 min Chinese): yt-dlp downloaded 12.5MB m4a → Groq Whisper transcribed 4510 chars in ~10s → notehub generated 34-line script + 266s MP3 (1MB). Full pipeline under 5 minutes.
 
+14. **Wrong Python venv — `No module named ...` despite deps being installed**: The system has multiple Python venvs. `/opt/data/.venv/bin/python` is the one with all notehub dependencies. Do NOT use `/opt/hermes/.venv/bin/python3` (Hermes system venv, no notehub deps), `/opt/data/projects/*/.venv/bin/python` (project-specific, no notehub deps), or `uv run python3` (uv fails in this Docker container — permission denied on `/root/.cache/uv`). If you get `ModuleNotFoundError`, first check which Python you're using. The fix is almost always switching to `/opt/data/.venv/bin/python`. Verify: `/opt/data/.venv/bin/python -c "import edge_tts, pydub, openai, opencc; print('all deps OK')"`
+
+15. **Text source → output goes to `notes/` not `口播/`**: When running notehub with a text/.md source (e.g. Whisper transcript, local file), the output directory is under `notes/` not `口播/`. If the user's intent is clearly a podcast (they specified `--podcast`), **proactively move the output to `口播/`** and note it in your response. Do not wait for the user to ask. The correct move: `mv "notes/{title} [hash]/" "口播/{title} [hash]/"` + `chmod -R 777`.
+
 ## PPT Mode (`--ppt`) — PowerPoint Presentation
 
 > ✅ **Implemented** — `--ppt` flag generates a professional PowerPoint from the transcript.
@@ -387,7 +413,16 @@ When `--lang` differs from the source language (e.g. `--lang zh` on an English v
 - **`dir_title`** = LLM-translated title (used for directory name + MP3/PPT/visual filenames)
 - **`title`** = original English title (used in frontmatter `source` field + transcript content)
 
-Translation uses a fast LLM call (`max_tokens=100`, `temperature=0.3`) via `_translate_title()` in `podcast.py`. **Has retry + fallback** (same model chain — see LLM Retry Pattern below). Falls back to original title only after all models exhausted.
+Translation uses a fast LLM call (`max_tokens=100`, `temperature=0.3`) via `_translate_title()` in `notehub/core/pipeline.py`. **Has retry + fallback** (same model chain — see LLM Retry Pattern below). Falls back to original title only after all models exhausted.
+
+### PROTECTED_TERMS — 專有名詞不翻譯
+
+`_translate_title()` 內建 `PROTECTED_TERMS` 字典，用佔位符取代 → LLM 翻譯 → 還原的方式保護特定名詞不被翻成中文：
+
+- `Hermes Agent` → 不會翻成「赫爾墨斯代理」
+- `NoteHub`, `Quicksilver`, `Judgment`, `Gateway` 也比照保護
+
+如需新增保護詞，編輯 `notehub/core/pipeline.py` 的 `PROTECTED_TERMS` dict 即可。
 
 ### Title Translation Pitfalls
 
@@ -555,28 +590,33 @@ Implementation: `notehub/__main__.py` scans `pipeline_args` for any value in `VO
 
 ## Usage (NoteHub — recommended entry point)
 
+> ⚠️ **所有 notehub 指令一律使用 `/opt/data/.venv/bin/python`**，不要用 system venv 或 uv run。
+> 驗證：`/opt/data/.venv/bin/python -c "import edge_tts, pydub, openai, opencc; print('ok')"`
+
 ```bash
 # YouTube
-python -m notehub "https://youtube.com/watch?v=xxx" --podcast dual --ppt --visual --lang zh 台女 台男
+/opt/data/.venv/bin/python -m notehub "https://youtube.com/watch?v=xxx" --podcast dual --ppt --visual --lang zh 台女 台男
 
 # Instagram Reel (auto-downloads audio + Groq Whisper + TC conversion)
-python -m notehub "https://www.instagram.com/reel/xxx" --podcast solo --lang zh 台女
+/opt/data/.venv/bin/python -m notehub "https://www.instagram.com/reel/xxx" --podcast solo --lang zh 台女
 
 # Bilibili / non-YouTube video (manual Groq Whisper)
 yt-dlp -x --audio-format m4a -o "audio/%(id)s.%(ext)s" "BILIBILI_URL"
-# Then: python -m notehub transcript.md --podcast solo --ppt --visual 台女
+# Then: /opt/data/.venv/bin/python -m notehub transcript.md --podcast solo --ppt --visual 台女
 
 # Web URL
-python -m notehub "https://example.com" --organize --visual
+/opt/data/.venv/bin/python -m notehub "https://example.com" --organize --visual
 
-# PDF / text file
-python -m notehub ./doc.pdf --organize --ppt
-python -m notehub ./notes.txt --podcast solo 台男
+# 📝 純文字檔 / PDF → 口播（重點！）
+# 輸出會到 notes/ 不是 口播/，需手動搬移
+/opt/data/.venv/bin/python -m notehub ./doc.pdf --organize --ppt
+/opt/data/.venv/bin/python -m notehub ./notes.md --podcast solo --lang zh 台女
+# ↑ 完成後檢查 output 路徑，自動搬到 口播/ 下
 
 # Search & manage
-python -m notehub --search "AI"
-python -m notehub --list
-python -m notehub --stats
+/opt/data/.venv/bin/python -m notehub --search "AI"
+/opt/data/.venv/bin/python -m notehub --list
+/opt/data/.venv/bin/python -m notehub --stats
 ```
 
 ## Post-Pipeline: Output Organization & Cleanup
@@ -586,9 +626,28 @@ notehub outputs podcast files to `/opt/data/obsidian-vault/口播/` for YouTube 
 1. **Check output directory**: 
    - YouTube & Instagram → `口播/{title} [{video_id}]/`
    - URL/PDF/text → `notes/{title} [{hash}]/`
-2. **Report to user**: include the final path (`**路徑：** /opt/data/obsidian-vault/口播/...`)
+2. **If source is a text file AND --podcast was requested → 自動搬到 口播/**：
+   ```bash
+   mv "notes/{title} [{hash}]/" "口播/{title} [{hash}]/"
+   chmod -R 777 "口播/{title} [{hash}]/"
+   ```
+3. **Report to user**: include the final path (`**路徑：** /opt/data/obsidian-vault/口播/...`)
 
 > ⚠️ **Garbled title from text source (only):** When notehub processes a **text file** (Whisper transcript that was manually fed in), the output directory name is derived from the **filename**, not the video title (e.g. `Lun Yydhpyy 抄本 [hash]/` instead of the real title). This does NOT happen with YouTube or Instagram sources — those extractors get the real title. If feeding a text/Whisper file manually, see the manual workflow in `instagram-reel-podcast` skill.
+
+### Key learnings (2026-07-30):
+
+1. **正確 Python 直譯器**：所有 notehub 指令必須用 `/opt/data/.venv/bin/python`。
+   - ❌ `/opt/hermes/.venv/bin/python3`（無 edge-tts/pydub/openai/opencc）
+   - ❌ `/opt/data/projects/*/.venv/bin/python`（專案專用，無相依套件）
+   - ❌ `uv run python3`（Docker 中無權限寫 cache）
+   - ✅ `/opt/data/.venv/bin/python`（所有相依已安裝）
+
+2. **文字檔 → 口播流程**：`python -m notehub file.md --podcast solo --lang zh 台女`
+   - 輸出到 `notes/`，完成後要搬到 `口播/`
+   - 檔名會用 LLM 翻譯的標題
+
+3. **品牌名稱不翻譯**：`Hermes Agent`、`NoteHub`、`Gateway` 等在 `pipeline.py` 的 `PROTECTED_TERMS` 保護，翻譯前用佔位符取代，翻譯後還原。
 
 ## Legacy entry point (backward compatible)
 
