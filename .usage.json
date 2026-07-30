@@ -220,6 +220,19 @@
     "use_count": 0,
     "view_count": 0
   },
+  "bookmark-manager": {
+    "archived_at": null,
+    "created_at": "2026-07-30T10:51:55.731593+00:00",
+    "created_by": null,
+    "last_patched_at": null,
+    "last_used_at": "2026-07-30T10:51:55.744582+00:00",
+    "last_viewed_at": "2026-07-30T10:51:55.731637+00:00",
+    "patch_count": 0,
+    "pinned": false,
+    "state": "active",
+    "use_count": 1,
+    "view_count": 1
+  },
   "brainstorming": {
     "archived_at": null,
     "created_at": "2026-07-07T20:19:37.618102+00:00",
@@ -693,13 +706,13 @@
     "created_at": "2026-07-24T21:47:51.637438+00:00",
     "created_by": null,
     "last_patched_at": null,
-    "last_used_at": "2026-07-25T04:51:00.707193+00:00",
-    "last_viewed_at": "2026-07-25T04:51:00.684368+00:00",
+    "last_used_at": "2026-07-30T09:20:24.421331+00:00",
+    "last_viewed_at": "2026-07-30T09:20:24.408632+00:00",
     "patch_count": 0,
     "pinned": false,
     "state": "active",
-    "use_count": 3,
-    "view_count": 3
+    "use_count": 4,
+    "view_count": 4
   },
   "grill-with-docs": {
     "archived_at": null,
@@ -719,26 +732,26 @@
     "created_at": "2026-07-25T04:51:00.723190+00:00",
     "created_by": null,
     "last_patched_at": null,
-    "last_used_at": "2026-07-25T20:40:33.057984+00:00",
-    "last_viewed_at": "2026-07-25T20:40:33.043778+00:00",
+    "last_used_at": "2026-07-30T09:20:27.411186+00:00",
+    "last_viewed_at": "2026-07-30T09:20:27.399619+00:00",
     "patch_count": 0,
     "pinned": false,
     "state": "active",
-    "use_count": 2,
-    "view_count": 2
+    "use_count": 3,
+    "view_count": 3
   },
   "ha-powers": {
     "archived_at": null,
     "created_at": "2026-07-07T19:23:23.001894+00:00",
     "created_by": null,
     "last_patched_at": "2026-07-25T01:31:39.753458+00:00",
-    "last_used_at": "2026-07-26T10:05:23.528060+00:00",
-    "last_viewed_at": "2026-07-26T10:05:23.515718+00:00",
+    "last_used_at": "2026-07-30T10:57:22.963657+00:00",
+    "last_viewed_at": "2026-07-30T10:57:22.951210+00:00",
     "patch_count": 60,
     "pinned": false,
     "state": "active",
-    "use_count": 69,
-    "view_count": 69
+    "use_count": 74,
+    "view_count": 74
   },
   "handoff": {
     "archived_at": null,
