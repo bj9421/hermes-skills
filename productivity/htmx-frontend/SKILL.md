@@ -26,6 +26,46 @@ tags: [htmx, frontend, flask, pwa]
 
 **例外**：一個行內 `onclick` 控制顯示/隱藏（如 toggle form）可以接受。
 
+### 載入指示器（hx-indicator）
+
+長請求（> 2s）必須有載入提示。方式：在 form 或按鈕上加 `hx-indicator`，指向一個預設隱藏的元素。
+
+最簡單（用 HTMX 內建 `.htmx-indicator` class — opacity 切換）：
+```html
+<form hx-post="/api/save" hx-indicator="#loading">
+  ...
+  <span id="loading" class="htmx-indicator">⏳ 處理中...</span>
+</form>
+```
+
+自訂顯示方式（CSS display 切換）：
+```css
+.spinner { display: none; }
+.spinner.htmx-request { display: inline; }
+```
+```html
+<button hx-post="/api/enrich" hx-indicator="#spin">
+  🤖<span id="spin" class="spinner"> 處理中...</span>
+</button>
+```
+
+注意：`hx-indicator` 將 `htmx-request` class 加在指向的元素**本身**（不是其父容器）。CSS 要寫 `.spinner.htmx-request` 而非 `.htmx-request .spinner`。
+
+### 批次操作延遲刷新
+
+後端同步完成後，等幾秒再刷新列表讓使用者看見結果變化：
+
+```js
+function refreshWithDelay() {
+    setTimeout(() => {
+        htmx.trigger('#list', 'load');
+        htmx.trigger('#stats', 'load');
+    }, 3000);
+}
+```
+
+在 fetch/HTMX 完成回呼中呼叫 `refreshWithDelay()` 取代直接 `htmx.trigger()`。
+
 ### 規格對齊
 
 動手前先問：「HTMX 有沒有原生方式處理這個？」而不是寫完 JS 再回頭改。

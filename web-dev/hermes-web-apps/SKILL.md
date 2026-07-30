@@ -28,6 +28,45 @@ tags: [htmx, pwa, flask, tailscale, web-dev, telegram-bot]
 | `addEventListener('submit', e => { e.preventDefault(); ... })` | HTML form + `hx-post` 直接提交，後端回傳 HTML fragment |
 | `location.reload()` 或手動 DOM 更新 | `hx-trigger="load"` / `hx-on::after-request` 觸發另一元件刷新 |
 
+### HTMX 載入指示器（hx-indicator）
+
+兩種常見用法：
+
+**方式 1：被 hx-indicator 指定的元素自動加 `htmx-indicator` class**（HTMX 內建 opacity 切換）
+```html
+<button hx-post="/api/save" hx-indicator="#spin">儲存</button>
+<div id="spin" class="htmx-indicator">處理中...</div>
+```
+
+**方式 2：自訂 CSS class + 父元素 htmx-request**
+```css
+.enrich-spinner { display: none; }
+.enrich-spinner.htmx-request { display: inline; }
+```
+
+```html
+<button hx-post="/api/enrich" hx-indicator="#my-spin">
+  🤖<span id="my-spin" class="enrich-spinner"> 補齊中...</span>
+</button>
+```
+
+注意：當 `hx-indicator` 指向 span 時，HTMX 把 `htmx-request` class 加在該 span 上（不是它的父元素）。CSS selector 要寫 `span.htmx-request` 而非 `.htmx-request span`。
+
+### 批次操作後延遲刷新
+
+當 batch action（刪除、加標籤、移除標籤等）完成後，等幾秒再刷新讓使用者在 UI 上看到結果：
+
+```js
+function refreshWithDelay() {
+    setTimeout(() => {
+        htmx.trigger('#bookmark-list', 'load');
+        htmx.trigger('#stats-card', 'load');
+    }, 3000);
+}
+```
+
+呼叫時機：batch action 的 `await resp.json()` 拿到 `ok` 後，用 `refreshWithDelay()` 取代直接 `htmx.trigger()`。
+
 ### 後端回傳原則
 
 HTMX 端點（偵測到 `HX-Request` header）**回傳 HTML fragment** 而非 JSON：
@@ -78,9 +117,58 @@ if ('serviceWorker' in navigator) {
 </script>
 ```
 
-## 背景 Enrich Pipeline
+## Enrich Pipeline — 兩種模式
+
+### 模式 A：背景 cron（不阻塞）
 
 適用情境：Web UI 新增或 Telegram bot 收資料時不阻塞等 LLM，事後由 cron 補上。
+
+### 模式 B：即時 LLM（同步阻塞，約 3-10 秒）
+
+適用情境：使用者願意等幾秒換取即時摘要+標籤。
+
+在 Flask POST 端點內直接呼叫 LLM：
+
+```python
+# 在 add_bookmark() 內：
+if row and not data.get('summary') and not data.get('tags'):
+    enriched_title = fetch_title(url) or data.get('title', '')
+    enriched_summary, enriched_tags = llm_enhance(url, enriched_title)
+    enriched_tags = normalize_source_tags(url, enriched_tags)
+    if enriched_summary or enriched_tags:
+        conn.execute("UPDATE bookmarks SET title=?, summary=?, tags=?, processed=1 WHERE id=?", ...)
+```
+
+Web UI 表單要加 `hx-indicator` 顯示載入中：
+
+```html
+<form hx-post="/api/bookmarks" hx-target="#bookmark-list"
+      hx-indicator="#add-loading">
+    <input type="url" name="url" required>
+    <button type="submit">儲存</button>
+    <div id="add-loading" class="htmx-indicator">⏳ LLM 分析中...</div>
+</form>
+```
+
+`processed` 欄位同步設定：當 API 收到 summary 或 tags 時設 `processed=1`：
+```python
+1 if data.get('summary') or data.get('tags') else 0
+```
+
+### 來源強制標籤（normalize_source_tags）
+
+LLM 可能對同一來源產生不同標籤寫法（Bilibili / B站 / bilibili），需強制統一：
+
+```python
+def normalize_source_tags(url, tags):
+    if any(dom in url for dom in ['bilibili.com', 'b23.tv']):
+        return 'bilibili'
+    return tags
+```
+
+同步在：Flask app、Telegram bot、cron prompt 三處。
+
+### DB schema
 
 ### DB schema
 ```sql
@@ -195,3 +283,9 @@ tailscale serve --bg --https 8443 localhost:9119
 
 - `references/bookmark-api.md` — Bookmark Manager API 文件
 - `references/bookmark-bot.md` — @add2bm_bot Telegram bot 技術細節（啟動/停止/除錯）
+
+## Consolidation Notes
+
+- **`personal-bookmark-system`（web 類）** 與此 umbrella 內容高度重疊。該技能是 bookmark-manager 的實例描述，已被此 umbrella 吸收。後續可移為此技能的 references/project-bookmark-manager.md，避免重複維護兩份架構說明。
+- **`bookmark-manager`（productivity 類）** 是 `add2` 觸發流程的實作步驟，與此 umbrella 沒有重疊。保留為獨立 skill。
+- **`htmx-frontend`（productivity 類）** 是純前端規範，被此 umbrella 引用但不重疊。
