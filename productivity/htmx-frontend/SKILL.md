@@ -1,7 +1,7 @@
 ---
 name: htmx-frontend
 description: "HTMX 前端開發規範 — 零自訂 JS 原則，所有互動走 hx-* 屬性。適用於 Flask + HTMX + SQLite 架構的內部工具開發。"
-version: 1.0.0
+version: 1.1.0
 author: Hermes
 tags: [htmx, frontend, flask, pwa]
 ---
@@ -69,6 +69,63 @@ def add_bookmark():
     if request.headers.get('HX-Request') == 'true':
         return render_template('_partial.html', data=data)
     return jsonify({'ok': True})
+```
+
+### Inline 編輯模式（✏️ 卡片內編輯）
+
+適合清單中每筆資料的快速編輯，不開 modal、不跳頁。
+
+**步驟：**
+1. 每張卡片有 ✏️ 按鈕 → `hx-get="/api/item/<id>/edit-form"`
+2. `hx-target="#card-<id>"` + `hx-swap="beforeend"` → 在卡片底部插入編輯表單
+3. 編輯表單提交 → `hx-put="/api/item/<id>/update"`
+4. 更新成功後回傳整個列表 fragment 取代之（`hx-target="#list" hx-swap="outerHTML"`）
+
+**HTML 範例：**
+
+```html
+<!-- 卡片容器要有 id -->
+<div class="card" id="card-{{ item.id }}">
+  <div class="card-body">...</div>
+  <div class="card-actions">
+    <button hx-get="/api/item/{{ item.id }}/edit-form"
+            hx-target="#card-{{ item.id }}"
+            hx-swap="beforeend">✏️</button>
+  </div>
+</div>
+
+<!-- 後端回傳的編輯表單（_edit_form.html） -->
+<div class="card-edit-form" id="edit-form-{{ item.id }}">
+  <form hx-put="/api/item/{{ item.id }}/update"
+        hx-target="#list" hx-swap="outerHTML">
+    <label>標題</label>
+    <input name="title" value="{{ item.title }}">
+    <label>摘要</label>
+    <textarea name="summary">{{ item.summary }}</textarea>
+    <div class="edit-actions">
+      <button type="submit">💾 儲存</button>
+      <button type="button"
+              onclick="document.getElementById('edit-form-{{ item.id }}').remove()">取消</button>
+    </div>
+  </form>
+</div>
+```
+
+**後端：**
+
+```python
+@app.route('/api/item/<int:id>/edit-form', methods=['GET'])
+def edit_form(id):
+    item = get_item(id)
+    return render_template('_edit_form.html', item=item)
+
+@app.route('/api/item/<int:id>/update', methods=['PUT'])
+def update_item(id):
+    data = request.get_json()
+    cur.execute('UPDATE items SET title=?, summary=? WHERE id=?',
+                (data['title'], data['summary'], id))
+    conn.commit()
+    return render_template('_list.html', items=get_all())
 ```
 
 ## 架構樣板
