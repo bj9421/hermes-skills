@@ -396,7 +396,30 @@ uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --podcast dual --voice-
     - 複製既有 code 時**質疑每個參數**（尤其 timeout / 大小上限）——不要照搬可能對新場景不適用的值
     - 大檔新場景（>20MB 長影片）先用**分段**而非壓縮：ffmpeg `-c copy` 無損切段 1 秒完成，逐段 Groq，全程 26s（vs 壓縮 72s+ 還可能失敗）
 
-21. **Zen API 限流 fallback 流程（2026-07-31 實測驗證）**：當 Zen API 返回 429 限流時，用本地正則替換快速處理標點，不等 API 恢復。
+22. **RPM 限流保護（2026-07-31 新增）：避免 429 限流或封號**
+
+```python
+# llm.py 中的 rate limiters
+_zen_interval = 3.0   # 20 RPM
+_agnes_interval = 2.0 # 30 RPM
+_nvidia_interval = 2.0 # 30 RPM (deprecated)
+
+def _rate_limit(latest_call: float, interval: float) -> float:
+    with _rate_lock:
+        elapsed = time.time() - latest_call
+        if elapsed < interval:
+            time.sleep(interval - elapsed)
+        return time.time()
+```
+
+**觸發時機**：Zen 429 時自動 fallback 到 AGNES（agnes-2.0-flash）
+
+**實測結果**：
+- Zen 限流時約 7-8 秒完成呼叫（含等待 + fallback）
+- AGNES API 穩定，無 429 記錄
+- 避免帳號被封禁
+
+**🔴 永久規則**：任何 LLM 呼叫必須經過 `_rate_limit()`，禁止直接 `requests.post()`
 
 ```bash
 # 快速標點處理 + TTS（完全離線）

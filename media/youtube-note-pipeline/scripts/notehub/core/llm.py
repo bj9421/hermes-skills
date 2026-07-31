@@ -70,6 +70,53 @@ def get_client():
     return OpenAI(base_url=NVIDIA_BASE_URL, api_key=api_key)
 
 
+def call_groq(messages: list[dict], max_tokens: int = 4096,
+              temperature: float = 0.3) -> str | None:
+    """呼叫 Groq API（llama-3.3-70b-versatile）。
+
+    當 Zen + AGNES 都限流時的第三層 fallback。
+    免費 tier: 30 RPM, 6K TPM, 14,400 RPD。
+
+    ⚠️ Rate limit: 30 RPM (2s interval) to avoid 429 errors.
+    """
+    import http.client
+    import json
+    import os
+
+    # Rate limiting
+    global _nvidia_last_call  # 共用 lock
+    _nvidia_last_call = _rate_limit(_nvidia_last_call, _nvidia_interval)
+
+    key = os.environ.get('GROQ_API_KEY', '')
+    if not key:
+        print("[WARN] GROQ_API_KEY not found", file=sys.stderr)
+        return None
+
+    payload = {
+        'model': 'llama-3.3-70b-versatile',
+        'messages': messages,
+        'temperature': temperature,
+        'max_tokens': max_tokens,
+    }
+    body = json.dumps(payload, ensure_ascii=False)
+    try:
+        conn = http.client.HTTPSConnection('api.groq.com', timeout=45)
+        conn.request('POST', '/openai/v1/chat/completions', body.encode('utf-8'),
+                     {'Content-Type': 'application/json',
+                      'Authorization': f'Bearer {key}'})
+        resp = conn.getresponse()
+        data = json.loads(resp.read().decode('utf-8'))
+        conn.close()
+        if resp.status == 200:
+            content = data.get('choices', [{}])[0].get('message', {}).get('content', '')
+            return content.strip() if content else None
+        print(f"[WARN] Groq API HTTP {resp.status}", file=sys.stderr)
+        return None
+    except Exception as e:
+        print(f"[WARN] Groq API failed: {e}", file=sys.stderr)
+        return None
+
+
 def call_agnes(messages: list[dict], max_tokens: int = 4096,
                temperature: float = 0.3) -> str | None:
     """呼叫 AGNES API（agnes-2.0-flash）。
@@ -198,5 +245,11 @@ def call_llm(messages: list[dict], max_tokens: int = 4096,
     if agnes_result:
         print("[OK] AGNES API fallback successful", file=sys.stderr)
         return agnes_result
-    print("[WARN] AGNES API also failed — job will be marked as failed", file=sys.stderr)
+    # AGNES 也限流時 fallback 到 Groq
+    print("[INFO] AGNES API unavailable, falling back to Groq...", file=sys.stderr)
+    groq_result = call_groq(messages, max_tokens, temperature)
+    if groq_result:
+        print("[OK] Groq API fallback successful", file=sys.stderr)
+        return groq_result
+    print("[WARN] All LLM providers failed — job will be marked as failed", file=sys.stderr)
     return None
