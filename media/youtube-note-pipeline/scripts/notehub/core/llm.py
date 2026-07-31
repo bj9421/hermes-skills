@@ -119,12 +119,12 @@ def call_groq(messages: list[dict], max_tokens: int = 4096,
 
 def call_agnes(messages: list[dict], max_tokens: int = 4096,
                temperature: float = 0.3) -> str | None:
-    """呼叫 AGNES API（agnes-2.0-flash）。
+    """呼叫 AGNES API（agnes-2.5-flash，優先；agnes-2.0-flash，備用）。
 
     當 OpenCode Zen 限流時的 fallback provider。
-    預設 30 RPM (2s interval) 以避免被限流。
+    預設 20 RPM (3s interval) 以避免被限流。
 
-    ⚠️ Rate limit: 30 RPM (2s interval) to avoid 429 errors.
+    ⚠️ Rate limit: 20 RPM (3s interval) to avoid 429 errors.
     """
     import http.client
     import json
@@ -151,7 +151,7 @@ def call_agnes(messages: list[dict], max_tokens: int = 4096,
         return None
 
     payload = {
-        'model': 'agnes-2.0-flash',
+        'model': 'agnes-2.5-flash',
         'messages': messages,
         'temperature': temperature,
     }
