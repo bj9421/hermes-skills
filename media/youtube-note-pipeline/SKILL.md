@@ -82,3 +82,5 @@ result = call_llm([{'role': 'user', 'content': '...'}])
 22. **RPM 限流保護** — 每個 provider 都有 `_rate_limit()`，避免 429 限流或封號
 
 23. **Provider RPM 限制調查** — OpenCode Zen 未公開 RPM（實際被限），AGNES ~20 RPM，Groq 30 RPM / 6K TPM
+
+24. **daily-review 報告格式（2026-07-31 用戶指示）** — 必須同時記錄「系統錯誤」+「代碼錯誤」。代碼錯誤格式：What/Why/When/Where/Who/How/Impact/修正/教訓。數據來源：cron/jobs.json + git log + session_search

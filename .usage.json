@@ -836,13 +836,13 @@
     "created_at": "2026-07-10T12:39:38.045007+00:00",
     "created_by": "agent",
     "last_patched_at": "2026-07-25T04:17:20.730837+00:00",
-    "last_used_at": "2026-07-31T14:53:11.351707+00:00",
-    "last_viewed_at": "2026-07-31T14:53:11.335540+00:00",
+    "last_used_at": "2026-07-31T17:25:58.375521+00:00",
+    "last_viewed_at": "2026-07-31T17:25:58.361408+00:00",
     "patch_count": 42,
     "pinned": false,
     "state": "active",
-    "use_count": 76,
-    "view_count": 76
+    "use_count": 77,
+    "view_count": 77
   },
   "hermes-dashboard-troubleshooting": {
     "archived_at": null,
@@ -1291,13 +1291,13 @@
     "created_at": "2026-06-17T14:47:41.257313+00:00",
     "created_by": null,
     "last_patched_at": "2026-06-17T20:46:02.017402+00:00",
-    "last_used_at": "2026-07-25T21:29:58.873003+00:00",
-    "last_viewed_at": "2026-07-25T21:29:58.845195+00:00",
+    "last_used_at": "2026-07-31T18:06:29.309700+00:00",
+    "last_viewed_at": "2026-07-31T18:06:29.296308+00:00",
     "patch_count": 1,
     "pinned": false,
     "state": "active",
-    "use_count": 22,
-    "view_count": 22
+    "use_count": 23,
+    "view_count": 23
   },
   "obsidian-daily-summary": {
     "archived_at": null,
@@ -1824,13 +1824,13 @@
     "created_at": "2026-07-31T09:49:38.213978+00:00",
     "created_by": null,
     "last_patched_at": "2026-07-31T12:06:36.121952+00:00",
-    "last_used_at": "2026-07-31T14:52:03.221272+00:00",
-    "last_viewed_at": "2026-07-31T14:52:03.179215+00:00",
+    "last_used_at": "2026-07-31T17:26:39.113286+00:00",
+    "last_viewed_at": "2026-07-31T17:26:39.099453+00:00",
     "patch_count": 3,
     "pinned": false,
     "state": "active",
-    "use_count": 2,
-    "view_count": 2
+    "use_count": 3,
+    "view_count": 3
   },
   "webhook-subscriptions": {
     "archived_at": null,
@@ -1901,14 +1901,14 @@
     "archived_at": null,
     "created_at": "2026-07-07T04:37:44.994692+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-07-31T13:27:10.134783+00:00",
-    "last_used_at": "2026-07-31T14:53:11.390516+00:00",
-    "last_viewed_at": "2026-07-31T14:53:11.377264+00:00",
-    "patch_count": 147,
+    "last_patched_at": "2026-07-31T17:29:57.759579+00:00",
+    "last_used_at": "2026-07-31T17:29:18.989019+00:00",
+    "last_viewed_at": "2026-07-31T17:29:18.974668+00:00",
+    "patch_count": 148,
     "pinned": false,
     "state": "active",
-    "use_count": 108,
-    "view_count": 108
+    "use_count": 109,
+    "view_count": 109
   },
   "yuanbao": {
     "archived_at": null,
