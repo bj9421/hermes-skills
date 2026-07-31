@@ -52,6 +52,58 @@ def get_client():
     return OpenAI(base_url=NVIDIA_BASE_URL, api_key=api_key)
 
 
+def call_agnes(messages: list[dict], max_tokens: int = 4096,
+               temperature: float = 0.3) -> str | None:
+    """呼叫 AGNES API（agnes-2.0-flash）。
+
+    當 OpenCode Zen 限流時的 fallback provider。
+    """
+    import http.client
+    import json
+    import os
+
+    key = os.environ.get('AGNES_API_KEY', '')
+    if not key:
+        # 從 .env 讀取
+        try:
+            with open('/opt/data/.env') as f:
+                for line in f:
+                    if line.startswith('AGNES_API_KEY='):
+                        key = line.split('=', 1)[1].strip().strip('"').strip("'")
+                        break
+        except:
+            pass
+
+    if not key:
+        print("[WARN] AGNES_API_KEY not found", file=sys.stderr)
+        return None
+
+    payload = {
+        'model': 'agnes-2.0-flash',
+        'messages': messages,
+        'temperature': temperature,
+    }
+    if max_tokens and max_tokens > 0:
+        payload['max_tokens'] = max_tokens
+    body = json.dumps(payload, ensure_ascii=False)
+    try:
+        conn = http.client.HTTPSConnection('apihub.agnes-ai.com', timeout=45)
+        conn.request('POST', '/v1/chat/completions', body.encode('utf-8'),
+                     {'Content-Type': 'application/json',
+                      'Authorization': f'Bearer {key}'})
+        resp = conn.getresponse()
+        data = json.loads(resp.read().decode('utf-8'))
+        conn.close()
+        if resp.status == 200:
+            content = data.get('choices', [{}])[0].get('message', {}).get('content', '')
+            return content.strip() if content else None
+        print(f"[WARN] AGNES API HTTP {resp.status}", file=sys.stderr)
+        return None
+    except Exception as e:
+        print(f"[WARN] AGNES API failed: {e}", file=sys.stderr)
+        return None
+
+
 def call_zen(messages: list[dict], max_tokens: int = 0,
              temperature: float = 0.3) -> str | None:
     """呼叫 OpenCode Zen（deepseek-v4-flash-free，免費免 Key）。
@@ -110,5 +162,11 @@ def call_llm(messages: list[dict], max_tokens: int = 4096,
     zen_result = call_zen(messages, max_tokens, temperature)
     if zen_result:
         return zen_result
-    print("[WARN] Zen LLM unavailable — 依使用者指示不 fallback NVIDIA（NVIDIA 僅供 Whisper）", file=sys.stderr)
+    # Zen 限流時 fallback 到 AGNES API
+    print("[INFO] Zen LLM unavailable, falling back to AGNES API...", file=sys.stderr)
+    agnes_result = call_agnes(messages, max_tokens, temperature)
+    if agnes_result:
+        print("[OK] AGNES API fallback successful", file=sys.stderr)
+        return agnes_result
+    print("[WARN] AGNES API also failed — job will be marked as failed", file=sys.stderr)
     return None

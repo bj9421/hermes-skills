@@ -396,6 +396,41 @@ uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --podcast dual --voice-
     - 複製既有 code 時**質疑每個參數**（尤其 timeout / 大小上限）——不要照搬可能對新場景不適用的值
     - 大檔新場景（>20MB 長影片）先用**分段**而非壓縮：ffmpeg `-c copy` 無損切段 1 秒完成，逐段 Groq，全程 26s（vs 壓縮 72s+ 還可能失敗）
 
+21. **Zen API 限流 fallback 流程（2026-07-31 實測驗證）**：當 Zen API 返回 429 限流時，用本地正則替換快速處理標點，不等 API 恢復。
+
+```bash
+# 快速標點處理 + TTS（完全離線）
+/opt/data/.venv/bin/python /opt/data/scripts/add_punctuation.py \
+  --input script.md \
+  --output script_punct.md \
+  --tts
+```
+
+**核心邏輯**（硬編碼關鍵詞替換，非 LLM）：
+- 連接詞後加逗號：`所以/但是/然後/接著/接下來/最後/比如/例如`
+- 語氣詞後加句號：`對吧/嘛/呢/吧/啊`
+- 數字時間後加逗號：`\d+月/\d+點/\d+天/\d+秒`
+- 強制分段：按 `[，。！？]` 切 + 結尾補句號
+
+**實測結果**（V8kSMZfR2g4）：
+- 18行 → 255段落，8.0MB MP3，23分鐘
+- 處理時間：<1 秒，零 API 成本
+
+**品質限制**：
+- 「就」字過度替換（「就是」→「就，是」）
+- 無法理解語意（部分位置不自然）
+- 標點重複（「呢。」→「呢。。」）
+
+**建議流程**：
+```python
+1. 先試 call_zen()  ← 優先
+2. 若 429 → 用 add_punctuation.py  ← fallback
+3. 標記為「本地生成（非 LLM）」
+4. Zen 恢復後手動優化 script.md
+```
+
+**🔴 永久 fallback 工具**：`/opt/data/scripts/add_punctuation.py`（已驗證，可直接用）
+
 20. **notehub 口播 pipeline 的 LLM 一律不用 NVIDIA（2026-07-31 使用者硬性規則）**：**範圍限定本 pipeline**（bookmark-manager 佇列 worker / notehub CLI 的口播腳本、標題翻譯、PPT 重點提取、視覺摘要、organize）——NVIDIA 在此 pipeline **只負責 Whisper 轉寫**（Groq 的 fallback 層，`transcribe.py` 的 `_transcribe_nvidia` gRPC），其餘 LLM 呼叫**全部只走 OpenCode Zen**（`call_zen()`）。**此限制不擴及 pipeline 以外的腳本**（graphify、Hermes vision、其他獨立工具可繼續用各自的 NVIDIA 設定）。原因：NVIDIA LLM 曾無 timeout 卡死 job 12 10+ 分鐘（SDK 預設 600s×重試）。
     - 偵測：log 停在 `[INFO] Generating solo podcast script via LLM...` 超過 5 分鐘；直接測 API：`<python> -c "測試 chat completion"` 或 curl（若 completion timeout 而 models 正常 = 卡住）
     - 工作流：
