@@ -92,65 +92,23 @@ def call_zen(messages: list[dict], max_tokens: int = 0,
 
 def call_llm(messages: list[dict], max_tokens: int = 4096,
              temperature: float = 0.3, model_override: str = None) -> str | None:
-    """Call LLM with rate limiting, retry, and fallback.
+    """Call LLM — **只走 OpenCode Zen**（免費穩定）。
 
-    ⚠️ 2026-07-31 使用者指示：口播腳本用免費穩定模型。
-    優先 OpenCode Zen（deepseek-v4-flash-free，免費免 Key），
-    失敗才 fallback 到 NVIDIA API 鏈。
+    ⚠️ 2026-07-31 使用者明確指示：**NVIDIA 在 pipeline 只負責 Whisper 轉寫，
+    LLM 整理文檔（口播腳本/標題翻譯）一律不用 NVIDIA 模型**。
+    Zen 失敗直接回 None（job 標 failed 比卡死好——NVIDIA 曾無 timeout 卡 10+ 分鐘）。
 
     Args:
         messages: Chat messages (role + content)
         max_tokens: Max response tokens
         temperature: Sampling temperature
-        model_override: Force a specific model (bypass fallback)
+        model_override: 保留簽名相容，不再使用
 
     Returns:
         Response text or None on failure.
     """
-    # 優先：OpenCode Zen（免費、穩定、bookmark-manager 每日驗證）
     zen_result = call_zen(messages, max_tokens, temperature)
     if zen_result:
         return zen_result
-    print("[WARN] Zen LLM unavailable — falling back to NVIDIA chain", file=sys.stderr)
-
-    client = get_client()
-    if not client:
-        print("[ERROR] No NVIDIA API key available", file=sys.stderr)
-        return None
-
-    models = [model_override] if model_override else FALLBACK_MODELS
-    max_retries = 3
-    base_delay = 3.0
-
-    for model in models:
-        for attempt in range(max_retries):
-            _rate_limit()
-            try:
-                response = client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    timeout=45,  # ⚠️ 2026-07-31：無 timeout 會卡死（SDK 預設 600s×重試），實測 job 12 卡 10+ 分鐘
-                )
-                result = response.choices[0].message.content
-                if result:
-                    return result.strip()
-                print(f"[WARN] LLM returned empty on {model}", file=sys.stderr)
-                return None
-            except Exception as e:
-                err_str = str(e)
-                is_rl = "503" in err_str or "ResourceExhausted" in err_str or "rate" in err_str.lower()
-                if is_rl and attempt < max_retries - 1:
-                    delay = base_delay * (2 ** attempt)
-                    print(f"[WARN] LLM {model} rate limited ({attempt+1}/{max_retries}), retry in {delay:.0f}s...", file=sys.stderr)
-                    time.sleep(delay)
-                elif is_rl:
-                    print(f"[WARN] LLM {model} exhausted, trying next...", file=sys.stderr)
-                    break
-                else:
-                    print(f"[ERROR] LLM {model}: {e}", file=sys.stderr)
-                    return None
-
-    print("[ERROR] All LLM models exhausted", file=sys.stderr)
+    print("[WARN] Zen LLM unavailable — 依使用者指示不 fallback NVIDIA（NVIDIA 僅供 Whisper）", file=sys.stderr)
     return None

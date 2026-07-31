@@ -47,10 +47,14 @@ def _extract_key_points(script: str, title: str, lang: str = "zh") -> dict:
         - points: list of {heading, bullets} dicts
         - summary: conclusion paragraph
     """
-    client_info = _get_llm_client()
-    if not client_info:
+    # ⚠️ 2026-07-31 使用者指示：LLM 整理文檔一律用 Zen，不用 NVIDIA（NVIDIA 僅供 Whisper）
+    try:
+        from notehub.core.llm import call_zen
+    except ImportError:
+        call_zen = None
+    if not call_zen:
+        print("[WARN] call_zen unavailable — cannot extract key points", file=sys.stderr)
         return None
-    client, model = client_info
 
     lang_hint = "使用繁體中文" if lang in ("zh", "zh-TW") else "Use English"
 
@@ -81,16 +85,14 @@ def _extract_key_points(script: str, title: str, lang: str = "zh") -> dict:
 {script[:6000]}
 """
     try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
+        result = call_zen(
+            [
                 {"role": "system", "content": "你是結構化資料提取專家，只輸出 JSON。"},
                 {"role": "user", "content": prompt},
             ],
             max_tokens=2000,
             temperature=0.3,
         )
-        result = response.choices[0].message.content
         if result:
             # Clean up potential markdown code fence
             result = result.strip()

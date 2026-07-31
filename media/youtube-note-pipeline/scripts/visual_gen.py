@@ -44,39 +44,31 @@ _FALLBACK_MODELS = [
 ]
 
 def _call_llm_with_retry(client, prompt: str, max_retries: int = 3, base_delay: float = 5.0) -> str | None:
-    """Call LLM with retry on 503/rate-limit, auto-switch to next model on persistent failure."""
-    import time
-    
-    for model in _FALLBACK_MODELS:
-        for attempt in range(max_retries):
-            try:
-                _rate_limit()
-                response = client.chat.completions.create(
-                    model=model,
-                    messages=[
-                        {"role": "system", "content": "只輸出 JSON，不加任何額外文字。"},
-                        {"role": "user", "content": prompt},
-                    ],
-                    max_tokens=1500,
-                    temperature=0.3,
-                )
-                result = response.choices[0].message.content
-                if result:
-                    return result.strip()
-            except Exception as e:
-                err_str = str(e)
-                is_rate_limit = "503" in err_str or "ResourceExhausted" in err_str or "rate" in err_str.lower()
-                if is_rate_limit and attempt < max_retries - 1:
-                    delay = base_delay * (2 ** attempt)
-                    print(f"[WARN] {model} rate limited (attempt {attempt+1}/{max_retries}), retry in {delay:.0f}s...", file=sys.stderr)
-                    time.sleep(delay)
-                elif is_rate_limit:
-                    print(f"[WARN] {model} still rate limited after {max_retries} retries, trying next model...", file=sys.stderr)
-                    break  # move to next model
-                else:
-                    print(f"[WARN] LLM error on {model}: {e}", file=sys.stderr)
-                    return None  # non-rate-limit error, don't retry
-    return None
+    """Call LLM（⚠️ 2026-07-31 使用者指示：LLM 整理文檔一律用 Zen，不用 NVIDIA）。
+
+    原為 NVIDIA client + fallback models；改為直接 call_zen()（免費穩定）。
+    client 參數保留相容但不再使用。
+    """
+    try:
+        from notehub.core.llm import call_zen
+    except ImportError:
+        call_zen = None
+    if not call_zen:
+        print("[WARN] call_zen unavailable", file=sys.stderr)
+        return None
+    try:
+        result = call_zen(
+            [
+                {"role": "system", "content": "只輸出 JSON，不加任何額外文字。"},
+                {"role": "user", "content": prompt},
+            ],
+            max_tokens=1500,
+            temperature=0.3,
+        )
+        return result.strip() if result else None
+    except Exception as e:
+        print(f"[WARN] Zen visual summary failed: {e}", file=sys.stderr)
+        return None
 
 
 # ---------------------------------------------------------------------------

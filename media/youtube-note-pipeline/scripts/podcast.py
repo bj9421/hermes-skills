@@ -187,51 +187,9 @@ def _translate_title(title: str, target_lang: str) -> str | None:
             temperature=0.3)
         if zen:
             return zen.strip().strip('"').strip("'").strip("《》")
-        print("[WARN] Zen title translate failed — fallback NVIDIA", file=sys.stderr)
-
-    client = _get_llm_client()
-    if not client:
+        # ⚠️ 2026-07-31 使用者指示：LLM 一律不用 NVIDIA（NVIDIA 僅供 Whisper）
+        print("[WARN] Zen title translate failed — 依使用者指示不 fallback NVIDIA，回傳 None", file=sys.stderr)
         return None
-    
-    _FALLBACK_MODELS = [
-        "deepseek-ai/deepseek-v4-flash",
-        "meta/llama-3.3-70b-instruct",
-        "nvidia/llama-3.1-nemotron-70b-instruct",
-    ]
-    max_retries = 3
-    base_delay = 3.0
-    
-    for model in _FALLBACK_MODELS:
-        for attempt in range(max_retries):
-            try:
-                _rate_limit()
-                response = client.chat.completions.create(
-                    model=model,
-                    messages=[
-                        {"role": "system", "content": f"你是翻譯專家。只翻譯標題，不加任何解釋、引號或額外文字。"},
-                        {"role": "user", "content": f"將以下英文標題翻譯成{lang_name}，直接輸出翻譯結果：\n\n{title}"},
-                    ],
-                    max_tokens=100,
-                    temperature=0.3,
-                )
-                result = response.choices[0].message.content
-                if result:
-                    return result.strip().strip('"').strip("'").strip("《》")
-            except Exception as e:
-                err_str = str(e)
-                is_rate_limit = "503" in err_str or "ResourceExhausted" in err_str or "rate" in err_str.lower()
-                if is_rate_limit and attempt < max_retries - 1:
-                    delay = base_delay * (2 ** attempt)
-                    print(f"[WARN] Title translate: {model} rate limited (attempt {attempt+1}/{max_retries}), retry in {delay:.0f}s...", file=sys.stderr)
-                    time.sleep(delay)
-                elif is_rate_limit:
-                    print(f"[WARN] Title translate: {model} still rate limited, trying next model...", file=sys.stderr)
-                    break
-                else:
-                    print(f"[WARN] Title translate error on {model}: {e}", file=sys.stderr)
-                    return None
-    
-    print("[ERROR] Title translate: all models exhausted", file=sys.stderr)
     return None
 
 
@@ -280,56 +238,10 @@ def _generate_script(transcript: str, title: str, mode: str, target_lang: str) -
             temperature=0.7)
         if zen:
             return _dedup_script(zen.strip())
-        print("[WARN] Zen script generation failed — fallback NVIDIA", file=sys.stderr)
-
-    print(f"[INFO] Generating {mode} podcast script via LLM...", file=sys.stderr)
-    
-    _FALLBACK_MODELS = [
-        "deepseek-ai/deepseek-v4-flash",
-        "meta/llama-3.3-70b-instruct",
-        "nvidia/llama-3.1-nemotron-70b-instruct",
-    ]
-    max_retries = 3
-    base_delay = 5.0
-    
-    import time
-    for model in _FALLBACK_MODELS:
-        for attempt in range(max_retries):
-            try:
-                _rate_limit()
-                response = client.chat.completions.create(
-                    model=model,
-                    messages=[
-                        {"role": "system", "content": "你是專業的播客腳本編寫者，擅長將逐字稿轉化為自然流暢的口播腳本。嚴格禁止重複相同或相似的段落，每個論點只講一次。"},
-                        {"role": "user", "content": prompt},
-                    ],
-                    max_tokens=4096,
-                    temperature=0.7,
-                    frequency_penalty=0.3,
-                    presence_penalty=0.2,
-                )
-                result = response.choices[0].message.content
-                if result:
-                    return _dedup_script(result.strip())
-                print("[WARN] LLM returned empty script", file=sys.stderr)
-                return None
-            except Exception as e:
-                err_str = str(e)
-                is_rate_limit = "503" in err_str or "ResourceExhausted" in err_str or "rate" in err_str.lower()
-                if is_rate_limit and attempt < max_retries - 1:
-                    delay = base_delay * (2 ** attempt)
-                    print(f"[WARN] Script gen: {model} rate limited (attempt {attempt+1}/{max_retries}), retry in {delay:.0f}s...", file=sys.stderr)
-                    time.sleep(delay)
-                elif is_rate_limit:
-                    print(f"[WARN] Script gen: {model} still rate limited, trying next model...", file=sys.stderr)
-                    break
-                else:
-                    print(f"[WARN] Script gen error on {model}: {e}", file=sys.stderr)
-                    return None
-    
-    print("[ERROR] Script gen: all models exhausted", file=sys.stderr)
+        # ⚠️ 2026-07-31 使用者指示：LLM 一律不用 NVIDIA（NVIDIA 僅供 Whisper）
+        print("[WARN] Zen script generation failed — 依使用者指示不 fallback NVIDIA，回傳 None", file=sys.stderr)
+        return None
     return None
-
 
 # ---------------------------------------------------------------------------
 # TTS via Edge TTS

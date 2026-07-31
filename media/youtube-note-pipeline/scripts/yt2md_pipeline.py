@@ -288,15 +288,22 @@ def _chunk_transcript(text: str, max_chars: int = LLM_MAX_CHARS, overlap: int = 
 
 
 def _organize_via_llm(transcript: str, title: str = "") -> str | None:
-    """Send transcript to LLM for organization. Returns organized markdown or None."""
-    client = _get_llm_client()
-    if not client:
-        print("[WARN] No NVIDIA API key found — skipping organize", file=sys.stderr)
+    """Send transcript to LLM for organization. Returns organized markdown or None.
+
+    ⚠️ 2026-07-31 使用者指示：LLM 整理文檔一律用 Zen，不用 NVIDIA（NVIDIA 僅供 Whisper）。
+    """
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from notehub.core.llm import call_zen
+    except ImportError:
+        call_zen = None
+    if not call_zen:
+        print("[WARN] call_zen unavailable — skipping organize", file=sys.stderr)
         return None
 
     chunks = _chunk_transcript(transcript)
     total_chunks = len(chunks)
-    print(f"[INFO] Organizing via LLM ({total_chunks} chunk{'s' if total_chunks > 1 else ''})...", file=sys.stderr)
+    print(f"[INFO] Organizing via Zen LLM ({total_chunks} chunk{'s' if total_chunks > 1 else ''})...", file=sys.stderr)
 
     organized_parts = []
     for i, chunk in enumerate(chunks):
@@ -312,54 +319,22 @@ def _organize_via_llm(transcript: str, title: str = "") -> str | None:
         elif total_chunks > 1 and i == total_chunks - 1:
             prompt += "\n\n（這是最後一段。請在整理完本段後，附上整部影片的【重點摘要】。）"
 
-        # Per-chunk retry with fallback models
-        _chunk_fallback = [
-            "deepseek-ai/deepseek-v4-flash",
-            "meta/llama-3.3-70b-instruct",
-            "nvidia/llama-3.1-nemotron-70b-instruct",
-        ]
-        chunk_done = False
-        import time as _time
-        for cmodel in _chunk_fallback:
-            if chunk_done:
-                break
-            for cattempt in range(3):
-                try:
-                    _rate_limit()
-                    response = client.chat.completions.create(
-                        model=cmodel,
-                        messages=[
-                            {"role": "system", "content": "你是專業的內容整理助手，擅長將逐字稿轉化為結構化筆記。"},
-                            {"role": "user", "content": prompt},
-                        ],
-                        max_tokens=4096,
-                        temperature=0.3,
-                    )
-                    result = response.choices[0].message.content
-                    if result:
-                        organized_parts.append(result.strip())
-                    else:
-                        print(f"[WARN] LLM returned empty for chunk {i+1}", file=sys.stderr)
-                        organized_parts.append(chunk)
-                    chunk_done = True
-                    break
-                except Exception as e:
-                    err_str = str(e)
-                    is_rl = "503" in err_str or "ResourceExhausted" in err_str or "rate" in err_str.lower()
-                    if is_rl and cattempt < 2:
-                        delay = 3.0 * (2 ** cattempt)
-                        print(f"[WARN] Organize chunk {i+1}: {cmodel} rate limited, retry in {delay:.0f}s...", file=sys.stderr)
-                        _time.sleep(delay)
-                    elif is_rl:
-                        print(f"[WARN] Organize chunk {i+1}: {cmodel} still rate limited, next model...", file=sys.stderr)
-                        break
-                    else:
-                        print(f"[WARN] Organize chunk {i+1} error on {cmodel}: {e}", file=sys.stderr)
-                        organized_parts.append(chunk)
-                        chunk_done = True
-                        break
-        if not chunk_done:
-            print(f"[ERROR] Organize chunk {i+1}: all models exhausted, using raw", file=sys.stderr)
+        try:
+            result = call_zen(
+                [
+                    {"role": "system", "content": "你是專業的內容整理助手，擅長將逐字稿轉化為結構化筆記。"},
+                    {"role": "user", "content": prompt},
+                ],
+                max_tokens=4096,
+                temperature=0.3,
+            )
+            if result:
+                organized_parts.append(result.strip())
+            else:
+                print(f"[WARN] Zen returned empty for chunk {i+1}", file=sys.stderr)
+                organized_parts.append(chunk)
+        except Exception as e:
+            print(f"[WARN] Zen organize chunk {i+1} failed: {e}", file=sys.stderr)
             organized_parts.append(chunk)
 
     return "\n\n---\n\n".join(organized_parts)
