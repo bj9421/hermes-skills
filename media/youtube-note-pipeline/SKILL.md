@@ -20,8 +20,9 @@ related_skills: [verified-capabilities, taiwan-stock-data-pipeline, instagram-re
 | Podcast | `podcast.py` | 口播腳本生成 + TTS |
 | Extractors | `notehub/extractors/` | YouTube/IG/Bilibili |
 
-## 🔧 LLM Fallback Chain（2026-07-31 更新）
+## 🔧 LLM Fallback Chain（2026-08-01 更新）
 
+### notehub pipeline（口播腳本）
 ```
 1. OpenCode Zen (deepseek-v4-flash-free) — 20 RPM
    ↓ 429 限流
@@ -32,14 +33,110 @@ related_skills: [verified-capabilities, taiwan-stock-data-pipeline, instagram-re
 4. 本地正則 (add_punctuation.py) — ∞
 ```
 
+### bookmark-manager（書籤 enrich）
+```
+1. OpenCode Zen (deepseek-v4-flash-free)
+   ↓ 429 限流
+2. AGNES API (agnes-2.5-flash)
+   ↓ 失敗
+3. Groq (llama-3.3-70b-versatile)
+   ↓ 失敗
+4. 空回應（tags 保持不變）
+```
+- 兩者共享同一套 fallback 邏輯，但獨立實現（不共用程式碼）
+- Zen 限流時 bookmark-manager 的 enrich 仍會成功（自動切換）
+
 ## 📊 Provider RPM 限制
 
 | Provider | 模型 | RPM | 狀態 |
 |----------|------|-----|------|
-| OpenCode Zen | deepseek-v4-flash-free | 20 | ❌ 429 限流中 |
+| OpenCode Zen | deepseek-v4-flash-free | 20 | ❌ 429 限流中（FreeUsageLimitError）|
 | AGNES | agnes-2.5-flash | 20 | ✅ 正常 |
 | Groq | llama-3.3-70b-versatile | 30 | ✅ 可用 |
 | 本地正則 | add_punctuation.py | ∞ | ✅ 備用 |
+
+## 🔑 API Key 讀取陷阱（2026-07-31 實測）
+
+從 `.env` 讀取 API key 時，**必須去除換行符**：
+```python
+# ❌ 錯誤：會帶換行 → Authorization header 無效
+key = os.environ.get('OPENCODE_ZEN_API_KEY', '')
+
+# ✅ 正確：strip + 去除換行
+with open('/opt/data/.env') as f:
+    for line in f:
+        if line.startswith('OPENCODE_ZEN_API_KEY='):
+            key = line.split('=', 1)[1].strip()
+            break
+```
+
+curl 測試時用 shell 變數也要 `tr -d '\n\r'`：
+```bash
+export KEY=$(grep "^OPENCODE_ZEN_API_KEY=" /opt/data/.env | cut -d= -f2- | tr -d '\n\r')
+```
+
+HTTP 43 / HTTP 000 錯誤通常是 header 格式問題，先檢查 key 是否有換行。
+
+## 📝 daily-review 報告格式（2026-07-31 用戶指示）
+
+每日工作檢討報告（cron daily-review，每天 22:00）**必須同時記錄**：
+1. **系統錯誤**：cron job 失敗、API 限流等
+2. **代碼錯誤**：我改代碼過程中犯的錯，被你糾正的
+
+### 報告格式
+```
+# 每日工作檢討報告 - YYYY-MM-DD
+
+## 執行摘要
+- 今日工作：N 項 cron job + M 項代碼修改
+- 成功：X 項 cron + Y 項代碼
+- 失敗：A 項 cron + B 項代碼
+- 待跟进：C 項
+
+---
+
+## 問題清單（系統錯誤）
+### 問題 1：[標題]
+- What/Why/When/Where/Who/How/Impact/改善方案
+
+---
+
+## 代碼修改錯誤清單（我犯的錯，被用戶糾正）
+### 錯誤 1：[標題]
+- What: [犯了什麼錯]
+- Why: [為什麼犯錯]
+- When: [時間]
+- Where: [檔案位置]
+- Who: 我（Agnes）
+- How: [如何被糾正（用戶說了什麼）]
+- Impact: [影響]
+- 修正: [如何修正]
+- 教訓: [學到什麼]
+
+---
+
+## 修復記錄
+| 問題 | 修復時間 | 狀態 |
+
+---
+
+## 經驗教訓
+1. **[教訓標題]**
+   - [說明]
+
+---
+
+## 明日重點
+1. [重點]
+```
+
+### 數據來源
+1. cron 錯誤：`cat /opt/data/cron/jobs.json | python3 -c "..."`
+2. git 歷史：`git log --since="today" --oneline`
+3. session 錯誤：`session_search(query="錯誤 失敗 用戶糾正")`
+
+### 完整實例
+參見 `/opt/data/obsidian-vault/Holographic/每日檢討/2026-07-31-工作檢討.md`
 
 ## 🔒 RPM 限流保護（pitfall 22）
 
@@ -84,3 +181,9 @@ result = call_llm([{'role': 'user', 'content': '...'}])
 23. **Provider RPM 限制調查** — OpenCode Zen 未公開 RPM（實際被限），AGNES ~20 RPM，Groq 30 RPM / 6K TPM
 
 24. **daily-review 報告格式（2026-07-31 用戶指示）** — 必須同時記錄「系統錯誤」+「代碼錯誤」。代碼錯誤格式：What/Why/When/Where/Who/How/Impact/修正/教訓。數據來源：cron/jobs.json + git log + session_search
+
+25. **Zen FreeUsageLimitError 狀態（2026-08-01 確認）** — 限流仍持續，需等待 16-24h 重置。Fallback chain 自動切換到 AGNES → Groq。若 Zen 恢復後想確認：`curl -s https://opencode.ai/zen/v1/chat/completions -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" -d '{"model":"deepseek-v4-flash-free","messages":[{"role":"user","content":"hi"}],"max_tokens":5}'`，成功回應 JSON 才算恢復。
+
+26. **bookmark-manager LLM Fallback（2026-08-01 實測）** — `llm_enhance.py` 已改為多 provider fallback：Zen → AGNES → Groq。當 Zen 429 時自動切換，不中斷 enrich 流程。
+
+27. **簡體標籤統一轉換** — 所有 bookmark 新增/更新都會經過 `to_traditional_tags()` 轉換，避免同意思標籤有簡體+繁體兩版。已有 backfill 腳本處理既有資料。

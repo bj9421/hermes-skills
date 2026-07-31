@@ -117,6 +117,14 @@ UI：佇列頂部「🧹 清已完成」「🗑️ 清失敗」+ 每筆 ✕（do
 
 🔴 **坑：Flask debug reloader 競態** — 同時改多個檔案（db.py + routes_notehub.py）時，reloader 可能在「import 新符號的瞬間」重啟 → `ImportError: cannot import name 'X'` → server 死（HTTP 000）。改多檔案後務必確認 server 存活：`curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:5001/`，掛了就重啟。
 
+### 🔴 坑 4：多個 Flask server 同時運行導致 DB 競爭
+
+- 若同時有兩個 `python app.py` process（如舊 server 未 kill + 新 reloader 啟動），會競爭同一份 DB → bookmark 新增成功但頁面上看不到
+- 診斷：`ps aux | grep "python app.py"` 檢查是否有多個 process
+- 修復：`kill <舊 PID>` 後重啟 server
+- 2026-08-01 實測：PID 65103（Jul31）+ PID 72064（01:14）同時運行，bookmarks #29/#30 新增成功但頁面找不到
+- 驗證：`curl -s http://localhost:5001/ | grep "card-29"` 確認 bookmark 存在
+
 ### 驗證方式
 
 ```bash
