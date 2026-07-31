@@ -130,7 +130,7 @@ curl -X POST http://127.0.0.1:5001/api/notehub/queue -H "Content-Type: applicati
 
 | 功能 | 狀態 | 呼叫方式 |
 |------|------|---------|
-| opencc 繁中轉換（s2twp） | ✅ | pipeline `_convert_to_traditional()` 自動；已知過轉換：指令碼→腳本、全域性→全局 |
+| opencc 繁中轉換（s2twp） | ✅ | pipeline `_convert_to_traditional()` 自動；bookmark 標籤 `to_traditional_tags()`（db.py）4 寫入點 + backfill；已知過轉換：指令碼→腳本、全域性→全局 |
 | PPT 生成（python-pptx） | ✅ | notehub `--ppt`（深色 16:9，8 slides） |
 | Visual 摘要（Pillow） | ✅ | notehub `--visual`（1920×1080，字型 iansui/NotoSansSC/NotoEmoji） |
 | notehub MCP Server | ✅ | 9 tools：add/search/list/get/update/delete/export/batch/stats |

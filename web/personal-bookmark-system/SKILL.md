@@ -89,13 +89,33 @@ cmd = [NOTEHUB_PYTHON, '-m', 'notehub', job['url'], '--podcast', job['mode'], '-
 - worker 取 output 時**必須優先 stderr**：`(result.stderr or result.stdout or '')[-500:]`，否則 stdout 會蓋掉真正錯誤
 - 驗證 MP3 是否真的產生：`find /opt/data -name "*.mp3" -mmin -10`
 
-### 🔴 坑 3：口播腳本 LLM = OpenCode Zen 優先（2026-07-31 起），NVIDIA 只是 fallback
+### 🔴 坑 3：notehub 口播 pipeline 的 LLM 一律只走 OpenCode Zen（2026-07-31 晚間起，NVIDIA LLM 全面移除）
 
-- `notehub/core/llm.py` 的 `call_llm()` 已改為 **Zen 優先**（`call_zen()`：`opencode.ai/zen/v1` + `deepseek-v4-flash-free`，免費免 Key，http.client 直連）→ NVIDIA chain fallback
+- `notehub/core/llm.py` 的 `call_llm()` 只呼叫 `call_zen()`（`opencode.ai/zen/v1` + `deepseek-v4-flash-free`，免費免 Key，http.client 直連）——**NVIDIA chat completions fallback 已全部刪除**（移除原因：NVIDIA LLM 無 timeout 卡死 job 12 10+ 分鐘）
 - **🔴 Zen 關鍵 quirk：`deepseek-v4-flash` 是 reasoning 模型，不可傳 `max_tokens`**（思考過程吃光 token → content 空）。`call_zen()` 已內建此規則；bookmark-manager 的 `llm_enhance.py` 一直成功也是因為不傳 max_tokens
+- **⚠️ 範圍澄清（使用者 2026-07-31）：「LLM 一律 Zen、禁用 NVIDIA」僅限 notehub 口播 pipeline**（bookmark-manager worker / notehub CLI 的腳本/翻譯/PPT/visual/organize）；**其他腳本（graphify、Hermes vision 等）不受限**。NVIDIA 在 notehub pipeline 只負責 Whisper 轉寫（Groq 的 fallback 層）
 - 使用者硬性規則：**TTS 一律本地產出（edge-tts）、禁用 LLM API 無謂浪費；口播腳本用免費模型**。不要自行把 LLM 改回付費/會卡的 API
 - 若 script 生成全部失敗，`produce_podcast` 會 fallback 直接唸原文 → 保證 MP3 本地產出
 - 本地 TTS 現成工具：`/opt/data/projects/bookmark-manager/gen_tts.py <script.md> <out_dir> <mp3_name>`（用 `/opt/data/.venv/bin/python`）
+
+### 清除功能（2026-07-31 新增）
+
+**設計定案（使用者討論）：失敗→清紀錄+刪半成品；完成→只清紀錄。**
+
+API：
+- `DELETE /api/notehub/jobs/<id>` — 單筆 ✕（done/failed 才允許；**running/queued 回 400 拒絕**）
+- `POST /api/notehub/jobs/clear` body `{scope: 'done'|'failed'}` — 批次；running/queued 永不參與
+
+UI：佇列頂部「🧹 清已完成」「🗑️ 清失敗」+ 每筆 ✕（done/failed 才顯示）。
+
+🔴 **半成品刪除安全規則**（`_delete_job_artifacts`）：
+- **只刪 output 中明確標記 `Raw saved:` / `Script saved:` / `Podcast saved:` 路徑的檔案**
+- failed job 的 output 通常只有 traceback（無路徑標記）→ 只清紀錄，檔案不動
+- 永不猜測目錄、永不刪未標記檔案——避免誤刪同 bookmark 其他 job 的成果（job 11/12 同 bookmark 案例）
+
+🔴 **坑：sqlite3.Row 沒有 `.get()`** — `SELECT *` 直接查回傳 Row（支援 `[]` 不支援 `.get()`）。`_delete_job_artifacts` 內用 `job['output']`。若 job 來自 `get_notehub_jobs()`（已轉 dict）才可用 `.get()`。
+
+🔴 **坑：Flask debug reloader 競態** — 同時改多個檔案（db.py + routes_notehub.py）時，reloader 可能在「import 新符號的瞬間」重啟 → `ImportError: cannot import name 'X'` → server 死（HTTP 000）。改多檔案後務必確認 server 存活：`curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:5001/`，掛了就重啟。
 
 ### 驗證方式
 
@@ -176,6 +196,33 @@ def normalize_source_tags(url, tags):
 1. `llm_enhance.py` enrich 流程
 2. `bookmark-bot.py` LLM 處理後
 3. cron enrich prompt
+
+## 標籤繁簡轉換（2026-07-31 使用者硬性規則）
+
+**bookmark 產生的簡體中文標籤一律翻譯繁體中文**（台灣用語）。單點實作在 `db.py`：
+
+```python
+# db.py — to_traditional_tags()：opencc s2twp，lazy import
+def to_traditional_tags(tags):
+    if not tags: return tags
+    # import opencc; _trad_converter = opencc.OpenCC('s2twp')
+    # 逐個 tag convert 再 join；缺 opencc 時原樣回傳（不阻斷寫入）
+```
+
+套用於 **4 個標籤寫入點**（`routes_bookmarks.py`）：
+1. `add_bookmark` INSERT（涵蓋 Telegram bot / API 來源）
+2. enrich UPDATE（LLM 自動標籤）
+3. `bookmark_update`（Web UI 編輯）
+4. batch `tag` action（批次加標籤）
+
+既有資料 backfill：掃描 `bookmarks.tags`，`converted != original` 的筆數 UPDATE + `sync_tags_from_bookmark`。
+
+### 🔴 坑：bookmark-manager/.venv 缺 opencc → lazy import 靜默失敗
+
+- **server 用專案自己的 venv**（`cd /opt/data/projects/bookmark-manager && .venv/bin/python app.py` → `bookmark-manager/.venv`），**不是** `/opt/data/.venv`
+- `bookmark-manager/.venv` 原本**沒有 opencc** → `to_traditional_tags` 的 `import opencc` 失敗 → except 回傳原值（**靜默失敗，DB 照樣存簡體**）
+- 修復：`uv pip install opencc-py --python .venv/bin/python`（裝到專案 venv）
+- 驗證：POST `{"tags":"机器学习"}` → DB 應存 `機器學習`（lazy import 設計讓 server 不需重啟）
 
 ## LLM enrichment cron
 

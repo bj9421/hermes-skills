@@ -553,14 +553,19 @@ r = call_zen(messages, temperature=0.7)  # ⚠️ 不要傳 max_tokens！
 - **NVIDIA LLM 已全面移除（2026-07-31）**：Zen 失敗直接回 None（job 標 failed），**不再 fallback NVIDIA**——NVIDIA LLM 曾無 timeout 卡死 job 12（SDK 預設 600s×重試），且使用者明確指示「LLM 整理文檔不要用 NVIDIA 模型；NVIDIA 只負責 Whisper」。
 - 使用者偏好：**TTS（edge-tts）一律本地產出、禁用 LLM API；口播腳本用免費模型（OpenCode Zen）**。不要為了「品質」呼叫付費/會卡的 API。
 
-### Fallback model chain（⚠️ 2026-07-31 晚間起已停用 — NVIDIA LLM 全面移除）
+### Podcast 標點處理（含 Zen 限流 fallback）
 
-原 NVIDIA chain（1→2→3）已全部移除，LLM 一律只走 Zen：
-1. ~~`deepseek-ai/deepseek-v4-flash`~~（移除）
-2. ~~`meta/llama-3.3-70b-instruct`~~（移除）
-3. ~~`nvidia/llama-3.1-nemotron-70b-instruct`~~（移除）
+正常流程：call_zen() 生成帶標點腳本。
 
-以下 retry/rate-limit 描述僅保留作歷史參考。**現在任何 LLM 呼叫點都不應出現 `client.chat.completions.create` 或 `_FALLBACK_MODELS`。**
+**Fallback（2026-07-31 新增）**：Zen 429 限流時用本地正則替換：
+```bash
+/opt/data/.venv/bin/python /opt/data/scripts/add_punctuation.py \
+  --input script.md --output script_punct.md --tts
+```
+- 正則替換關鍵詞（所以/但是/對吧/嘛/呢 等）加標點
+- edge-tts 本地生成音檔（zh-TW-HsiaoChenNeural）
+- 結果：18行→255段落，8MB MP3，23分鐘
+- ⚠️ 品質不如 LLM，僅限緊急上線；Zen 恢復後建議手動優化
 
 **Retry behavior:**
 - Per-model: 3 attempts with exponential backoff (base_delay × 2^attempt)
