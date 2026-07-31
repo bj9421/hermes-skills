@@ -51,15 +51,6 @@ FALLBACK_MODELS = [
 ]
 
 
-def _rate_limit():
-    """Enforce minimum interval between API calls."""
-    global _last_api_call
-    elapsed = time.time() - _last_api_call
-    if elapsed < _API_INTERVAL:
-        time.sleep(_API_INTERVAL - elapsed)
-    _last_api_call = time.time()
-
-
 def get_client():
     """Create OpenAI-compatible client pointing at NVIDIA API."""
     api_key = NVIDIA_API_KEY
