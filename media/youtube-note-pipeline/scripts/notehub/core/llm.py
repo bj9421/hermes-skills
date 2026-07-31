@@ -131,6 +131,7 @@ def call_llm(messages: list[dict], max_tokens: int = 4096,
                     messages=messages,
                     max_tokens=max_tokens,
                     temperature=temperature,
+                    timeout=45,  # ⚠️ 2026-07-31：無 timeout 會卡死（SDK 預設 600s×重試），實測 job 12 卡 10+ 分鐘
                 )
                 result = response.choices[0].message.content
                 if result:

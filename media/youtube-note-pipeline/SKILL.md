@@ -202,7 +202,11 @@ tags: [youtube, transcript]
 
 > ⚠️ **2026-07-31 起 Whisper fallback chain（使用者硬性規則）：Groq → NVIDIA → 本地 faster-whisper**
 > 無字幕影片的語音轉寫統一走 `notehub/core/transcribe.py` 的 `transcribe_audio()`：
-> 1. **Groq Whisper**（whisper-large-v3，免費快速，>10MB 自動 opus 32k 壓縮）
+> 1. **Groq Whisper**（whisper-large-v3，免費快速）— **>10MB 自動分段轉寫**（2026-07-31 排除 job 11 故障後）：
+>    - 根因：33MB 音訊壓縮 opus timeout(60s) 失敗 → 送原檔 Groq 413 → 全鏈失敗
+>    - 修復：`_segment_audio()` ffmpeg **無損分段**（`-c copy` 不轉碼，1 秒完成）→ 逐段 Groq → 合併
+>    - 🔑 **固定 10 分鐘/段不夠**：高碼率影片 10 分鐘段 = 16MB 仍 413。必須動態：`ffprobe 拿時長 → 段數=ceil(大小/9MB) → segment_time=時長/段數`
+>    - 實測：33MB/20min → 5 段全轉寫成功（6695 chars），總耗時 26s（分段 1s + Groq 25s）✅
 > 2. **NVIDIA Whisper**（build.nvidia.com gRPC，whisper-large-v3）— ✅ 2026-07-31 實作成功：
 >    - server `grpc.nvcf.nvidia.com:443` + function-id `b702f636-f60c-4a3d-a6f4-f3568c13bd7d` + `Bearer $NVIDIA_API_KEY`
 >    - 音訊先 ffmpeg 轉 **wav 16-bit mono 16kHz**，讀**整個檔**（含 header，勿用 wave.readframes）
