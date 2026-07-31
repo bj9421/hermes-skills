@@ -13,6 +13,7 @@ import subprocess
 import sys
 
 from .base import BaseExtractor, ExtractResult
+from ..core.transcribe import transcribe_audio
 
 
 def _extract_bvid(url: str) -> str | None:
@@ -97,41 +98,8 @@ def _check_size_and_compress(path: str, max_bytes: int = 9 * 1024 * 1024) -> str
 
 
 def _transcribe_with_groq(audio_path: str) -> str | None:
-    """Transcribe audio via Groq Whisper API. Returns transcript text."""
-    env_path = "/opt/data/.env"
-    groq_key = None
-    try:
-        with open(env_path) as f:
-            for line in f:
-                stripped = line.strip()
-                if stripped.startswith("GROQ_API_KEY="):
-                    groq_key = stripped.split("=", 1)[1]
-                    break
-    except Exception as e:
-        print(f"[ERROR] Cannot read {env_path}: {e}", file=sys.stderr)
-        return None
-
-    if not groq_key:
-        print(f"[ERROR] GROQ_API_KEY not found in {env_path}", file=sys.stderr)
-        return None
-
-    try:
-        from groq import Groq
-        client = Groq(api_key=groq_key)
-        with open(audio_path, "rb") as f:
-            ext = os.path.splitext(audio_path)[1] or ".m4a"
-            result = client.audio.transcriptions.create(
-                file=(f"audio{ext}", f),
-                model="whisper-large-v3",
-                language="zh",
-                response_format="verbose_json",
-            )
-        text = result.text.strip()
-        print(f"[OK] Groq Whisper: {len(text)} chars, {getattr(result, 'duration', '?')}s", file=sys.stderr)
-        return text
-    except Exception as e:
-        print(f"[ERROR] Groq Whisper failed: {e}", file=sys.stderr)
-        return None
+    """Whisper fallback chain: Groq → NVIDIA → 本地 faster-whisper（共用模組）。"""
+    return transcribe_audio(audio_path)
 
 
 class BilibiliExtractor(BaseExtractor):

@@ -88,6 +88,25 @@ def _vtt_to_text(vtt_path: str) -> str:
     return "\n\n".join(lines)
 
 
+def _download_audio(yt_dlp_path: str, url: str, temp_dir: str) -> str | None:
+    """Download audio (m4a) via yt-dlp for Whisper transcription."""
+    cmd = [
+        yt_dlp_path, "-x", "--audio-format", "m4a",
+        "--output", os.path.join(temp_dir, "%(id)s.%(ext)s"),
+        url,
+    ]
+    try:
+        subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    except Exception as e:
+        print(f"[WARN] yt-dlp audio download failed: {e}", file=sys.stderr)
+        return None
+    audio_files = list(Path(temp_dir).glob("*.m4a")) + list(Path(temp_dir).glob("*.opus"))
+    if audio_files:
+        return str(audio_files[0])
+    print("[WARN] yt-dlp audio download produced no file", file=sys.stderr)
+    return None
+
+
 def _fetch_via_vtt(yt_dlp_path: str, url: str, temp_dir: str) -> str | None:
     """Download VTT subtitles via yt-dlp."""
     cmd = [
@@ -181,6 +200,20 @@ class YouTubeExtractor(BaseExtractor):
                     source_type="youtube",
                     source_id=video_id,
                 )
+
+            # Strategy 3: yt-dlp audio + Whisper fallback chain (Groq → NVIDIA → 本地 faster-whisper)
+            # ⚠️ 2026-07-31 使用者指示：無字幕影片先用 Groq，fallback NVIDIA，最後本地 faster-whisper
+            audio = _download_audio(yt_dlp, input_path, tmp)
+            if audio:
+                from ..core.transcribe import transcribe_audio
+                text = transcribe_audio(audio, language="zh")
+                if text:
+                    return ExtractResult(
+                        text=text,
+                        metadata={"title": title, "language": "whisper", "video_id": video_id},
+                        source_type="youtube",
+                        source_id=video_id,
+                    )
 
         raise RuntimeError(f"Failed to extract transcript for video {video_id}")
 
