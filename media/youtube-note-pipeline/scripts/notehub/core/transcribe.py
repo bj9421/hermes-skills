@@ -73,34 +73,69 @@ def _transcribe_groq(audio_path: str, language: str = "zh") -> str | None:
 
 
 def _transcribe_nvidia(audio_path: str, language: str = "zh") -> str | None:
-    """Step 2: NVIDIA Whisper（嘗試層）。
+    """Step 2: NVIDIA Whisper（build.nvidia.com gRPC，whisper-large-v3）。
 
-    ⚠️ 2026-07-31 查證：NVIDIA build.nvidia.com 的 Whisper 是 **gRPC-only**
-    （grpc.nvcf.nvidia.com + function-id），無 OpenAI 相容 HTTP endpoint
-    （integrate.api.nvidia.com / ai.api.nvidia.com 都 404）。
-    此層保留快速嘗試，失敗即跳過 → 本地 faster-whisper。
+    ✅ 2026-07-31 實測成功：
+    - server: grpc.nvcf.nvidia.com:443
+    - function-id: b702f636-f60c-4a3d-a6f4-f3568c13bd7d（whisper-large-v3 固定）
+    - 音訊需轉 wav 16-bit mono 16kHz，讀整個檔（含 header，勿用 wave.readframes）
+    - config 加 custom_configuration 'task:transcribe'
+    - 結果欄位是 alternatives[].transcript（不是 text！）
     """
     nvidia_key = _load_key("NVIDIA_API_KEY")
     if not nvidia_key:
         print("[ERROR] NVIDIA_API_KEY not found in /opt/data/.env", file=sys.stderr)
         return None
+    wav_path = None
     try:
-        from openai import OpenAI
-        client = OpenAI(base_url="https://integrate.api.nvidia.com/v1", api_key=nvidia_key, timeout=10)
-        with open(audio_path, "rb") as f:
-            ext = os.path.splitext(audio_path)[1] or ".m4a"
-            result = client.audio.transcriptions.create(
-                file=(f"audio{ext}", f),
-                model="openai/whisper-large-v3",
-                language=language,
-                response_format="verbose_json",
+        import subprocess
+        import tempfile
+        import riva.client
+
+        # 轉 wav 16-bit mono 16kHz（Riva 需要）
+        wav_path = None
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+            wav_path = tmp.name
+        try:
+            subprocess.run(
+                ["ffmpeg", "-y", "-i", audio_path, "-ac", "1", "-ar", "16000",
+                 "-sample_fmt", "s16", wav_path],
+                capture_output=True, text=True, timeout=120,
             )
-        text = result.text.strip()
-        print(f"[OK] NVIDIA Whisper: {len(text)} chars", file=sys.stderr)
-        return text
-    except Exception as e:
-        print(f"[WARN] NVIDIA Whisper failed (gRPC-only, 跳過): {str(e)[:80]}", file=sys.stderr)
+        except Exception as e:
+            print(f"[WARN] NVIDIA Whisper: ffmpeg convert failed: {e}", file=sys.stderr)
+            return None
+
+        auth = riva.client.Auth(
+            use_ssl=True,
+            uri="grpc.nvcf.nvidia.com:443",
+            metadata_args=[
+                ["function-id", "b702f636-f60c-4a3d-a6f4-f3568c13bd7d"],
+                ["authorization", f"Bearer {nvidia_key}"],
+            ],
+        )
+        service = riva.client.ASRService(auth)
+        config = riva.client.RecognitionConfig(
+            language_code=language, max_alternatives=1,
+            enable_automatic_punctuation=True,
+        )
+        riva.client.add_custom_configuration_to_config(config, "task:transcribe")
+        with open(wav_path, "rb") as f:
+            data = f.read()
+        resp = service.offline_recognize(data, config)
+        texts = [a.transcript for r in resp.results for a in r.alternatives]
+        text = "".join(texts).strip()
+        if text:
+            print(f"[OK] NVIDIA Whisper: {len(text)} chars", file=sys.stderr)
+            return text
+        print("[WARN] NVIDIA Whisper returned empty", file=sys.stderr)
         return None
+    except Exception as e:
+        print(f"[WARN] NVIDIA Whisper failed: {str(e)[:100]}", file=sys.stderr)
+        return None
+    finally:
+        if wav_path and os.path.exists(wav_path):
+            os.unlink(wav_path)
 
 
 def _transcribe_local(audio_path: str, language: str = "zh") -> str | None:

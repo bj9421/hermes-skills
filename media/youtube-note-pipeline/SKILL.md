@@ -200,6 +200,13 @@ tags: [youtube, transcript]
 
 ## Whisper Model Selection (RPi 4 CPU)
 
+> ⚠️ **2026-07-31 起 Whisper fallback chain（使用者硬性規則）：Groq → NVIDIA → 本地 faster-whisper**
+> 無字幕影片的語音轉寫統一走 `notehub/core/transcribe.py` 的 `transcribe_audio()`：
+> 1. **Groq Whisper**（whisper-large-v3，免費快速，>10MB 自動 opus 32k 壓縮）
+> 2. **NVIDIA Whisper**（嘗試層——查證：build.nvidia.com 的 Whisper 是 **gRPC-only**（grpc.nvcf.nvidia.com + function-id），無 OpenAI 相容 HTTP endpoint，integrate/ai.api.nvidia.com 都 404 → 快速失敗跳過）
+> 3. **本地 faster-whisper**（small/int8 CPU，最後保證；**HF cache 必須設 `/opt/data/.cache/huggingface`**——Docker 中 `/root/.cache` 無寫入權限會 Permission denied）
+> 三個 extractor（youtube / bilibili / instagram）已統一使用，避免三份重複 Groq 邏輯。
+
 | Model  | RAM    | Speed   | Use case                    |
 |--------|--------|---------|-----------------------------|
 | tiny   | 200 MB | Fastest | Quick test / short clips    |
