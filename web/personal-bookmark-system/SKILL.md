@@ -197,6 +197,8 @@ exec python3 /opt/data/.hermes/scripts/bookmark-bot.py "$(cat /opt/data/.bookmar
 def normalize_source_tags(url, tags):
     if any(dom in url for dom in ['bilibili.com', 'b23.tv']):
         return 'bilibili'
+    if any(dom in url for dom in ['xiaohongshu.com', 'xhslink.com']):
+        return '小紅書'
     return tags
 ```
 
@@ -204,6 +206,56 @@ def normalize_source_tags(url, tags):
 1. `llm_enhance.py` enrich 流程
 2. `bookmark-bot.py` LLM 處理後
 3. cron enrich prompt
+
+### 🔴 坑：JS 渲染網站（Bilibili / 小紅書）無法 enrich
+
+Bilibili 和小紅書都需要 JavaScript 渲染，普通 curl 無法抓取內容，會導致 LLM 生成「無法提供摘要」的 AI 幻覺訊息。
+
+**解決方案**：在 `llm_enhance.py` 新增 `should_enrich()` 檢查。
+
+**關鍵：enrich 端點必須返回 HTML（不是 JSON）**，因為 HTMX `hx-target="#bookmark-list"` 期待 HTML。若返回 JSON，前端會顯示原始 JSON 字串（用戶看到 `{"ok": true, "skipped": true}`）。
+
+```python
+# llm_enhance.py
+def should_enrich(url: str) -> bool:
+    if 'bilibili.com' in url or 'b23.tv' in url:
+        return False
+    if 'xiaohongshu.com' in url or 'xhslink.com' in url:
+        return False
+    return True
+```
+
+```python
+# routes_bookmarks.py enrich_bookmark()
+if not should_enrich(url):
+    tags = normalize_source_tags(url, bm['tags'] or '')
+    tags = to_traditional_tags(tags)
+    if tags and tags != bm['tags']:
+        conn.execute("UPDATE bookmarks SET tags=? WHERE id=?", (tags, bid))
+        conn.commit()
+    conn.close()
+    # 返回書籤列表 HTML
+    conn2 = get_db()
+    rows = conn2.execute("SELECT * FROM bookmarks ORDER BY created_at DESC").fetchall()
+    bookmarks = [parse_bookmark_row(r) for r in rows]
+    conn2.close()
+    return render_template('_bookmark_list.html', bookmarks=bookmarks,
+        get_source_icon=get_source_icon)
+```
+
+**結果**：Bilibili → `bilibili` tag，小紅書 → `小紅書` tag，無摘要、無 AI 幻覺。
+
+## Git Commits（2026-08-01）
+- `da383b9` — fix: skip enrich for Bilibili + Xiaohongshu
+- `c8abd23` — fix: add Xiaohongshu tag normalization
+- `ccab861` — fix: enrich endpoint returns HTML instead of JSON
+
+### 🔴 坑：Flask debug reloader 不載入新 import
+
+若新增函數（如 `should_enrich`）後 server 無反應，手動觸發 reload：
+```bash
+touch /opt/data/projects/bookmark-manager/llm_enhance.py
+```
 
 ## 標籤繁簡轉換（2026-07-31 使用者硬性規則）
 
@@ -260,6 +312,10 @@ app.py 已從 766 行 / 53 函數 / cohesion 0.10 拆成上述模組結構（coh
 3. **建立 checkpoint list（todo）** — 每步動作 + 驗證方式 + 通過標準；每完成一步 `git commit`（繁體中文訊息）
 4. **確認後才開始改碼**；任何一步驗證失敗 → `git checkout` 回滾，不硬撐
 5. 拆完用 `graphify update .` 增量更新圖譜，對比 cohesion 確認改善
+
+## 相關參考檔案
+
+- `references/js-rendered-sites.md` — Bilibili / 小紅書等 JS 渲染網站的 enrich 處理（should_enrich、normalize_source_tags、HTML 返回坑）
 
 ## 前端側頁注意（Blogger 滑出式）
 
