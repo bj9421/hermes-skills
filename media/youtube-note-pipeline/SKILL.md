@@ -396,7 +396,7 @@ uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --podcast dual --voice-
     - 複製既有 code 時**質疑每個參數**（尤其 timeout / 大小上限）——不要照搬可能對新場景不適用的值
     - 大檔新場景（>20MB 長影片）先用**分段**而非壓縮：ffmpeg `-c copy` 無損切段 1 秒完成，逐段 Groq，全程 26s（vs 壓縮 72s+ 還可能失敗）
 
-20. **LLM 整理文檔一律不用 NVIDIA（2026-07-31 使用者硬性規則）**：NVIDIA 在 pipeline **只負責 Whisper 轉寫**（Groq 的 fallback 層，`transcribe.py` 的 `_transcribe_nvidia` gRPC）。口播腳本 / 標題翻譯 / PPT 重點提取 / 視覺摘要 / organize 的 LLM 呼叫**全部只走 OpenCode Zen**（`call_zen()`）。任何新增 LLM 呼叫點禁止引入 NVIDIA `chat.completions.create`——NVIDIA LLM 曾無 timeout 卡死 10+ 分鐘（SDK 預設 600s×重試），實測 job 12 因此失敗。
+20. **notehub 口播 pipeline 的 LLM 一律不用 NVIDIA（2026-07-31 使用者硬性規則）**：**範圍限定本 pipeline**（bookmark-manager 佇列 worker / notehub CLI 的口播腳本、標題翻譯、PPT 重點提取、視覺摘要、organize）——NVIDIA 在此 pipeline **只負責 Whisper 轉寫**（Groq 的 fallback 層，`transcribe.py` 的 `_transcribe_nvidia` gRPC），其餘 LLM 呼叫**全部只走 OpenCode Zen**（`call_zen()`）。**此限制不擴及 pipeline 以外的腳本**（graphify、Hermes vision、其他獨立工具可繼續用各自的 NVIDIA 設定）。原因：NVIDIA LLM 曾無 timeout 卡死 job 12 10+ 分鐘（SDK 預設 600s×重試）。
     - 偵測：log 停在 `[INFO] Generating solo podcast script via LLM...` 超過 5 分鐘；直接測 API：`<python> -c "測試 chat completion"` 或 curl（若 completion timeout 而 models 正常 = 卡住）
     - 工作流：
       1. 讀取既有 `script.md`（跳過 frontmatter / `#` 標題 / `>` 引用行）
