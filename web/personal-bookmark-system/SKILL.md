@@ -67,11 +67,13 @@ cmd = [NOTEHUB_PYTHON, '-m', 'notehub', job['url'], '--podcast', job['mode'], '-
 - worker 取 output 時**必須優先 stderr**：`(result.stderr or result.stdout or '')[-500:]`，否則 stdout 會蓋掉真正錯誤
 - 驗證 MP3 是否真的產生：`find /opt/data -name "*.mp3" -mmin -10`
 
-### 🔴 坑 3：notehub 的 podcast script 走 NVIDIA API（外部依賴）
+### 🔴 坑 3：口播腳本 LLM = OpenCode Zen 優先（2026-07-31 起），NVIDIA 只是 fallback
 
-- script 生成（`_generate_script` / `_translate_title`）用 NVIDIA API，key 在 `/opt/data/.env`（`NVIDIA_API_KEY`）
-- NVIDIA chat completion 可能無回應（`/v1/models` 200 但 completion timeout）→ OpenAI client 無 timeout 會卡很久
-- 卡住時 log 停在 `[INFO] Generating solo podcast script via LLM...`；可 `pkill -f 'notehub.*youtube'` 強制停止
+- `notehub/core/llm.py` 的 `call_llm()` 已改為 **Zen 優先**（`call_zen()`：`opencode.ai/zen/v1` + `deepseek-v4-flash-free`，免費免 Key，http.client 直連）→ NVIDIA chain fallback
+- **🔴 Zen 關鍵 quirk：`deepseek-v4-flash` 是 reasoning 模型，不可傳 `max_tokens`**（思考過程吃光 token → content 空）。`call_zen()` 已內建此規則；bookmark-manager 的 `llm_enhance.py` 一直成功也是因為不傳 max_tokens
+- 使用者硬性規則：**TTS 一律本地產出（edge-tts）、禁用 LLM API 無謂浪費；口播腳本用免費模型**。不要自行把 LLM 改回付費/會卡的 API
+- 若 script 生成全部失敗，`produce_podcast` 會 fallback 直接唸原文 → 保證 MP3 本地產出
+- 本地 TTS 現成工具：`/opt/data/projects/bookmark-manager/gen_tts.py <script.md> <out_dir> <mp3_name>`（用 `/opt/data/.venv/bin/python`）
 
 ### 驗證方式
 

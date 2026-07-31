@@ -174,10 +174,24 @@ def _translate_title(title: str, target_lang: str) -> str | None:
     """Translate a video title to the target language via LLM (with retry + fallback)."""
     import time
     
+    # ⚠️ 2026-07-31 使用者指示：優先使用免費穩定模型（OpenCode Zen）
+    try:
+        from notehub.core.llm import call_zen
+    except ImportError:
+        call_zen = None
+    lang_name = _LANG_NAMES.get(target_lang, target_lang)
+    if call_zen:
+        zen = call_zen(
+            [{"role": "system", "content": "你是翻譯專家。只翻譯標題，不加任何解釋、引號或額外文字。"},
+             {"role": "user", "content": f"將以下標題翻譯成{lang_name}，直接輸出翻譯結果：\n\n{title}"}],
+            temperature=0.3)
+        if zen:
+            return zen.strip().strip('"').strip("'").strip("《》")
+        print("[WARN] Zen title translate failed — fallback NVIDIA", file=sys.stderr)
+
     client = _get_llm_client()
     if not client:
         return None
-    lang_name = _LANG_NAMES.get(target_lang, target_lang)
     
     _FALLBACK_MODELS = [
         "deepseek-ai/deepseek-v4-flash",
@@ -252,6 +266,21 @@ def _generate_script(transcript: str, title: str, mode: str, target_lang: str) -
 
     template = _DUAL_PROMPT if mode == "dual" else _SOLO_PROMPT
     prompt = template.format(lang_instruction=lang_instruction) + transcript
+
+    # ⚠️ 2026-07-31 使用者指示：優先使用免費穩定模型（OpenCode Zen）
+    try:
+        from notehub.core.llm import call_zen
+    except ImportError:
+        call_zen = None
+    if call_zen:
+        print(f"[INFO] Generating {mode} podcast script via Zen (deepseek-v4-flash-free)...", file=sys.stderr)
+        zen = call_zen(
+            [{"role": "system", "content": "你是專業的播客腳本編寫者，擅長將逐字稿轉化為自然流暢的口播腳本。嚴格禁止重複相同或相似的段落，每個論點只講一次。"},
+             {"role": "user", "content": prompt}],
+            temperature=0.7)
+        if zen:
+            return _dedup_script(zen.strip())
+        print("[WARN] Zen script generation failed — fallback NVIDIA", file=sys.stderr)
 
     print(f"[INFO] Generating {mode} podcast script via LLM...", file=sys.stderr)
     
@@ -516,8 +545,12 @@ def produce_podcast(
         Path to the generated MP3, or None on failure.
     """
     # Step 0: Translate title for directory naming when target lang differs
-    # ⚠️ 使用者指示（2026-07-31）：禁用 LLM API — 不翻譯標題，直接用原文
+    # ⚠️ 2026-07-31 使用者指示：口播腳本用免費模型（OpenCode Zen），LLM 翻譯也走 Zen
     dir_title = title
+    if lang and lang not in ("auto", "en") and title:
+        translated = _translate_title(title, lang)
+        if translated:
+            dir_title = translated
 
     # Resolve output directory
     if not out_dir:
@@ -531,9 +564,12 @@ def produce_podcast(
     os.makedirs(out_dir, exist_ok=True)
 
     # Step 1: Generate script
-    # ⚠️ 使用者指示（2026-07-31）：TTS 一律本地產出、禁用 LLM API 無謂浪費。
-    # 直接使用原文當口播稿，不呼叫 _generate_script（NVIDIA API）。
-    script = transcript
+    # ⚠️ 2026-07-31 使用者指示：口播腳本用免費模型（OpenCode Zen）生成
+    script = _generate_script(transcript, title, mode, lang)
+    if not script:
+        # Zen 與 NVIDIA 都失敗 → fallback：直接唸原文（TTS 本地產出保證）
+        print("[WARN] Script generation failed — using raw transcript for TTS", file=sys.stderr)
+        script = transcript
 
     # Save script for reference (as Markdown note)
     script_path = os.path.join(out_dir, "script.md")

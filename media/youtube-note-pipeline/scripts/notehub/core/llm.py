@@ -52,9 +52,51 @@ def get_client():
     return OpenAI(base_url=NVIDIA_BASE_URL, api_key=api_key)
 
 
+def call_zen(messages: list[dict], max_tokens: int = 0,
+             temperature: float = 0.3) -> str | None:
+    """呼叫 OpenCode Zen（deepseek-v4-flash-free，免費免 Key）。
+
+    這是 bookmark-manager 每天在用的穩定免費模型（opencode.ai/zen/v1）。
+    失敗回傳 None，由呼叫方決定是否 fallback。
+
+    ⚠️ 注意：deepseek-v4-flash 是 reasoning 模型，輸出在 reasoning_content。
+    不要傳 max_tokens（或傳 0）——設了會被思考過程吃光導致 content 空。
+    """
+    import http.client
+    import json
+
+    payload = {
+        'model': 'deepseek-v4-flash-free',
+        'messages': messages,
+        'temperature': temperature,
+    }
+    if max_tokens and max_tokens > 0:
+        payload['max_tokens'] = max_tokens
+    body = json.dumps(payload, ensure_ascii=False)
+    try:
+        conn = http.client.HTTPSConnection('opencode.ai', timeout=45)
+        conn.request('POST', '/zen/v1/chat/completions', body.encode('utf-8'),
+                     {'Content-Type': 'application/json'})
+        resp = conn.getresponse()
+        data = json.loads(resp.read().decode('utf-8'))
+        conn.close()
+        if resp.status == 200:
+            content = data.get('choices', [{}])[0].get('message', {}).get('content', '')
+            return content.strip() if content else None
+        print(f"[WARN] Zen LLM HTTP {resp.status}", file=sys.stderr)
+        return None
+    except Exception as e:
+        print(f"[WARN] Zen LLM failed: {e}", file=sys.stderr)
+        return None
+
+
 def call_llm(messages: list[dict], max_tokens: int = 4096,
              temperature: float = 0.3, model_override: str = None) -> str | None:
     """Call LLM with rate limiting, retry, and fallback.
+
+    ⚠️ 2026-07-31 使用者指示：口播腳本用免費穩定模型。
+    優先 OpenCode Zen（deepseek-v4-flash-free，免費免 Key），
+    失敗才 fallback 到 NVIDIA API 鏈。
 
     Args:
         messages: Chat messages (role + content)
@@ -65,6 +107,12 @@ def call_llm(messages: list[dict], max_tokens: int = 4096,
     Returns:
         Response text or None on failure.
     """
+    # 優先：OpenCode Zen（免費、穩定、bookmark-manager 每日驗證）
+    zen_result = call_zen(messages, max_tokens, temperature)
+    if zen_result:
+        return zen_result
+    print("[WARN] Zen LLM unavailable — falling back to NVIDIA chain", file=sys.stderr)
+
     client = get_client()
     if not client:
         print("[ERROR] No NVIDIA API key available", file=sys.stderr)

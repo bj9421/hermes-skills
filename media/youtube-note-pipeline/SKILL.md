@@ -291,7 +291,7 @@ uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --podcast dual --voice-
 
 **Dependencies:** `edge-tts`, `pydub`, `audioop-lts` (Python 3.13+).
 
-**Script generation:** NVIDIA API LLM (`deepseek-ai/deepseek-v4-flash` default, env var `NVIDIA_ORGANIZE_MODEL` overrides), different prompt template. Includes `frequency_penalty=0.3`, `presence_penalty=0.2`, system prompt anti-repetition instruction, and `_dedup_script()` post-processing to catch degeneration loops. **Has retry + fallback** (same model chain as other modules — see LLM Retry Pattern below).
+**Script generation:** ⚠️ **2026-07-31 起：優先 OpenCode Zen（免費免 Key），NVIDIA fallback** — `notehub/core/llm.py` 新增 `call_zen()`，`call_llm()` 改為 Zen 優先（`deepseek-v4-flash-free`）→ NVIDIA chain。使用者硬性規則：**口播腳本用免費模型、TTS 一律本地產出（edge-tts）、禁用 LLM API 無謂浪費**。原 NVIDIA 設定：`deepseek-ai/deepseek-v4-flash` default（`NVIDIA_ORGANIZE_MODEL` overrides），含 `frequency_penalty=0.3`、`presence_penalty=0.2`、anti-repetition system prompt、`_dedup_script()` post-processing。**Has retry + fallback**（same model chain as other modules — see LLM Retry Pattern below）。
 
 **Output auto-chmod:** `script.md` and MP3 are `chmod 777` after creation for Syncthing sync.
 
@@ -501,6 +501,20 @@ def _rate_limit():
 Called before every `client.chat.completions.create()`. A full pipeline run (~5 API calls) takes ~10-15 seconds of rate-limit wait, well within safe bounds.
 
 See `references/nvidia-api-rate-limits.md` for NVIDIA's rate limit mechanism, cooldown behavior, and avoidance strategies.
+
+### OpenCode Zen 優先（2026-07-31 起，使用者硬性規則）
+
+口播腳本 / 標題翻譯的 LLM 呼叫改為 **Zen 優先 → NVIDIA fallback**（`notehub/core/llm.py` 的 `call_llm()`）：
+
+```python
+from notehub.core.llm import call_zen  # deepseek-v4-flash-free，免費免 Key
+r = call_zen(messages, temperature=0.7)  # ⚠️ 不要傳 max_tokens！
+```
+
+- **Endpoint:** `https://opencode.ai/zen/v1/chat/completions`（http.client 直連，Content-Type 即可，無需 Authorization）
+- **🔴 關鍵 quirk：`deepseek-v4-flash` 是 reasoning 模型，`max_tokens` 會被思考過程吃光 → `content` 回傳空字串 → 看似失敗。** bookmark-manager 的 `llm_enhance.py` 一直成功就是因為**從不傳 max_tokens**。`call_zen()` 已內建此規則（max_tokens>0 才傳）。**不要自作主張加 max_tokens。**
+- 若 Zen 失敗（回 None）→ `call_llm()` 自動 fallback 到 NVIDIA chain
+- 使用者偏好：**TTS（edge-tts）一律本地產出、禁用 LLM API；口播腳本可用免費模型（OpenCode Zen）**。不要為了「品質」呼叫付費/會卡的 API。
 
 ### Fallback model chain (same in all modules):
 1. `deepseek-ai/deepseek-v4-flash` (primary — 284B MoE, excellent Chinese)
