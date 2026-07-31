@@ -174,12 +174,8 @@ def run_pipeline(source: str, organize: bool = False,
     print(f"[INFO] Extracted: {title} ({len(result.text)} chars)", file=sys.stderr)
 
     # 2. Translate title for directory naming
+    # ⚠️ 使用者指示（2026-07-31）：禁用 LLM API — 不翻譯標題，直接用原文
     dir_title = title
-    if lang and lang not in ("auto", "en") and title:
-        translated = _translate_title(title, lang)
-        if translated:
-            dir_title = translated
-            print(f"[INFO] Translated title: {dir_title}", file=sys.stderr)
 
     # 3. Create output directory
     safe_dir_title = _sanitize_filename(dir_title)

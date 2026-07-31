@@ -74,7 +74,7 @@ See `references/notehub-architecture.md` for full architecture details.
 uv run python -m notehub ...
 ```
 
-> ⚠️ **2026-07-31 環境變更 — `/opt/hermes/.venv/bin/python3` 已驗證可用（至少 openai 路徑）**：bookmark-manager 的 notehub 佇列 worker 用 `/opt/hermes/.venv/bin/python3 -m notehub <youtube-url> --podcast solo --lang zh --voice-a 台女` 完整跑通（狀態 done、產出 script.md + raw.md）。該直譯器**有 `openai`**（`/opt/hermes/.venv/bin/python3 -c "import openai"` 通過）；而 `/opt/data/projects/*/.venv/bin/python`（專案 venv，如 bookmark-manager）**沒有 openai**——這正是本次 worker 初版失敗的根因。**硬性規則：任何 host process（含背景 worker / subprocess）呼叫 notehub 前，先驗證所選直譯器有依賴**（`<python> -c "import openai, edge_tts"`），不要假設專案 venv 有 notehub 依賴，也不要盲目「修正」成某個特定路徑。主要推薦仍是 `/opt/data/.venv/bin/python`。
+> ⚠️ **2026-07-31 環境變更（已勘誤）— `/opt/hermes/.venv/bin/python3` 缺 `edge_tts`，只能產 script.md 無法產 MP3**：bookmark-manager 的 notehub 佇列 worker 用 `/opt/hermes/.venv/bin/python3 -m notehub <youtube-url> --podcast solo --lang zh --voice-a 台女` 跑出「status done、產出 script.md + raw.md」，**但該次從未產生 MP3**——因該直譯器**有 `openai` 但缺 `edge_tts`**，TTS 步驟失敗且被 pipeline 的 try/except 吞掉（returncode 仍 0）。這是「誤標 done」的陷阱：**script.md 存在 ≠ podcast 成功**。硬性規則：任何 host process（含背景 worker / subprocess）呼叫 notehub 前，**必須驗證 `<python> -c "import openai, edge_tts"` 兩者都過**，不要只驗 openai。主要推薦仍是 `/opt/data/.venv/bin/python`（openai + edge_tts + pydub + opencc 全有）。
 
 ### ⚠️ PYTHONPATH Required — notehub 不是 pip 套件
 
@@ -295,6 +295,8 @@ uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --podcast dual --voice-
 
 **Output auto-chmod:** `script.md` and MP3 are `chmod 777` after creation for Syncthing sync.
 
+**NVIDIA 掛掉時的本地 fallback：** 只要 `script.md` 已存在，直接 `scripts/gen_tts.py <script.md> <out_dir> <mp3_name>`（用 `/opt/data/.venv/bin/python`）就能本地產出 MP3，完全繞過 NVIDIA API。詳見 Podcast Pitfall #18。
+
 ### Podcast Pitfalls
 
 1. **Edge TTS voice names changed**: Newer `edge-tts` versions require `Neural` suffix (e.g., `zh-TW-HsiaoChenNeural`, not `zh-TW-TingTing`). Check available voices with `edge_tts.list_voices()`.
@@ -346,7 +348,7 @@ uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --podcast dual --voice-
 
     **Verified output** (2026-07-26, Bilibili BV1Gv7V6BEjL, 12 min Chinese): yt-dlp downloaded 12.5MB m4a → Groq Whisper transcribed 4510 chars in ~10s → notehub generated 34-line script + 266s MP3 (1MB). Full pipeline under 5 minutes.
 
-14. **Wrong Python venv — `No module named ...` despite deps being installed**: The system has multiple Python venvs. `/opt/data/.venv/bin/python` is the one with all notehub dependencies. The dangerous traps are `/opt/data/projects/*/.venv/bin/python` (project-specific, no notehub deps) and `uv run python3` (uv fails in this Docker container — permission denied on `/root/.cache/uv`). ⚠️ **2026-07-31 correction:** `/opt/hermes/.venv/bin/python3` is NO LONGER categorically wrong — it was verified to run notehub end-to-end from the bookmark-manager worker (has `openai`; job completed with script.md produced). The blanket "Do NOT use" claim is stale. **Always verify the interpreter you plan to use**: `<python> -c "import openai, edge_tts, pydub"`. If you get `ModuleNotFoundError`, first check which Python you're using — but identify the *missing package on that interpreter*, don't assume the path is wrong. Verify: `/opt/data/.venv/bin/python -c "import edge_tts, pydub, openai, opencc; print('all deps OK')"`
+14. **Wrong Python venv — `No module named ...` despite deps being installed**: The system has multiple Python venvs. `/opt/data/.venv/bin/python` is the one with all notehub dependencies. The dangerous traps are `/opt/data/projects/*/.venv/bin/python` (project-specific, no notehub deps) and `uv run python3` (uv fails in this Docker container — permission denied on `/root/.cache/uv`). ⚠️ **2026-07-31 correction (勘誤):** `/opt/hermes/.venv/bin/python3` has `openai` but **lacks `edge_tts`** — the earlier claim that it "ran notehub end-to-end" was WRONG: it produced script.md but **never produced MP3** (TTS failed silently). **Always verify the interpreter you plan to use has BOTH deps**: `<python> -c "import openai, edge_tts, pydub"`. If you get `ModuleNotFoundError`, identify the *missing package on that interpreter* — verifying only `openai` is NOT enough. Verify: `/opt/data/.venv/bin/python -c "import edge_tts, pydub, openai, opencc; print('all deps OK')"`
 
 15. **Text source → output goes to notes/ not 口播/** — When running notehub with a text/.md source (e.g. Whisper transcript, local file), the output directory is under notes/ not 口播/. If the user's intent is clearly a podcast, proactively move the output to 口播/ and note it in your response. Do not wait for the user to ask. The correct move: mv + chmod -R 777.
 
@@ -356,6 +358,18 @@ uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --podcast dual --voice-
     - Detection: Scan for sentences >50 chars without Chinese punctuation.
     - Fix: Manually add 逗號句號 at clause boundaries. Then write standalone gen_tts.py to regenerate MP3. Do NOT re-run notehub — that loses your edits.
     - Workflow: patch script.md, write gen_tts.py, run it, deliver MP3, clean up gen_tts.py.
+
+18. **NVIDIA API 掛掉時 — 直接本地 edge-tts 產出 MP3（不必等 API 恢復）**：2026-07-31 實測驗證。當 `_generate_script` 卡在 NVIDIA chat completion timeout（`/v1/models` 200 但 completion 45s+ 無回應）時，**只要 script.md 已存在，就可以完全繞過 API**——edge-tts 是本地/微軟免費 endpoint，不需要 NVIDIA。
+    - 偵測：log 停在 `[INFO] Generating solo podcast script via LLM...` 超過 5 分鐘；直接測 API：`<python> -c "測試 chat completion"` 或 curl（若 completion timeout 而 models 正常 = 卡住）
+    - 工作流：
+      1. 讀取既有 `script.md`（跳過 frontmatter / `#` 標題 / `>` 引用行）
+      2. 分段 ≤180 chars（在句號/驚嘆號斷點切），段間 `asyncio.sleep(2)`，每段 3 retries（沿用 pitfall #8 策略）
+      3. edge-tts `zh-TW-HsiaoChenNeural`（台女）rate `+5%` → 每段 mp3
+      4. ffmpeg concat 合併（`-f concat -safe 0 -i list.txt -acodec libmp3lame -q:a 2`）
+      5. 命名 `{dir_title}_podcast.mp3`、`chmod -R 777`
+    - 現成工具：`scripts/gen_tts.py`（本 skill 附帶，用法見下）
+    - 實測數據（2026-07-31）：蚊子愛叮誰呢？ 634 chars → 9 段 → 133s / 1MB MP3，全程 <1 分鐘，0 API 呼叫
+    - 驗證產出：`ffprobe -v quiet -show_entries format=duration -of default=noprint_wrappers=1 <mp3>`
 
 ## PPT Mode (`--ppt`) — PowerPoint Presentation
 
@@ -678,7 +692,7 @@ notehub outputs podcast files to `/opt/data/obsidian-vault/口播/` for YouTube 
 ### Key learnings (2026-07-30):
 
 1. **正確 Python 直譯器**：所有 notehub 指令必須用 `/opt/data/.venv/bin/python`（主要推薦）。
-   - ⚠️ 2026-07-31 更新：`/opt/hermes/.venv/bin/python3` 已驗證可跑 notehub（有 openai，bookmark-manager worker 用它完整跑通），不再是絕對錯誤選項——**以實際 import 驗證為準**
+   - ⚠️ 2026-07-31 勘誤：`/opt/hermes/.venv/bin/python3` **有 openai 但缺 edge_tts**——之前「用它完整跑通」的記錄是錯的（只產出 script.md，從未產出 MP3）。**以 `<python> -c "import openai, edge_tts"` 雙驗證為準，單驗 openai 不夠**
    - ❌ `/opt/data/projects/*/.venv/bin/python`（專案專用，無相依套件，bookmark-manager 缺 openai）
    - ❌ `uv run python3`（Docker 中無權限寫 cache）
    - ✅ `/opt/data/.venv/bin/python`（所有相依已安裝）

@@ -1,28 +1,89 @@
 ---
 name: personal-bookmark-system
-description: 自架書籤管理系統（Flask + HTMX + PWA + Telegram Bot + LLM 自動補齊）
-trigger: 使用者提及 bookmark-manager、書籤管理、add2、URL收藏、bookmark-bot、@add2bm_bot
+description: 自架書籤管理系統（Flask + HTMX + PWA + Telegram Bot + LLM 自動補齊 + Notehub 口播佇列）
+trigger: 使用者提及 bookmark-manager、書籤管理、add2、URL收藏、bookmark-bot、@add2bm_bot、notehub 佇列、口播
 ---
 
 # Personal Bookmark System
 
-Flask + HTMX 自架書籤管理系統，支援 PWA、Telegram bot 一鍵收藏、LLM 自動補摘要與標籤。
+Flask + HTMX 自架書籤管理系統，支援 PWA、Telegram bot 一鍵收藏、LLM 自動補摘要與標籤、Notehub 口播工作佇列。
 
-## 架構
+## 架構（已拆分，2026-07 完成）
 
 ```
-Web UI (Flask+HTMX) ←→ bookmark-manager API ←→ bookmarks.db (SQLite)
-                                         ↑
-Telegram Bot (@add2bm_bot) → POST /api/bookmarks
-                                    ↓
-                    cron/enrich → OpenCode Zen LLM → 摘要+標籤
+app.py (18行, 僅 blueprint 註冊 + startup)
+├── routes_bookmarks.py   書籤路由 Blueprint（14 端點）
+├── routes_tags.py        標籤管理 + PWA Blueprint（7 端點）
+├── routes_notehub.py     Notehub 佇列 Blueprint（queue/jobs API + 背景 worker）
+├── db.py                 資料庫層（SQLite CRUD + notehub_jobs 操作）
+├── llm_enhance.py        LLM 補齊層（fetch_title / llm_enhance / normalize_source_tags）
+├── bookmark.py           單筆處理（不動，cohesion 0.39 良好範本）
+└── schema.sql            bookmarks + tags + notehub_jobs 表
 ```
-
-## Web UI (Flask + HTMX)
 
 - **Port**: 5001
 - **DB**: `/opt/data/projects/bookmark-manager/bookmarks.db`
-- **主路由**: `/` (列表), `/stats` (統計), `/api/bookmarks` (CRUD)
+- **啟動**: `cd /opt/data/projects/bookmark-manager && .venv/bin/python app.py`
+
+## Notehub 工作佇列（☰ 側頁）
+
+右上角 ☰ → Blogger 滑出式側頁（`translateX(100%) → 0` + 遮罩），顯示工作佇列：
+
+```
+次序號碼 | 工作名稱 | 口播選項（☑台女 ☐台男）
+```
+
+### 語音邏輯（queue API 自動判定）
+
+| 勾選 | mode | CLI 參數 |
+|------|------|----------|
+| 僅台女 | solo | `--voice-a 台女` |
+| 僅台男 | solo | `--voice-a 台男` |
+| 兩者都勾 | **dual** | `--voice-a 台女 --voice-b 台男` |
+
+### 非同步佇列設計
+
+- `POST /api/notehub/queue` → 建立 jobs（status=queued）→ 立即回應
+- 背景 worker（daemon thread）逐筆處理：queued → running → done/failed
+- `GET /api/notehub/jobs` → 前端每 5 秒輪詢進度（⏳等待/🔄處理中/✅完成/❌失敗）
+- 前端 `index.html` 的 batch「🎙️ 送 notehub」→ `openNotehubSidebar()`（不再同步送出）
+
+### 🔴 重大坑：worker 的 python 必須用 /opt/data/.venv
+
+notehub CLI 需要 `openai` + `edge_tts`：
+- bookmark-manager 的 `.venv`：**沒有 openai**（`ModuleNotFoundError: No module named 'openai'`）
+- `/opt/hermes/.venv`：有 openai 但**沒有 edge_tts**（TTS 步驟才失敗，pipeline 吞錯誤照樣 done）
+- **`/opt/data/.venv`：兩者都有 ✅（唯一正確選擇）**
+
+```python
+# routes_notehub.py 內（正確寫法）
+NOTEHUB_PYTHON = '/opt/data/.venv/bin/python'  # openai + edge_tts 都有
+cmd = [NOTEHUB_PYTHON, '-m', 'notehub', job['url'], '--podcast', job['mode'], '--lang', 'zh']
+```
+
+### 🔴 坑 2：notehub CLI 的錯誤在 stderr，且 pipeline 會吞 podcast 錯誤
+
+- `produce_podcast` 被 pipeline 的 try/except 包住，失敗只 print `[ERROR] Podcast failed: ...` 到 stderr，**returncode 仍為 0** → worker 會誤標 done
+- worker 取 output 時**必須優先 stderr**：`(result.stderr or result.stdout or '')[-500:]`，否則 stdout 會蓋掉真正錯誤
+- 驗證 MP3 是否真的產生：`find /opt/data -name "*.mp3" -mmin -10`
+
+### 🔴 坑 3：notehub 的 podcast script 走 NVIDIA API（外部依賴）
+
+- script 生成（`_generate_script` / `_translate_title`）用 NVIDIA API，key 在 `/opt/data/.env`（`NVIDIA_API_KEY`）
+- NVIDIA chat completion 可能無回應（`/v1/models` 200 但 completion timeout）→ OpenAI client 無 timeout 會卡很久
+- 卡住時 log 停在 `[INFO] Generating solo podcast script via LLM...`；可 `pkill -f 'notehub.*youtube'` 強制停止
+
+### 驗證方式
+
+```bash
+curl -s -X POST http://127.0.0.1:5001/api/notehub/queue -H "Content-Type: application/json" \
+  -d '{"items":[{"id":14,"voice_a":true,"voice_b":false}]}'
+curl -s http://127.0.0.1:5001/api/notehub/jobs
+```
+
+notehub 產出：`/opt/data/obsidian-vault/notes/<標題> [hash]/` 內含 `script.md` + `_raw.md`。
+
+## Web UI (Flask + HTMX)
 
 ### 卡片操作按鈕順序（_bookmark_list.html）
 
@@ -47,7 +108,6 @@ function refreshWithDelay() {
 
 - `GET /api/bookmarks/<id>/edit-form` → 回傳 inline edit form (HTMX fragment)
 - `PUT /api/bookmarks/<id>/update` → 更新 title/summary/tags
-- 使用 `hx-get` 載入表單，`hx-put` 送出
 
 ### LLM 自動補齊（🤖 按鈕）
 
@@ -89,7 +149,7 @@ def normalize_source_tags(url, tags):
 ```
 
 同步在三個地方：
-1. `app.py` enrich endpoint
+1. `llm_enhance.py` enrich 流程
 2. `bookmark-bot.py` LLM 處理後
 3. cron enrich prompt
 
@@ -112,13 +172,19 @@ tailscale serve --bg --https=443 localhost:5001
 - `Service-Worker-Allowed: /` header 必須設
 - 子路徑部署時所有 URL 必須用相對路徑（無前綴 `/`）
 
-## 重構/拆分前的強制工作流（使用者明確要求）
+## 拆分工作流（已完成版本）
 
-大型拆分（如把 app.py 拆成多模組）**動手前必須依序**：
+app.py 已從 766 行 / 53 函數 / cohesion 0.10 拆成上述模組結構（cohesion 0.21~0.31，2~3 倍提升）。未來再拆分時遵循：
 
 1. **確認 git 開啟、工作區乾淨** — `git status --short`，確保可隨時 `git checkout HEAD` 回滾
 2. **列出拆分計劃給使用者確認** — 目標結構、搬哪些函數、哪些檔案不動，等使用者點頭
 3. **建立 checkpoint list（todo）** — 每步動作 + 驗證方式 + 通過標準；每完成一步 `git commit`（繁體中文訊息）
 4. **確認後才開始改碼**；任何一步驗證失敗 → `git checkout` 回滾，不硬撐
+5. 拆完用 `graphify update .` 增量更新圖譜，對比 cohesion 確認改善
 
-graphify 掃描顯示 app.py 曾有 766 行 / 53 函數、cohesion 0.10（全專案最弱），圖譜建議拆成 `db.py` + `llm_enhance.py` + `routes_bookmarks.py` + `routes_tags.py`，app.py 瘦身成 blueprint 註冊 + startup（<50 行）。bookmark.py（cohesion 0.39）是良好範本。拆完用 curl 驗證所有端點無回歸。
+## 前端側頁注意（Blogger 滑出式）
+
+- CSS: `position:fixed; right:0; transform:translateX(100%)` → `.open { transform:translateX(0) }` + `transition:0.3s`
+- 遮罩 `.nh-overlay`：`opacity:0; pointer-events:none` → `.open` 才可點
+- JS 必須通過 `node --check` 驗證語法（上次 hamburger 崩潰根因是 PWA script 括號錯誤）
+- script 標籤數量檢查：`grep -c '<script'` 與 `'</script>'` 必須相等

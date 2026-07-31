@@ -153,7 +153,7 @@ conn.execute("PRAGMA busy_timeout=30000")
 
 | 腳本 | timeout/busy_timeout | 現狀 |
 |------|----------------------|------|
-| `update_all_tech_indicators.py` | ❌ **尚未修復** | 遇到並發寫入者仍會 1925 全掛 |
+| `update_all_tech_indicators.py` | ✅ **已修復（2026-07-31 實測確認）** | 第 127-129 行已含 `timeout=60` + WAL + `busy_timeout=30000`；並發寫入時會排隊等待而非秒噴 |
 | `update_tech_indicators.py` | ❌ **尚未修復** | 同上 |
 | `update_daily.py` | ✅ 已套用 | 安全 |
 | `verify_daily_prices.py` | ✅ 已套用 | 安全 |

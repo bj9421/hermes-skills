@@ -516,11 +516,8 @@ def produce_podcast(
         Path to the generated MP3, or None on failure.
     """
     # Step 0: Translate title for directory naming when target lang differs
+    # ⚠️ 使用者指示（2026-07-31）：禁用 LLM API — 不翻譯標題，直接用原文
     dir_title = title
-    if lang and lang not in ("auto", "en") and title:
-        translated = _translate_title(title, lang)
-        if translated:
-            dir_title = translated
 
     # Resolve output directory
     if not out_dir:
@@ -534,10 +531,9 @@ def produce_podcast(
     os.makedirs(out_dir, exist_ok=True)
 
     # Step 1: Generate script
-    script = _generate_script(transcript, title, mode, lang)
-    if not script:
-        print("[ERROR] Failed to generate podcast script", file=sys.stderr)
-        return None
+    # ⚠️ 使用者指示（2026-07-31）：TTS 一律本地產出、禁用 LLM API 無謂浪費。
+    # 直接使用原文當口播稿，不呼叫 _generate_script（NVIDIA API）。
+    script = transcript
 
     # Save script for reference (as Markdown note)
     script_path = os.path.join(out_dir, "script.md")
