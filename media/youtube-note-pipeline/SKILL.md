@@ -308,7 +308,7 @@ uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --podcast dual --voice-
 
 **Dependencies:** `edge-tts`, `pydub`, `audioop-lts` (Python 3.13+).
 
-**Script generation:** ⚠️ **2026-07-31 起：優先 OpenCode Zen（免費免 Key），NVIDIA fallback** — `notehub/core/llm.py` 新增 `call_zen()`，`call_llm()` 改為 Zen 優先（`deepseek-v4-flash-free`）→ NVIDIA chain。使用者硬性規則：**口播腳本用免費模型、TTS 一律本地產出（edge-tts）、禁用 LLM API 無謂浪費**。原 NVIDIA 設定：`deepseek-ai/deepseek-v4-flash` default（`NVIDIA_ORGANIZE_MODEL` overrides），含 `frequency_penalty=0.3`、`presence_penalty=0.2`、anti-repetition system prompt、`_dedup_script()` post-processing。**Has retry + fallback**（same model chain as other modules — see LLM Retry Pattern below）。
+**Script generation:** ⚠️ **2026-07-31 晚間起（使用者硬性規則）：LLM 一律只走 OpenCode Zen（免費免 Key），NVIDIA LLM 全面移除** — `notehub/core/llm.py` 的 `call_llm()` 只呼叫 `call_zen()`（`deepseek-v4-flash-free`），Zen 失敗直接回 None（不 fallback NVIDIA）。podcast.py / ppt_gen.py / visual_gen.py / yt2md_pipeline.py 的 NVIDIA fallback 鏈（`_FALLBACK_MODELS`、`_get_llm_client`）**已全部移除**。**NVIDIA 在 pipeline 只負責 Whisper 轉寫（Groq 的 fallback 層）**。原 NVIDIA 設定（`deepseek-ai/deepseek-v4-flash` default、`frequency_penalty=0.3`、`_dedup_script()`）僅為歷史紀錄。
 
 **Output auto-chmod:** `script.md` and MP3 are `chmod 777` after creation for Syncthing sync.
 
@@ -337,9 +337,11 @@ uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --podcast dual --voice-
     # Step 1: yt-dlp download audio (supports Bilibili, Vimeo, YouTube, 1000+ sites)
     yt-dlp -x --audio-format m4a -o "/tmp/audio/%(id)s.%(ext)s" "URL"
 
-    # ⚠️ Groq 413 fix: Groq rejects files >~10MB with "Request Entity Too Large".
-    # Convert to opus at 32k to shrink ~14MB m4a → ~4.5MB opus:
-    ffmpeg -y -i /tmp/audio/<id>.m4a -c:a libopus -b:a 32k /tmp/audio/<id>.opus
+    # ⚠️ Groq 413 fix（2026-07-31 更新）：Groq rejects files >~10MB with "Request Entity Too Large".
+    # 🔴 舊法（壓縮 opus 32k）對大檔會失敗：RPi 壓 33MB 需 72s，超過 ffmpeg timeout 60s → 送原檔必 413。
+    # ✅ 正解（已內建於 transcribe_audio）：動態分段 — ffmpeg -c copy 無損切段（1 秒）→ 逐段 Groq → 合併。
+    #    手動替代：ffmpeg -y -i /tmp/audio/<id>.m4a -f segment -segment_time <時長/段數> -c copy seg_%03d.m4a
+    #    段數 = ceil(檔案MB / 9)，確保每段 <10MB（高碼率影片固定 10 分鐘段可能仍 >10MB）。
 
     # Step 2: Groq Whisper transcribe (free, fast, supports Chinese)
     # GROQ_API_KEY must be set in /opt/data/.env
@@ -377,6 +379,24 @@ uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --podcast dual --voice-
     - Workflow: patch script.md, write gen_tts.py, run it, deliver MP3, clean up gen_tts.py.
 
 18. **NVIDIA API 掛掉時 — 直接本地 edge-tts 產出 MP3（不必等 API 恢復）**：2026-07-31 實測驗證。當 `_generate_script` 卡在 NVIDIA chat completion timeout（`/v1/models` 200 但 completion 45s+ 無回應）時，**只要 script.md 已存在，就可以完全繞過 API**——edge-tts 是本地/微軟免費 endpoint，不需要 NVIDIA。
+    - 偵測：log 停在 `[INFO] Generating solo podcast script via LLM...` 超過 5 分鐘；直接測 API：`<python> -c "測試 chat completion"` 或 curl（若 completion timeout 而 models 正常 = 卡住）
+    - 工作流：
+      1. 讀取既有 `script.md`（跳過 frontmatter / `#` 標題 / `>` 引用行）
+      2. 分段 ≤180 chars（在句號/驚嘆號斷點切），段間 `asyncio.sleep(2)`，每段 3 retries（沿用 pitfall #8 策略）
+      3. edge-tts `zh-TW-HsiaoChenNeural`（台女）rate `+5%` → 每段 mp3
+      4. ffmpeg concat 合併（`-f concat -safe 0 -i list.txt -acodec libmp3lame -q:a 2`）
+      5. 命名 `{dir_title}_podcast.mp3`、`chmod -R 777`
+    - 現成工具：`scripts/gen_tts.py`（本 skill 附帶，用法見下）
+    - 實測數據（2026-07-31）：蚊子愛叮誰呢？ 634 chars → 9 段 → 133s / 1MB MP3，全程 <1 分鐘，0 API 呼叫
+    - 驗證產出：`ffprobe -v quiet -show_entries format=duration -of default=noprint_wrappers=1 <mp3>`
+    - ⚠️ 2026-07-31 晚間更新：LLM 已全面改 Zen-only（NVIDIA LLM 移除），此 pitfall 主要作為**本地 TTS 備援流程**參考（script.md 已存在時直接產 MP3）。
+
+19. **抽共用模組前，先調查既有實作（git log / 讀原始碼）——2026-07-31 血的教訓**：新增 `notehub/core/transcribe.py` 共用模組時，**沒有先讀 bilibili.py / instagram.py 既有的 Groq 大檔處理**（`_check_size_and_compress`，7/29 就存在），自己重寫了 `_compress_to_opus`（還照搬了 60s timeout 的缺陷）。結果 33MB YouTube 音訊：壓縮 timeout → 送原檔 → Groq 413 → 全鏈失敗，job 11 陣亡。**規則：**
+    - 抽共用邏輯前：`git log --oneline -- <file>` + `git show <commit>:<file>` 看歷史實作
+    - 複製既有 code 時**質疑每個參數**（尤其 timeout / 大小上限）——不要照搬可能對新場景不適用的值
+    - 大檔新場景（>20MB 長影片）先用**分段**而非壓縮：ffmpeg `-c copy` 無損切段 1 秒完成，逐段 Groq，全程 26s（vs 壓縮 72s+ 還可能失敗）
+
+20. **LLM 整理文檔一律不用 NVIDIA（2026-07-31 使用者硬性規則）**：NVIDIA 在 pipeline **只負責 Whisper 轉寫**（Groq 的 fallback 層，`transcribe.py` 的 `_transcribe_nvidia` gRPC）。口播腳本 / 標題翻譯 / PPT 重點提取 / 視覺摘要 / organize 的 LLM 呼叫**全部只走 OpenCode Zen**（`call_zen()`）。任何新增 LLM 呼叫點禁止引入 NVIDIA `chat.completions.create`——NVIDIA LLM 曾無 timeout 卡死 10+ 分鐘（SDK 預設 600s×重試），實測 job 12 因此失敗。
     - 偵測：log 停在 `[INFO] Generating solo podcast script via LLM...` 超過 5 分鐘；直接測 API：`<python> -c "測試 chat completion"` 或 curl（若 completion timeout 而 models 正常 = 卡住）
     - 工作流：
       1. 讀取既有 `script.md`（跳過 frontmatter / `#` 標題 / `>` 引用行）
@@ -519,9 +539,9 @@ Called before every `client.chat.completions.create()`. A full pipeline run (~5 
 
 See `references/nvidia-api-rate-limits.md` for NVIDIA's rate limit mechanism, cooldown behavior, and avoidance strategies.
 
-### OpenCode Zen 優先（2026-07-31 起，使用者硬性規則）
+### OpenCode Zen 唯一（2026-07-31 晚間起，使用者硬性規則）
 
-口播腳本 / 標題翻譯的 LLM 呼叫改為 **Zen 優先 → NVIDIA fallback**（`notehub/core/llm.py` 的 `call_llm()`）：
+口播腳本 / 標題翻譯 / PPT / 視覺摘要 / organize 的 LLM 呼叫**一律只用 Zen**（`notehub/core/llm.py` 的 `call_zen()` / `call_llm()`）：
 
 ```python
 from notehub.core.llm import call_zen  # deepseek-v4-flash-free，免費免 Key
@@ -530,13 +550,17 @@ r = call_zen(messages, temperature=0.7)  # ⚠️ 不要傳 max_tokens！
 
 - **Endpoint:** `https://opencode.ai/zen/v1/chat/completions`（http.client 直連，Content-Type 即可，無需 Authorization）
 - **🔴 關鍵 quirk：`deepseek-v4-flash` 是 reasoning 模型，`max_tokens` 會被思考過程吃光 → `content` 回傳空字串 → 看似失敗。** bookmark-manager 的 `llm_enhance.py` 一直成功就是因為**從不傳 max_tokens**。`call_zen()` 已內建此規則（max_tokens>0 才傳）。**不要自作主張加 max_tokens。**
-- 若 Zen 失敗（回 None）→ `call_llm()` 自動 fallback 到 NVIDIA chain
-- 使用者偏好：**TTS（edge-tts）一律本地產出、禁用 LLM API；口播腳本可用免費模型（OpenCode Zen）**。不要為了「品質」呼叫付費/會卡的 API。
+- **NVIDIA LLM 已全面移除（2026-07-31）**：Zen 失敗直接回 None（job 標 failed），**不再 fallback NVIDIA**——NVIDIA LLM 曾無 timeout 卡死 job 12（SDK 預設 600s×重試），且使用者明確指示「LLM 整理文檔不要用 NVIDIA 模型；NVIDIA 只負責 Whisper」。
+- 使用者偏好：**TTS（edge-tts）一律本地產出、禁用 LLM API；口播腳本用免費模型（OpenCode Zen）**。不要為了「品質」呼叫付費/會卡的 API。
 
-### Fallback model chain (same in all modules):
-1. `deepseek-ai/deepseek-v4-flash` (primary — 284B MoE, excellent Chinese)
-2. `meta/llama-3.3-70b-instruct` (backup)
-3. `nvidia/llama-3.1-nemotron-70b-instruct` (last resort)
+### Fallback model chain（⚠️ 2026-07-31 晚間起已停用 — NVIDIA LLM 全面移除）
+
+原 NVIDIA chain（1→2→3）已全部移除，LLM 一律只走 Zen：
+1. ~~`deepseek-ai/deepseek-v4-flash`~~（移除）
+2. ~~`meta/llama-3.3-70b-instruct`~~（移除）
+3. ~~`nvidia/llama-3.1-nemotron-70b-instruct`~~（移除）
+
+以下 retry/rate-limit 描述僅保留作歷史參考。**現在任何 LLM 呼叫點都不應出現 `client.chat.completions.create` 或 `_FALLBACK_MODELS`。**
 
 **Retry behavior:**
 - Per-model: 3 attempts with exponential backoff (base_delay × 2^attempt)
