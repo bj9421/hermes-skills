@@ -1,18 +1,45 @@
 """LLM calling module — rate limiter, retry, and multi-model fallback.
 
-Uses NVIDIA API (OpenAI-compatible) with:
-- 2s minimum interval between calls (40 RPM free tier)
-- 3-retry exponential backoff per model
-- 3-model fallback chain: deepseek-v4-flash → llama-3.3-70b → nemotron-70b
+Providers:
+1. OpenCode Zen (deepseek-v4-flash-free) — 3s interval (20 RPM)
+2. AGNES API (agnes-2.0-flash) — 2s interval (30 RPM)
+3. NVIDIA API (deprecated for LLM, only for Whisper)
+
+⚠️ Rate limiting: Avoid 429 errors and account suspension.
 """
 
 import os
 import sys
 import time
+from threading import Lock
 
-# Rate limiter
-_last_api_call = 0.0
-_API_INTERVAL = 2.0
+# Rate limiters (separate per provider)
+_rate_lock = Lock()
+_zen_last_call = 0.0
+_zen_interval = 3.0  # 20 RPM (3s between calls)
+_agnes_last_call = 0.0
+_agnes_interval = 2.0  # 30 RPM (2s between calls)
+_nvidia_last_call = 0.0
+_nvidia_interval = 2.0  # 30 RPM
+
+
+def _rate_limit(latest_call: float, interval: float) -> float:
+    """Enforce minimum interval between API calls.
+
+    Args:
+        latest_call: Timestamp of last API call
+        interval: Minimum seconds between calls
+
+    Returns:
+        New latest_call timestamp
+    """
+    with _rate_lock:
+        elapsed = time.time() - latest_call
+        if elapsed < interval:
+            wait_time = interval - elapsed
+            print(f"[RATE_LIMIT] Waiting {wait_time:.1f}s (next call at {time.time() + wait_time:.2f})", file=sys.stderr)
+            time.sleep(wait_time)
+        return time.time()
 
 # Config
 NVIDIA_BASE_URL = os.environ.get("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
@@ -57,10 +84,17 @@ def call_agnes(messages: list[dict], max_tokens: int = 4096,
     """呼叫 AGNES API（agnes-2.0-flash）。
 
     當 OpenCode Zen 限流時的 fallback provider。
+    預設 30 RPM (2s interval) 以避免被限流。
+
+    ⚠️ Rate limit: 30 RPM (2s interval) to avoid 429 errors.
     """
     import http.client
     import json
     import os
+
+    # Rate limiting
+    global _agnes_last_call
+    _agnes_last_call = _rate_limit(_agnes_last_call, _agnes_interval)
 
     key = os.environ.get('AGNES_API_KEY', '')
     if not key:
@@ -111,11 +145,16 @@ def call_zen(messages: list[dict], max_tokens: int = 0,
     這是 bookmark-manager 每天在用的穩定免費模型（opencode.ai/zen/v1）。
     失敗回傳 None，由呼叫方決定是否 fallback。
 
+    ⚠️ Rate limit: 20 RPM (3s interval) to avoid 429 errors.
     ⚠️ 注意：deepseek-v4-flash 是 reasoning 模型，輸出在 reasoning_content。
     不要傳 max_tokens（或傳 0）——設了會被思考過程吃光導致 content 空。
     """
     import http.client
     import json
+
+    # Rate limiting
+    global _zen_last_call
+    _zen_last_call = _rate_limit(_zen_last_call, _zen_interval)
 
     payload = {
         'model': 'deepseek-v4-flash-free',
