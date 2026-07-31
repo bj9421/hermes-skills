@@ -111,3 +111,14 @@ tailscale serve --bg --https=443 localhost:5001
 - `manifest.json`, `sw.js` 在 `static/`
 - `Service-Worker-Allowed: /` header 必須設
 - 子路徑部署時所有 URL 必須用相對路徑（無前綴 `/`）
+
+## 重構/拆分前的強制工作流（使用者明確要求）
+
+大型拆分（如把 app.py 拆成多模組）**動手前必須依序**：
+
+1. **確認 git 開啟、工作區乾淨** — `git status --short`，確保可隨時 `git checkout HEAD` 回滾
+2. **列出拆分計劃給使用者確認** — 目標結構、搬哪些函數、哪些檔案不動，等使用者點頭
+3. **建立 checkpoint list（todo）** — 每步動作 + 驗證方式 + 通過標準；每完成一步 `git commit`（繁體中文訊息）
+4. **確認後才開始改碼**；任何一步驗證失敗 → `git checkout` 回滾，不硬撐
+
+graphify 掃描顯示 app.py 曾有 766 行 / 53 函數、cohesion 0.10（全專案最弱），圖譜建議拆成 `db.py` + `llm_enhance.py` + `routes_bookmarks.py` + `routes_tags.py`，app.py 瘦身成 blueprint 註冊 + startup（<50 行）。bookmark.py（cohesion 0.39）是良好範本。拆完用 curl 驗證所有端點無回歸。

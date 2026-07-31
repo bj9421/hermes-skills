@@ -74,6 +74,8 @@ See `references/notehub-architecture.md` for full architecture details.
 uv run python -m notehub ...
 ```
 
+> ⚠️ **2026-07-31 環境變更 — `/opt/hermes/.venv/bin/python3` 已驗證可用（至少 openai 路徑）**：bookmark-manager 的 notehub 佇列 worker 用 `/opt/hermes/.venv/bin/python3 -m notehub <youtube-url> --podcast solo --lang zh --voice-a 台女` 完整跑通（狀態 done、產出 script.md + raw.md）。該直譯器**有 `openai`**（`/opt/hermes/.venv/bin/python3 -c "import openai"` 通過）；而 `/opt/data/projects/*/.venv/bin/python`（專案 venv，如 bookmark-manager）**沒有 openai**——這正是本次 worker 初版失敗的根因。**硬性規則：任何 host process（含背景 worker / subprocess）呼叫 notehub 前，先驗證所選直譯器有依賴**（`<python> -c "import openai, edge_tts"`），不要假設專案 venv 有 notehub 依賴，也不要盲目「修正」成某個特定路徑。主要推薦仍是 `/opt/data/.venv/bin/python`。
+
 ### ⚠️ PYTHONPATH Required — notehub 不是 pip 套件
 
 notehub 是本地模組（非 pip 安裝），所在路徑：
@@ -344,7 +346,7 @@ uv run python3 SKILL_DIR/scripts/yt2md_pipeline.py "URL" --podcast dual --voice-
 
     **Verified output** (2026-07-26, Bilibili BV1Gv7V6BEjL, 12 min Chinese): yt-dlp downloaded 12.5MB m4a → Groq Whisper transcribed 4510 chars in ~10s → notehub generated 34-line script + 266s MP3 (1MB). Full pipeline under 5 minutes.
 
-14. **Wrong Python venv — `No module named ...` despite deps being installed**: The system has multiple Python venvs. `/opt/data/.venv/bin/python` is the one with all notehub dependencies. Do NOT use `/opt/hermes/.venv/bin/python3` (Hermes system venv, no notehub deps), `/opt/data/projects/*/.venv/bin/python` (project-specific, no notehub deps), or `uv run python3` (uv fails in this Docker container — permission denied on `/root/.cache/uv`). If you get `ModuleNotFoundError`, first check which Python you're using. The fix is almost always switching to `/opt/data/.venv/bin/python`. Verify: `/opt/data/.venv/bin/python -c "import edge_tts, pydub, openai, opencc; print('all deps OK')"`
+14. **Wrong Python venv — `No module named ...` despite deps being installed**: The system has multiple Python venvs. `/opt/data/.venv/bin/python` is the one with all notehub dependencies. The dangerous traps are `/opt/data/projects/*/.venv/bin/python` (project-specific, no notehub deps) and `uv run python3` (uv fails in this Docker container — permission denied on `/root/.cache/uv`). ⚠️ **2026-07-31 correction:** `/opt/hermes/.venv/bin/python3` is NO LONGER categorically wrong — it was verified to run notehub end-to-end from the bookmark-manager worker (has `openai`; job completed with script.md produced). The blanket "Do NOT use" claim is stale. **Always verify the interpreter you plan to use**: `<python> -c "import openai, edge_tts, pydub"`. If you get `ModuleNotFoundError`, first check which Python you're using — but identify the *missing package on that interpreter*, don't assume the path is wrong. Verify: `/opt/data/.venv/bin/python -c "import edge_tts, pydub, openai, opencc; print('all deps OK')"`
 
 15. **Text source → output goes to notes/ not 口播/** — When running notehub with a text/.md source (e.g. Whisper transcript, local file), the output directory is under notes/ not 口播/. If the user's intent is clearly a podcast, proactively move the output to 口播/ and note it in your response. Do not wait for the user to ask. The correct move: mv + chmod -R 777.
 
@@ -675,9 +677,9 @@ notehub outputs podcast files to `/opt/data/obsidian-vault/口播/` for YouTube 
 
 ### Key learnings (2026-07-30):
 
-1. **正確 Python 直譯器**：所有 notehub 指令必須用 `/opt/data/.venv/bin/python`。
-   - ❌ `/opt/hermes/.venv/bin/python3`（無 edge-tts/pydub/openai/opencc）
-   - ❌ `/opt/data/projects/*/.venv/bin/python`（專案專用，無相依套件）
+1. **正確 Python 直譯器**：所有 notehub 指令必須用 `/opt/data/.venv/bin/python`（主要推薦）。
+   - ⚠️ 2026-07-31 更新：`/opt/hermes/.venv/bin/python3` 已驗證可跑 notehub（有 openai，bookmark-manager worker 用它完整跑通），不再是絕對錯誤選項——**以實際 import 驗證為準**
+   - ❌ `/opt/data/projects/*/.venv/bin/python`（專案專用，無相依套件，bookmark-manager 缺 openai）
    - ❌ `uv run python3`（Docker 中無權限寫 cache）
    - ✅ `/opt/data/.venv/bin/python`（所有相依已安裝）
 

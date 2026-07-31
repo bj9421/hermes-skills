@@ -79,6 +79,80 @@ if request.headers.get('HX-Request') == 'true':
 return jsonify({'ok': True})
 ```
 
+## 模組化架構（Flask Blueprint 拆分，2026-07）
+
+bookmark-manager 已從單一 app.py（766 行）拆分為分層模組。**未來改 code 前先對照此結構，別在 app.py 找函數**：
+
+```
+app.py                  # 入口：app 建立 + blueprint 註冊 + startup（18 行）
+db.py                   # 資料層：get_db / init_db / row mappers / build_filters / get_stats / sync_tags / notehub_jobs CRUD
+llm_enhance.py          # LLM 層：fetch_title / llm_enhance / normalize_source_tags
+routes_bookmarks.py     # Blueprint 'bookmarks'：首頁、CRUD、batch、star/read/enrich/tags
+routes_tags.py          # Blueprint 'tags'：tags 頁、merge/rename/delete + PWA 路由
+routes_notehub.py       # Blueprint 'notehub'：口播工作佇列 API + 背景 worker 執行緒
+```
+
+拆分模式（可套用到其他 Flask 專案）：
+- `db.py` 放資料層，其他模組 `from db import ...`（避免循環 import：db 不 import routes/app）
+- 每個 domain 一個 `routes_*.py`，用 `Blueprint('name', __name__)`，`app.register_blueprint(bp)`
+- PWA 路由在 Blueprint 內要用 `current_app.send_static_file()`（不是 `app.send_static_file`）
+- 拆分由 graphify 驅動：cohesion 0.10 → 0.21~0.31，完整流程見 `knowledge-graph-pipeline` skill
+
+## 非同步工作佇列（SQLite jobs table + 背景 worker + 前端輪詢）
+
+**背景：** batch 動作若直接同步跑 subprocess（如 notehub 每筆 timeout 600s），多筆會卡死 UI。解法：寫入 jobs table → 立即回傳 → daemon thread 逐筆處理 → 前端輪詢進度。已實作於 routes_notehub.py，可直接複製此模式。
+
+**schema（新增 table，CREATE TABLE IF NOT EXISTS 安全重複執行）：**
+```sql
+CREATE TABLE IF NOT EXISTS notehub_jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bookmark_id INTEGER NOT NULL,
+    title TEXT DEFAULT '', url TEXT DEFAULT '',
+    mode TEXT DEFAULT 'solo',       -- solo / dual
+    voice_a TEXT DEFAULT '台女', voice_b TEXT DEFAULT '台男',
+    status TEXT DEFAULT 'queued',   -- queued / running / done / failed
+    output TEXT DEFAULT '',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    started_at TIMESTAMP, finished_at TIMESTAMP
+);
+```
+
+**db.py CRUD（每函數自開 connection，thread-safe）：** `create_notehub_jobs(conn, items)` / `get_notehub_jobs(conn, limit, status)` / `get_pending_notehub_jobs(conn)`（queued+running）/ `update_notehub_job_status(conn, job_id, status, output)`（用 CASE WHEN 寫 started_at/finished_at 時間戳）。
+
+**worker（daemon thread，lazy 啟動）：**
+```python
+_worker_started = False
+_worker_lock = threading.Lock()
+
+def _worker_loop():
+    while True:
+        try:
+            conn = get_db(); pending = get_pending_notehub_jobs(conn); conn.close()
+            if not pending:
+                time.sleep(2); continue
+            job = pending[0]
+            conn = get_db(); update_notehub_job_status(conn, job['id'], 'running'); conn.close()
+            status, output = _process_job(job)   # subprocess.run(...timeout=900)
+            conn = get_db(); update_notehub_job_status(conn, job['id'], status, output); conn.close()
+        except Exception as e:
+            print(f'[worker] error: {e}'); time.sleep(5)
+
+def _ensure_worker():
+    global _worker_started
+    with _worker_lock:
+        if not _worker_started:
+            threading.Thread(target=_worker_loop, daemon=True).start()
+            _worker_started = True
+```
+
+**語音選擇邏輯（checkbox 語意，user 確認過）：** 僅台女 → `solo` voice_a=台女；僅台男 → `solo` voice_a=台男；**同勾 → `dual` 雙人模式**（voice_a=台女, voice_b=台男）。notehub CLI 支援 `--voice-a`/`--voice-b` 及「台女」「台男」別名。
+
+**⚠️ worker subprocess 的 Python 直譯器（2026-07-31 踩坑）：** worker 呼叫外部 CLI（如 notehub）時，**不要用專案自己的 venv** — bookmark-manager 的 `.venv` 缺 `openai`，導致 notehub 全部 `ModuleNotFoundError` 失敗。修正：`NOTEHUB_PYTHON = '/opt/hermes/.venv/bin/python3'`（有 openai，已驗證 notehub 完整跑通，產出 script.md）。**規則：subprocess 用哪個 python，先 `<python> -c "import <dep>"` 驗證再寫死，不要假設專案 venv 有外部 CLI 的依賴。**
+
+**前端輪詢：** `fetch('/api/notehub/jobs')` 每 5 秒（`setInterval`），`pending===0 && jobs.length>0` 時停止輪詢。送出後 `showToast('✅ N 筆已加入佇列')` 再切到進度畫面。
+
+**注意：** 建立佇列會觸發長時間 subprocess（真實工作），屬 side-effectful 操作——執行前先跟使用者確認（特別是要跑真實 notehub job 時）。測試用 example.com URL 會正常 failed（非有效來源），適合驗證狀態流轉 queued → running → failed。
+
 ## PWA 整合
 
 ### 必要檔案
