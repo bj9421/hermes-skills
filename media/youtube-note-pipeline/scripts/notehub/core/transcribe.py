@@ -29,14 +29,18 @@ def _load_key(name: str) -> str | None:
 
 
 def _compress_to_opus(path: str) -> str:
-    """m4a → opus 32k（Groq 413 fix：>10MB 會被拒，14MB m4a → ~4.5MB opus）。"""
+    """m4a → opus 32k（Groq 413 fix：>10MB 會被拒，14MB m4a → ~4.5MB opus）。
+
+    ⚠️ 2026-07-31：RPi CPU 壓大檔很慢，timeout 要給足（60s 會失敗）。
+    34.5MB m4a（~40 分鐘音訊）→ opus 32k ≈ 9.6MB < 10MB ✅
+    """
     opus_path = path.rsplit(".", 1)[0] + ".opus"
     size = os.path.getsize(path)
     print(f"[INFO] Audio {size/1024/1024:.1f}MB exceeds Groq limit, compressing...", file=sys.stderr)
     try:
         subprocess.run(
             ["ffmpeg", "-y", "-i", path, "-c:a", "libopus", "-b:a", "32k", opus_path],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True, text=True, timeout=300,
         )
         if os.path.exists(opus_path):
             print(f"[INFO] Compressed: {os.path.getsize(opus_path)/1024/1024:.1f}MB", file=sys.stderr)
@@ -47,15 +51,54 @@ def _compress_to_opus(path: str) -> str:
     return path
 
 
-def _transcribe_groq(audio_path: str, language: str = "zh") -> str | None:
-    """Step 1: Groq Whisper（whisper-large-v3，免費快速）。"""
-    groq_key = _load_key("GROQ_API_KEY")
-    if not groq_key:
-        print("[ERROR] GROQ_API_KEY not found in /opt/data/.env", file=sys.stderr)
-        return None
+def _segment_audio(path: str, target_mb: float = 9.0) -> list:
+    """ffmpeg 無損分段（-c copy，不轉碼超快），動態依檔案大小算段數。
+
+    ⚠️ 2026-07-31：RPi 壓縮大檔慢，改採**分段策略**。固定 10 分鐘/段對
+    高碼率影片會 >10MB（實測 33MB 影片 10 分鐘段 = 16MB），所以：
+    - ffprobe 拿總時長 → 段數 = ceil(大小/目標9MB) → segment_time = 時長/段數
+    確保每段 < 10MB（Groq 413 上限）。
+    """
+    import glob
+    import json
+    import math
+    import tempfile
+
+    size_mb = os.path.getsize(path) / (1024 * 1024)
+    # 拿總時長
+    duration = 0
     try:
-        from groq import Groq
-        client = Groq(api_key=groq_key)
+        r = subprocess.run(
+            ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", path],
+            capture_output=True, text=True, timeout=30,
+        )
+        duration = float(json.loads(r.stdout)["format"]["duration"])
+    except Exception as e:
+        print(f"[WARN] ffprobe failed: {e}", file=sys.stderr)
+    n = max(1, math.ceil(size_mb / target_mb))
+    segment_seconds = max(60, int(duration / n)) if duration else 600
+    print(f"[INFO] Segment: {size_mb:.0f}MB/{duration:.0f}s → {n} 段, {segment_seconds}s/段", file=sys.stderr)
+
+    seg_dir = tempfile.mkdtemp(prefix="seg_")
+    out_pattern = os.path.join(seg_dir, "seg_%03d.m4a")
+    try:
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", path, "-f", "segment",
+             "-segment_time", str(segment_seconds), "-c", "copy", out_pattern],
+            capture_output=True, text=True, timeout=120,
+        )
+    except Exception as e:
+        print(f"[WARN] ffmpeg segment failed: {e}", file=sys.stderr)
+        return []
+    segs = sorted(glob.glob(os.path.join(seg_dir, "seg_*.m4a")))
+    if not segs:
+        print("[WARN] ffmpeg segment produced no files", file=sys.stderr)
+    return segs
+
+
+def _groq_single(client, audio_path: str, language: str) -> str | None:
+    """單檔 Groq 轉寫（<10MB）。"""
+    try:
         with open(audio_path, "rb") as f:
             ext = os.path.splitext(audio_path)[1] or ".m4a"
             result = client.audio.transcriptions.create(
@@ -64,12 +107,62 @@ def _transcribe_groq(audio_path: str, language: str = "zh") -> str | None:
                 language=language,
                 response_format="verbose_json",
             )
-        text = result.text.strip()
-        print(f"[OK] Groq Whisper: {len(text)} chars, {getattr(result, 'duration', '?')}s", file=sys.stderr)
-        return text
+        return result.text.strip()
     except Exception as e:
-        print(f"[WARN] Groq Whisper failed: {e}", file=sys.stderr)
+        print(f"[WARN] Groq single failed: {str(e)[:80]}", file=sys.stderr)
         return None
+
+
+def _transcribe_groq(audio_path: str, language: str = "zh") -> str | None:
+    """Step 1: Groq Whisper（whisper-large-v3，免費快速）。
+
+    >10MB 自動**分段轉寫合併**（2026-07-31）：ffmpeg -c copy 切 10 分鐘段
+    → 逐段 Groq → 合併文字。避免 413 Request Entity Too Large。
+    """
+    groq_key = _load_key("GROQ_API_KEY")
+    if not groq_key:
+        print("[ERROR] GROQ_API_KEY not found in /opt/data/.env", file=sys.stderr)
+        return None
+    try:
+        from groq import Groq
+        client = Groq(api_key=groq_key)
+    except Exception as e:
+        print(f"[ERROR] Groq client init failed: {e}", file=sys.stderr)
+        return None
+
+    # 大檔：分段轉寫
+    if os.path.getsize(audio_path) > 10 * 1024 * 1024:
+        segs = _segment_audio(audio_path)
+        if segs:
+            texts = []
+            for i, seg in enumerate(segs):
+                if os.path.getsize(seg) > 10 * 1024 * 1024:
+                    print(f"[WARN] Groq seg {i+1} still {os.path.getsize(seg)/1048576:.0f}MB — skip", file=sys.stderr)
+                    continue
+                t = _groq_single(client, seg, language)
+                if t:
+                    texts.append(t)
+                    print(f"[OK] Groq seg {i+1}/{len(segs)}: {len(t)} chars", file=sys.stderr)
+            if texts:
+                merged = "\n".join(texts)
+                print(f"[OK] Groq Whisper (segmented): {len(merged)} chars total", file=sys.stderr)
+                return merged
+            print("[WARN] 分段轉寫全失敗 — fallback NVIDIA/本地", file=sys.stderr)
+            return None
+        # 分段失敗 → 嘗試壓縮（壓縮後仍大就放棄 Groq）
+        work = _compress_to_opus(audio_path)
+        if os.path.getsize(work) <= 10 * 1024 * 1024:
+            t = _groq_single(client, work, language)
+            if t:
+                return t
+        return None
+
+    # 小檔：直接轉寫
+    text = _groq_single(client, audio_path, language)
+    if text:
+        print(f"[OK] Groq Whisper: {len(text)} chars", file=sys.stderr)
+        return text
+    return None
 
 
 def _transcribe_nvidia(audio_path: str, language: str = "zh") -> str | None:
@@ -166,11 +259,8 @@ def transcribe_audio(audio_path: str, language: str = "zh") -> str | None:
         print(f"[ERROR] Audio file not found: {audio_path}", file=sys.stderr)
         return None
 
-    # Step 1: Groq（>10MB 先壓縮成 opus 32k）
-    work_path = audio_path
-    if os.path.getsize(audio_path) > 10 * 1024 * 1024:
-        work_path = _compress_to_opus(audio_path)
-    text = _transcribe_groq(work_path, language)
+    # Step 1: Groq（>10MB 自動分段轉寫合併，見 _transcribe_groq）
+    text = _transcribe_groq(audio_path, language)
     if text:
         return text
 

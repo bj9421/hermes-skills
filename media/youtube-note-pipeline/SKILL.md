@@ -203,9 +203,15 @@ tags: [youtube, transcript]
 > ⚠️ **2026-07-31 起 Whisper fallback chain（使用者硬性規則）：Groq → NVIDIA → 本地 faster-whisper**
 > 無字幕影片的語音轉寫統一走 `notehub/core/transcribe.py` 的 `transcribe_audio()`：
 > 1. **Groq Whisper**（whisper-large-v3，免費快速，>10MB 自動 opus 32k 壓縮）
-> 2. **NVIDIA Whisper**（嘗試層——查證：build.nvidia.com 的 Whisper 是 **gRPC-only**（grpc.nvcf.nvidia.com + function-id），無 OpenAI 相容 HTTP endpoint，integrate/ai.api.nvidia.com 都 404 → 快速失敗跳過）
+> 2. **NVIDIA Whisper**（build.nvidia.com gRPC，whisper-large-v3）— ✅ 2026-07-31 實作成功：
+>    - server `grpc.nvcf.nvidia.com:443` + function-id `b702f636-f60c-4a3d-a6f4-f3568c13bd7d` + `Bearer $NVIDIA_API_KEY`
+>    - 音訊先 ffmpeg 轉 **wav 16-bit mono 16kHz**，讀**整個檔**（含 header，勿用 wave.readframes）
+>    - `RecognitionConfig(language_code=..., max_alternatives=1, enable_automatic_punctuation=True)` + `add_custom_configuration_to_config(config, "task:transcribe")`
+>    - 🔑 結果欄位是 **`alternatives[].transcript`（不是 text！）**——這是最大的坑
+>    - 依賴 `nvidia-riva-client`（已裝 /opt/data/.venv；注意它會 downgrade protobuf 到 6.x）
 > 3. **本地 faster-whisper**（small/int8 CPU，最後保證；**HF cache 必須設 `/opt/data/.cache/huggingface`**——Docker 中 `/root/.cache` 無寫入權限會 Permission denied）
 > 三個 extractor（youtube / bilibili / instagram）已統一使用，避免三份重複 Groq 邏輯。
+> 完整 NVIDIA gRPC 呼叫範例 + 踩坑紀錄見 `references/nvidia-whisper-grpc.md`。
 
 | Model  | RAM    | Speed   | Use case                    |
 |--------|--------|---------|-----------------------------|

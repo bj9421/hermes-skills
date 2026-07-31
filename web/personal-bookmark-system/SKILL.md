@@ -48,6 +48,28 @@ app.py (18行, 僅 blueprint 註冊 + startup)
 - `GET /api/notehub/jobs` → 前端每 5 秒輪詢進度（⏳等待/🔄處理中/✅完成/❌失敗）
 - 前端 `index.html` 的 batch「🎙️ 送 notehub」→ `openNotehubSidebar()`（不再同步送出）
 
+### 進度條 + 產出 checkbox（2026-07-31 新增）
+
+`GET /api/notehub/jobs` 每筆 job 回傳 `progress`（0-100）+ `artifacts`（{raw, script, mp3}）：
+
+```python
+# routes_notehub.py
+def _job_progress(job):
+    if status == 'done': return 100
+    if status == 'queued': return 0
+    # running/failed：依產出檔案 — mp3→95, script→66, raw→33, 否則 10
+def _job_artifacts(job):
+    # 從 worker 存的 output（notehub stderr）parse 標記行：
+    #   Raw saved|_raw.md → 逐字稿
+    #   Script saved|script.md → 整理過文字檔
+    #   Podcast saved|_podcast.mp3 → 音檔
+    # done 狀態兜底視為全產出
+```
+
+前端渲染（`pollNotehubJobs`）：標題行 + `%` → 進度條（`.nh-bar.${status}`，done=綠/running=藍/failed=紅/queued=黃）→ 3 個 disabled checkbox（☑逐字稿 ☑整理過文字檔 ☐音檔）。
+
+⚠️ **輸出標記行依賴**：前端 artifacts 判斷依賴 worker output 中的 notehub stderr 標記行（`Raw saved` / `Script saved` / `Podcast saved`）。**不要改動 notehub pipeline 的這些 print 格式**，否則佇列 UI 的 checkbox 會失效。worker 存 output 用 `(stderr or stdout)[-500:]`——注意截斷可能影響早期標記（Raw saved 在最前面），若 artifacts 判斷不準可提高截斷長度。
+
 ### 🔴 重大坑：worker 的 python 必須用 /opt/data/.venv
 
 notehub CLI 需要 `openai` + `edge_tts`：

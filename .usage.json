@@ -1381,14 +1381,14 @@
     "archived_at": null,
     "created_at": "2026-07-30T14:54:38.556610+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-07-31T09:27:22.195314+00:00",
-    "last_used_at": "2026-07-31T09:27:13.522337+00:00",
-    "last_viewed_at": "2026-07-31T09:27:13.506210+00:00",
-    "patch_count": 4,
+    "last_patched_at": "2026-07-31T10:25:21.614387+00:00",
+    "last_used_at": "2026-07-31T10:25:09.901856+00:00",
+    "last_viewed_at": "2026-07-31T10:25:09.887981+00:00",
+    "patch_count": 5,
     "pinned": false,
     "state": "active",
-    "use_count": 5,
-    "view_count": 5
+    "use_count": 6,
+    "view_count": 6
   },
   "petdex": {
     "archived_at": null,
@@ -1819,6 +1819,19 @@
     "use_count": 21,
     "view_count": 21
   },
+  "verified-capabilities": {
+    "archived_at": null,
+    "created_at": "2026-07-31T09:49:38.213978+00:00",
+    "created_by": null,
+    "last_patched_at": "2026-07-31T10:12:21.927806+00:00",
+    "last_used_at": null,
+    "last_viewed_at": null,
+    "patch_count": 2,
+    "pinned": false,
+    "state": "active",
+    "use_count": 0,
+    "view_count": 0
+  },
   "webhook-subscriptions": {
     "archived_at": null,
     "created_at": "2026-07-14T12:29:56.445212+00:00",
@@ -1888,14 +1901,14 @@
     "archived_at": null,
     "created_at": "2026-07-07T04:37:44.994692+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-07-31T09:39:31.423484+00:00",
-    "last_used_at": "2026-07-31T09:28:42.366338+00:00",
-    "last_viewed_at": "2026-07-31T09:28:42.352113+00:00",
-    "patch_count": 132,
+    "last_patched_at": "2026-07-31T10:25:50.051081+00:00",
+    "last_used_at": "2026-07-31T10:25:43.849162+00:00",
+    "last_viewed_at": "2026-07-31T10:25:43.835037+00:00",
+    "patch_count": 135,
     "pinned": false,
     "state": "active",
-    "use_count": 99,
-    "view_count": 99
+    "use_count": 100,
+    "view_count": 100
   },
   "yuanbao": {
     "archived_at": null,
