@@ -50,7 +50,7 @@ related_skills: [verified-capabilities, taiwan-stock-data-pipeline, instagram-re
 
 | Provider | 模型 | RPM | 狀態 |
 |----------|------|-----|------|
-| OpenCode Zen | deepseek-v4-flash-free | 20 | ❌ 429 限流中（FreeUsageLimitError）|
+| OpenCode Zen | deepseek-v4-flash-free | 20 | ✅ 已恢復（2026-08-01 23:00 實測 HTTP 200）|
 | AGNES | agnes-2.5-flash | 20 | ✅ 正常 |
 | Groq | llama-3.3-70b-versatile | 30 | ✅ 可用 |
 | 本地正則 | add_punctuation.py | ∞ | ✅ 備用 |
@@ -168,6 +168,11 @@ from notehub.core.llm import call_llm
 result = call_llm([{'role': 'user', 'content': '...'}])
 ```
 
+## 📚 References
+
+- `references/zen-free-tier-limits.md` — Zen 免費層共享額度研究（big-pickle 無額度優勢、IP 層限流、GitHub 證據鏈）
+- `references/llm-rate-limit-landscape.md` — 跨 process 限流地圖 + 全局檔案鎖方案
+
 ## ⚠️ Pitfalls
 
 19. **抽共用模組前先調查既有實作** — 血的教訓：bilibili.py 的 `_check_size_and_compress` 早已存在，未參考導致重寫出缺陷版本
@@ -182,10 +187,16 @@ result = call_llm([{'role': 'user', 'content': '...'}])
 
 24. **daily-review 報告格式（2026-07-31 用戶指示）** — 必須同時記錄「系統錯誤」+「代碼錯誤」。代碼錯誤格式：What/Why/When/Where/Who/How/Impact/修正/教訓。數據來源：cron/jobs.json + git log + session_search
 
-25. **Zen FreeUsageLimitError 狀態（2026-08-01 確認）** — 限流仍持續，需等待 16-24h 重置。Fallback chain 自動切換到 AGNES → Groq。若 Zen 恢復後想確認：`curl -s https://opencode.ai/zen/v1/chat/completions -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" -d '{"model":"deepseek-v4-flash-free","messages":[{"role":"user","content":"hi"}],"max_tokens":5}'`，成功回應 JSON 才算恢復。
+25. **Zen FreeUsageLimitError 狀態（2026-08-01）** — 當日 21:14 仍在限流（retry-after 39372s ≈ 11h），**23:00 已恢復**（三層 provider 實測 HTTP 200）。診斷指令：`curl -s https://opencode.ai/zen/v1/chat/completions -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" -d '{"model":"deepseek-v4-flash-free","messages":[{"role":"user","content":"hi"}],"max_tokens":5}'`，成功回應 JSON 才算恢復。**限流週期實測：16-24h 重置，一天內可能用完又恢復**。
 
 26. **bookmark-manager LLM Fallback（2026-08-01 實測）** — `llm_enhance.py` 已改為多 provider fallback：Zen → AGNES → Groq。當 Zen 429 時自動切換，不中斷 enrich 流程。
 
 27. **簡體標籤統一轉換** — 所有 bookmark 新增/更新都會經過 `to_traditional_tags()` 轉換，避免同意思標籤有簡體+繁體兩版。已有 backfill 腳本處理既有資料。
 
-28. **跨 process 限流缺口（2026-08-01 調查）** — `_rate_limit()` 的 `threading.Lock` 只擋單 process；bookmark-enrich cron、bookmark-bot.py 打 Zen **無限流**（各自計時互不知情）。完整地圖（誰打哪個 LLM、現有 interval、風險評估）與全局檔案鎖方案（fcntl + state file）見 `references/llm-rate-limit-landscape.md`。決策待使用者確認：A（全域檔案鎖）/ B（錯開 cron 時間）。
+28. **跨 process 限流缺口（2026-08-01 調查）** — `_rate_limit()` 的 `threading.Lock` 只擋單 process；bookmark-enrich cron、bookmark-bot.py 打 Zen **無限流**（各自計時互不知情）。完整地圖（誰打哪個 LLM、現有 interval、風險評估）與全局檔案鎖方案（fcntl + state file）見 `references/llm-rate-limit-landscape.md`。決策待使用者確認：A（全域檔案鎖）/ B（錯開 cron 時間）。**風險評估補充：低頻 cron（10 分鐘 5 筆）其實離 20 RPM 很遠，threading.Lock 已夠；只有多密集 worker 並行才需要檔案鎖。**
+
+29. **Zen 免費層共享額度（2026-08-01 上網查證）** — Zen 免費模型**共用同一帳戶/IP 額度池**（~100 req/day），**big-pickle 不會比 deepseek-v4-flash-free 多**（GitHub #15714/#33318/#28166 證據）。FreeUsageLimitError 是 **IP 層級限流**（ipRateLimiter.ts），有付費餘額也躲不掉。換模型不會增加可用量；要降用量只能減請求數 + RPM 限流 + fallback 鏈。big-pickle 本身還更不穩（5/18 routing bug #28141、"too many requests" loop #10404）— notehub 主用 deepseek-v4-flash-free 是對的選擇。
+
+30. **Zen timeout ≠ 429（2026-08-01 實測）** — 大請求（產生 podcast 腳本）在 Zen 免費層優先權低，45s 會 `The read operation timed out` 被當失敗；小請求（摘要）正常。**兩個不同症狀：429 FreeUsageLimitError = 每日額度用完；timeout = 大請求回應慢**。`call_zen()` timeout 已調 **45s → 90s**（llm.py:206）。job 顯示「Zen LLM failed: The read operation timed out」≠ 限流，別誤判為 429。
+
+31. **fallback 無狀態設計（2026-08-01 驗證）** — `call_llm()` 每次呼叫**先試 Zen**，只有失敗才 fallback AGNES → Groq，無持久化狀態檔。**Zen 恢復後自動調回，不需手動切換**。若 Zen 卡死較久想快速回到 Zen：直接重試 job 即可，不用改任何 code。

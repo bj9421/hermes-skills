@@ -89,14 +89,35 @@ cmd = [NOTEHUB_PYTHON, '-m', 'notehub', job['url'], '--podcast', job['mode'], '-
 - worker 取 output 時**必須優先 stderr**：`(result.stderr or result.stdout or '')[-500:]`，否則 stdout 會蓋掉真正錯誤
 - 驗證 MP3 是否真的產生：`find /opt/data -name "*.mp3" -mmin -10`
 
-### 🔴 坑 3：notehub 口播 pipeline 的 LLM 一律只走 OpenCode Zen（2026-07-31 晚間起，NVIDIA LLM 全面移除）
+### 🔴 坑 3：notehub 口播 pipeline 的 LLM fallback 鏈 Zen → AGNES → Groq（NVIDIA LLM 全面移除）
 
-- `notehub/core/llm.py` 的 `call_llm()` 只呼叫 `call_zen()`（`opencode.ai/zen/v1` + `deepseek-v4-flash-free`，免費免 Key，http.client 直連）——**NVIDIA chat completions fallback 已全部刪除**（移除原因：NVIDIA LLM 無 timeout 卡死 job 12 10+ 分鐘）
+- `notehub/core/llm.py` 的 `call_llm()` 依序試 `call_zen()` → `call_agnes()` → `call_groq()`（2026-07-31 晚間起 NVIDIA chat completions fallback 已全部刪除；移除原因：NVIDIA LLM 無 timeout 卡死 job 12 10+ 分鐘）。三層都失敗 → job 標 failed，`produce_podcast` fallback 直接唸 raw transcript 保證 MP3 產出
+- **Rate limiter（2026-07-31 加入）**：每 provider 獨立最小間隔（`threading.Lock`，`_rate_limit(latest_call, interval)` 未滿間隔就 sleep 補足）— Zen 3s（20 RPM）、AGNES 2s（30 RPM）、Groq 2s（30 RPM）。⚠️ 執行緒 Lock 只保護單 process 內；bookmark-enrich cron / bookmark-bot / notehub worker 是**不同 process 各自計時**，短時間密集並行仍可能撞限流（低頻情境可接受；要真正跨 process 全局需 fcntl 檔案鎖 + 時間戳記檔）
 - **🔴 Zen 關鍵 quirk：`deepseek-v4-flash` 是 reasoning 模型，不可傳 `max_tokens`**（思考過程吃光 token → content 空）。`call_zen()` 已內建此規則；bookmark-manager 的 `llm_enhance.py` 一直成功也是因為不傳 max_tokens
+- **⚠️ Zen 大請求 timeout（2026-08-01）：免費層對 podcast 腳本類大請求回應慢，45s 會誤判失敗**（`The read operation timed out`，不是 429 限流，且同時間 AGNES/Groq 小請求可能都正常 → 別把 timeout 誤判成「provider 全掛」）。`call_zen()` timeout 已調 90s（`llm.py` HTTPSConnection timeout=90）。小請求正常。Zen 限流與 timeout 是兩種不同症狀：429 = 每日額度用完（換模型沒用，帳戶共用池），timeout = 大請求優先權低（加大 timeout）
 - **⚠️ 範圍澄清（使用者 2026-07-31）：「LLM 一律 Zen、禁用 NVIDIA」僅限 notehub 口播 pipeline**（bookmark-manager worker / notehub CLI 的腳本/翻譯/PPT/visual/organize）；**其他腳本（graphify、Hermes vision 等）不受限**。NVIDIA 在 notehub pipeline 只負責 Whisper 轉寫（Groq 的 fallback 層）
 - 使用者硬性規則：**TTS 一律本地產出（edge-tts）、禁用 LLM API 無謂浪費；口播腳本用免費模型**。不要自行把 LLM 改回付費/會卡的 API
 - 若 script 生成全部失敗，`produce_podcast` 會 fallback 直接唸原文 → 保證 MP3 本地產出
 - 本地 TTS 現成工具：`/opt/data/projects/bookmark-manager/gen_tts.py <script.md> <out_dir> <mp3_name>`（用 `/opt/data/.venv/bin/python`）
+
+### 🔴 坑 3b：call_groq() 不讀 /opt/data/.env → Groq 第三層 fallback 在 app 情境永遠失效
+
+`call_agnes()` 有手動讀 `/opt/data/.env` 的 fallback，但 `call_groq()` **只讀 `os.environ`**，而 bookmark-manager app 沒有 load_dotenv → `GROQ_API_KEY` 永遠找不到，Groq 層 fallback 形同虛設。
+
+- 實測（2026-08-01 job #17）：`Zen LLM failed: The read operation timed out` → `AGNES API unavailable` → `[WARN] GROQ_API_KEY not found` → 三層全滅 → 用 raw transcript 直接 TTS（內容是逐字稿口播，不是潤飾腳本）
+- 修復方向：`call_groq()` 加上與 `call_agnes()` 相同的 `/opt/data/.env` 手動讀取
+
+### 🔴 Worker「卡住」診斷（2026-08-01 實測）
+
+「看起來卡住」常是誤判：status=done 的 job 在 UI 顯示 **100% 就是完成了**（`_job_progress`: done→100, queued→0, running/failed 依產出 mp3→95 / script→66 / raw→33 / 否則 10），不是卡住。
+
+1. 查 DB（sqlite3 CLI 不可用，用 `/opt/data/.venv/bin/python`）：
+   `SELECT id, status, started_at, finished_at FROM notehub_jobs ORDER BY id DESC`
+2. 確認 worker 執行緒活著：app log（`/tmp/bookmark-manager.log` = app stdout/stderr）找 `[notehub worker] started`
+3. **排測試 job 實測 worker 接單**：
+   `curl -s -X POST http://127.0.0.1:5001/api/notehub/queue -H "Content-Type: application/json" -d '{"items":[{"id":<bookmark_id>,"voice_a":true}]}'`
+   12 秒內 status 變 running → worker 正常
+4. ⚠️ container 內 `ss -tlnp` 看不到 listener（無權限）→ server 存活一律用 `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:5001/`（200 = 活）
 
 ### 清除功能（2026-07-31 新增）
 
@@ -284,6 +305,33 @@ def to_traditional_tags(tags):
 - 修復：`uv pip install opencc-py --python .venv/bin/python`（裝到專案 venv）
 - 驗證：POST `{"tags":"机器学习"}` → DB 應存 `機器學習`（lazy import 設計讓 server 不需重啟）
 
+## 標籤篩選（2026-08-01：LIKE 子字串 bug + HTMX 高亮 UX）
+
+### 🔴 坑：`tags LIKE '%tag%'` 子字串誤匹配
+
+`db.py build_filters()` 原本用 `tags LIKE '%tag%'` — tags 是逗號分隔（`Claude,教程,CLAUDE.md,AI,提示工程`），點「AI」會誤撈含子字串的標籤（AI工具、AI程式設計、AI開發工具）共 7 筆。
+
+精確逗號匹配修法（前後補逗號，只命中完整標籤）：
+```sql
+(',' || REPLACE(tags, ' ', '') || ',') LIKE '%,AI,%'
+```
+實測：tag=AI 誤撈 7 筆 → 正確 1 筆。
+
+### 標籤點擊 UX（顏色高亮 + 只顯示同標籤）
+
+需求：按下標籤 → 顏色改變 + 只顯示同標籤連結。原本 `<a href="?tag=...">` 整頁導航無高亮，改 HTMX 局部更新：
+
+1. `_bookmark_list.html` / `_stats.html` 標籤加 HTMX 屬性（`hx-get="/bookmarks?tag=..."` `hx-target="#bookmark-list"` `hx-swap="outerHTML"` `hx-push-url="true"`），after-request 同步側欄 tag cloud：
+   `hx-on::after-request="htmx.ajax('GET','/stats?tag={{ tag | urlencode }}',{target:'#stats-card',swap:'outerHTML'})"`
+2. `bookmarks_partial` 路由要傳 `current_tag=request.args.get('tag','')` 給模板（原本沒傳 → 卡片標籤無法高亮）
+3. 標籤 class：`class="tag {{ 'active' if current_tag == tag else '' }}"`（CSS `.tag.active` 早已存在，藍底白字）
+4. **狀態保留三件套**（否則 30s 自動刷新 / batch 操作 / 搜尋會洗掉高亮）：
+   - stats-card `hx-get="/stats{% if current_tag %}?tag={{ current_tag|urlencode }}{% endif %}"`
+   - bookmark-list `hx-get="/bookmarks{% if current_tag %}?tag={{ current_tag|urlencode }}{% endif %}"`
+   - search bar 加 `<input type="hidden" name="tag" value="{{ current_tag }}">`
+
+⚠️ tag cloud `get_tag_cloud(limit=20)` 只顯示熱門標籤 — 冷門標籤（1 筆）不會出現在側欄 cloud，但卡片上仍可點。驗證篩選結果用 python urllib 直接讀 HTTP 回應比 grep 可靠（curl 輸出常有編碼問題）。
+
 ## LLM enrichment cron
 
 - 每 10 分鐘掃 `processed=0` 的書籤
@@ -312,6 +360,22 @@ app.py 已從 766 行 / 53 函數 / cohesion 0.10 拆成上述模組結構（coh
 3. **建立 checkpoint list（todo）** — 每步動作 + 驗證方式 + 通過標準；每完成一步 `git commit`（繁體中文訊息）
 4. **確認後才開始改碼**；任何一步驗證失敗 → `git checkout` 回滾，不硬撐
 5. 拆完用 `graphify update .` 增量更新圖譜，對比 cohesion 確認改善
+
+## 🔴 標籤篩選（2026-08-01 修復）＋ 自動查核紀律
+
+**後端精確匹配**（`db.py build_filters`）— 不用 `LIKE %tag%`（子字串誤匹配：`%AI%` 撈到 AI工具/AI程式設計）：
+
+```sql
+(',' || REPLACE(tags, ' ', '') || ',') LIKE '%,AI,%'   -- 前後補逗號精確匹配
+```
+
+**前端 UX**（卡片標籤 + tag cloud）：
+- `hx-get="/bookmarks?tag=..."` + `hx-target="#bookmark-list"` + `hx-swap="outerHTML"` + `hx-push-url="true"` → 局部更新不整頁刷新
+- `hx-on::after-request="htmx.ajax('GET','/stats?tag=...',{target:'#stats-card',swap:'outerHTML'})"` → 點標籤同步 stats 高亮
+- `_bookmark_list.html` 需收到 `current_tag`（routes 的 `bookmarks_partial` 要傳）→ `class="tag {{ 'active' if current_tag == tag else '' }}"`
+- index.html：stats-card / bookmark-list 自動載入要帶 `?tag=`（30s 刷新不丟 active）；search 加 `<input type="hidden" name="tag" value="{{ current_tag }}">`
+
+**⚠️ 工作紀律（使用者 2026-08-01 明確要求）**：寫完/修改完代碼後必須**自己自動查核**功能正常，不能只改完就交差。bookmark-manager 用 `check_tag_filter.py`（17 項檢查：server 健康 / 精確篩選 / active 高亮 / HTMX 屬性 / 狀態保留 / 負向驗證），跑法：`/opt/data/.venv/bin/python check_tag_filter.py`。
 
 ## 相關參考檔案
 

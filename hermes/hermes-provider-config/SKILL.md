@@ -396,6 +396,31 @@ Test each provider independently via curl to find which one is actually reachabl
 
 See `references/multi-provider-cascade-failure.md` for the full diagnostic transcript.
 
+## Hermes 內建 Rate Limiting（2026-08-01 查證）
+
+Hermes 對 LLM provider 的 rate limit 處理是**內建、預設自動運作** — 沒有 `rate_limiter: on` 這種開關。撞 429 時的處理鏈：
+
+```
+API 回 429 (Too Many Requests)
+   ├─ 1️⃣ 讀 Retry-After header → 等該秒數（上限 120s）
+   ├─ 2️⃣ 沒 header → 指數退避：5s × 2ⁿ（±20% jitter），上限 120s
+   ├─ 3️⃣ 重試超過 api_max_retries（預設 3）→ 切 fallback_providers
+   └─ 4️⃣ credential pool 有多把 key → 自動輪換，跳過耗盡的
+```
+
+**可調參數（本機 v0.18.2 驗證）：**
+| 項目 | 指令 | 說明 |
+|------|------|------|
+| 重試次數 | `hermes config set agent.api_max_retries 5` | 預設 3（config.py `DEFAULT_CONFIG`）|
+| MCP server 限流 | config 內 `max_rpm: 10` | 每 server 每分鐘請求上限（mcp_tool.py）|
+| 429 是否先重試主 provider | `agent.eager_rate_limit_fallback false` | 上游 PR #27858，**先確認安裝版有**：`grep eager_rate_limit_fallback /opt/hermes/hermes_cli/config.py` |
+
+**限制：** 「可設定的每分鐘 RPM 限流」還是 open feature request（GitHub #31802, P3）— 目前**不能**設「這個 model 每分鐘最多 N 次請求」。要主動控速得在自家腳本實作：
+- 單 process：`threading.Lock` + per-provider interval（見 youtube-note-pipeline 的 `_rate_limit()`）
+- 跨 process：`fcntl.flock` + state file 記時間戳（bookmark-enrich cron 與 notehub worker 並行時才需要）
+
+**語意提醒：** Hermes 內建是**反應式**（撞 429 後退避/fallback）；自家 script 的 RPM limiter 是**主動式**（呼叫前先等間隔避免 429）— 兩者互補，不是替代。
+
 ## Pitfalls
 
 ### Cascade Failure Pattern
