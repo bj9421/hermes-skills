@@ -203,7 +203,7 @@ def call_zen(messages: list[dict], max_tokens: int = 0,
         payload['max_tokens'] = max_tokens
     body = json.dumps(payload, ensure_ascii=False)
     try:
-        conn = http.client.HTTPSConnection('opencode.ai', timeout=45)
+        conn = http.client.HTTPSConnection('opencode.ai', timeout=90)
         conn.request('POST', '/zen/v1/chat/completions', body.encode('utf-8'),
                      {'Content-Type': 'application/json'})
         resp = conn.getresponse()
