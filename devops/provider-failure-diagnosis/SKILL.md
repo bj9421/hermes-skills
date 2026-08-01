@@ -155,6 +155,26 @@ curl -s "https://api.groq.com/openai/v1/models" -H "Authorization: Bearer $GROQ_
 
 **Key insight:** A 404/400 on ONE model does NOT mean the provider is down. Always test a known-good model first before concluding provider outage.
 
+### Pattern F: Rate Limit (HTTP 429)
+
+**Symptom:** `error_type=RateLimitError` in agent.log, repeated `API call failed (attempt 1/3)` on the same provider, or user sees "⏱️ Rate limit reached. Waiting Ns...".
+
+**Key facts (v0.18.2):**
+- Hermes has **no on/off rate limiter** — 429 handling is automatic (Retry-After header → exponential backoff 5s×2ⁿ cap 120s → retry `api_max_retries` (default 3) → fallback chain → credential pool rotation).
+- Only tunable knob: `hermes config set agent.api_max_retries N`.
+- MCP servers have per-server `max_rpm` (default 10/min).
+- Distinguish 429 (transient, rate-limit) from 402 (billing, permanent — always fails over eagerly).
+- Auxiliary tasks (vision/compression/session_search) DO fall back on 429 since 2026-04.
+
+**Diagnostic:**
+```bash
+grep -i "rate.limit\|429\|Retry-After" /opt/data/.hermes/logs/agent.log | tail -20
+grep -A5 'fallback_providers:' /opt/data/config.yaml
+grep 'api_max_retries' /opt/data/config.yaml
+```
+
+**Fix:** If provider is a strict-quota/concurrency-limited endpoint, don't raise retries (adds load) — rely on a healthy fallback chain. See `references/hermes-429-rate-limit-handling.md` for the full mechanism, open feature requests (#31802 configurable RPM, #49031 backoff tuning, PR #27858 eager_rate_limit_fallback), and the Nous cross-session rate guard.
+
 ---
 
 ## Known Provider Status (as of 2026-07-23)

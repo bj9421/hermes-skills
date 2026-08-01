@@ -409,6 +409,17 @@ timeout 600 .venv/bin/python3 /opt/data/taiwan-stock-cashflow-api/screening/upda
 
 **設計細節 → `references/incremental-update-design.md`**
 
+#### ⚠️ 週末空跑浪費（2026-08-01 盤查發現）
+
+`twse_daily_update` 排程是 `0 16 * * *`（每天），但台股週六/日無交易。週末觸發時 `update_daily.py`
+不知道是假日，會印「無股票有 <today> 資料，將全量更新」並**全量掃 1925 檔**（正常約 20+ 分鐘、吃 twstock API），
+最後寫入 0 筆。若 gateway 剛好在這空跑期間重啟，還會白白賠上 SIGTERM 失敗通知。
+
+- **建議：** 排程改 `0 16 * * 1-5`（與其他台股 job 一致），或加交易日曆檢查（連假也會空跑）。
+- **快速健康檢查（任何一天都安全）：** `timeout 120 .venv/bin/python3 /opt/data/scripts/stock-update/update_daily.py --batch 5`
+  → 週末預期 exit 0 + 「寫入: 0 筆」（DB 停在最後交易日 = 正常，不是失敗）。
+- **判讀：** `MAX(date)` 停在最後交易日 + 無今日殘留 row = 管線健康，勿因「今日 0 筆」誤判。
+
 #### ⚠️ `update_daily.py` 與 `update_all_tech_indicators.py` 競態條件（2026-07-20 發現）
 
 `run_daily_incremental_update.sh` 按順序執行（Step 1 → Step 2），但若兩個 cron 或手動執行在時間上重疊，會發生：

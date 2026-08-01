@@ -169,6 +169,46 @@ find /opt/data -path "*/cron/jobs.json"
 
 **⚠️ PITFALL — removing a job by ID also wipes every job sharing that `name`:** `cronjob action=remove job_id=<id>` matches on `name`, not just the id. In this session, removing a paused duplicate `holographic-to-obsidian-sync` (id `5cbdacd487ad`) also deleted the live migration copy (`55577d395747`) of the same name. If two jobs share a name, remove the unwanted one by editing the live store JSON directly (delete only that dict), or rename one first. After any remove, immediately `cronjob list` to confirm siblings survived, and rebuild a lost sibling via `cronjob create` from a backup of `jobs.json`.
 
+## ⚠️ CRITICAL: Gateway Restart / Scheduler Stall — Diagnosis Patterns (verified 2026-08-01)
+
+One incident can produce FOUR distinct symptoms that look like separate bugs but share one root cause: **the gateway restarted**. When cron misbehaves, check restart timing FIRST. Full incident transcript: `references/gateway-restart-and-scheduler-stall.md`.
+
+### Symptom A: no_agent job dies with `Script exited with code -15`
+`-15` = SIGTERM. The script was killed by a gateway `--replace` restart, NOT a script bug. Confirm:
+```bash
+grep -n "Shutdown context: signal=SIGTERM" /opt/data/logs/errors.log | tail -5
+# → parent_name=s6-supervise, parent_cmdline='s6-supervise gateway-default'
+tail -20 /opt/data/logs/gateway-exit-diag.log    # gateway.start entries = restart timestamps
+tail -20 /opt/data/logs/container-boot.log        # action=started lines = container restarts
+```
+**Fix:** verify the script is healthy standalone (e.g. `update_daily.py --batch 5` → expect exit 0 + 0 writes on a non-trading day), confirm DB/data intact, then clear the error state (Symptom D). Do NOT burn time debugging a script that isn't broken.
+
+### Symptom B: scheduler silently stalls (no runs at all)
+The scheduler ticker can die without the gateway exiting (observed: 12h gap 08:06→20:23). Detect it using high-frequency no_agent jobs as a **heartbeat**:
+```bash
+ls -l /opt/data/cron/output/<5min-job-id>/*.md | tail -20      # file timestamps = heartbeat
+grep "Running job" /opt/data/logs/agent.log | awk '{print $2}' | cut -d: -f1 | sort | uniq -c   # per-hour activity
+```
+A gap in the heartbeat files = scheduler stall, not "job didn't run". Also cross-check `cron list` last_run_at.
+
+### Symptom C: all jobs run at the SAME timestamp after a restart
+`Running job 'X' ... 20:23:11` × many jobs = **catch-up burst**: the scheduler fires every missed job at once after coming back. The burst itself can collide with another restart (observed: burst 20:23, restarts 20:25/20:31/20:40). Don't treat the burst as a misconfiguration.
+
+### Symptom D: watchdog keeps alerting the same error every cycle
+A no_agent watchdog (e.g. `cron-watchdog-fast`) exits 1 **every cycle** as long as `last_status: error` sits in `jobs.json` — it re-reports the same stale error every 10 min. Fix: after diagnosing (A–C), clear the error:
+```bash
+cp /opt/data/cron/jobs.json /opt/data/cron/jobs.json.bak.pre-clear-$(date +%Y%m%d)
+# set last_status=null, last_error=null for the diagnosed jobs, then:
+python3 /opt/data/scripts/cron_watchdog.py; echo $?   # expect 0 + no stdout = quiet
+```
+
+### Symptom E: `KeyError: 'HERMES_KANBAN_BOARD'` on an agent job
+Traceback points into `load_hermes_dotenv` → python-dotenv `resolve_variables`. If it fires at the same minute as a gateway restart, it's a **restart race** (env partially torn down during `.env` load), NOT a config problem. Verify the script standalone (`auto_memory_scan.py 3` → exit 0), clear the error, next tick recovers.
+
+### jobs.json schema reminders (for direct edits / daily 盤查)
+- Job key is **`id`** (NOT `job_id`); `schedule` is a dict; `enabled` is bool. `hermes cron list` truncates `last_error` and omits `enabled`/`paused` for some jobs — read `/opt/data/cron/jobs.json` directly for a full audit.
+- LLM-driven jobs idle-kill at **600s** waiting for a non-streaming API response (`Cron job 'X' idle for 602s (limit 600s)`); no_agent script hard cap is 2400s.
+
 ## ⚠️ 備援模型守則 (User-explicit failover rule, 2026-07-11)
 
 **規則（用戶明確要求）：** 當任何 **cron job 或對話** 的主要模型失效（drift / 401 / timeout / 報錯）時，
@@ -193,6 +233,8 @@ find /opt/data -path "*/cron/jobs.json"
 - `references/cron-drift-and-jobs-json-locations.md` — Drift-protection deep dive + full jobs.json enumeration recipe and a model-liveness probe.
 - `references/cron-custom-provider-and-diagnosis.md` — Custom-provider naming (`custom:<name>`), curl liveness probe, and gateway-log diagnosis of pinned-model cron failures.
 - `references/cron-session-search-debugging.md` — Inspect cron job execution history via `session_search(session_id="cron_{job_id}_{ts}")` when CLI can't show the full prompt. Includes SQL to find cron session IDs and real diagnostic example.
+- `references/gateway-restart-and-scheduler-stall.md` — Full 2026-08-01 incident: restart-kill (`-15`), 12h scheduler-stall heartbeat detection, catch-up burst, watchdog stale-error spam, dotenv KeyError race, verification + follow-ups.
+- `references/daily-review-process.md` — Daily-review (每日工作檢討) cron workflow: data sources (jobs.json via read_file, executions.db, git log, session_search), overnight-session pitfall, 5W1H report format.
 - `scripts/cron_watchdog.py` — Auto-repair watchdog script (no_agent). Reads jobs.json, auto-patches auth/drift errors to big-pickle, silent on success. See Auto-Repair Watchdog section above.
 
 ## Core Concepts
@@ -200,7 +242,7 @@ find /opt/data -path "*/cron/jobs.json"
 ### Cron Job Anatomy
 | Field | Description |
 |-------|-------------|
-| `job_id` | Unique hash identifier (e.g., `d8379e951943`) |
+| `job_id` | Unique hash identifier (e.g., `d8379e951943`). ⚠️ **On-disk `jobs.json` field is `id`, NOT `job_id`** — reading `j.get('job_id')` returns None for every job. Use `j.get('id') or j.get('job_id')`. On-disk `schedule` is a dict `{'kind': 'cron'|'interval', 'expr': ..., 'display': ...}` |
 | `name` | Human-readable name |
 | `schedule` | Cron expression (e.g., `0 2 * * *` = daily 02:00) |
 | `script` | Path to executable script (relative to workdir) |
@@ -776,6 +818,32 @@ cronjob action=run job_id=<id>  # 驗證 no_agent 模式正常
 1. Find the cron session ID: `cron_{job_id}_{YYYYMMDD}_{HHmmss}` format in `state.db`
 2. Call `session_search(session_id="cron_7806a3f41013_20260721_235543")` — returns ALL messages including the full prompt, every tool call, and final output.
 3. See `references/cron-session-search-debugging.md` for the full SQL query and real example.
+
+### Authoritative execution history — `/opt/data/cron/executions.db` (for daily reviews & audits)
+
+`jobs.json` `last_status` is **unreliable**: it can stay `null` even when a run failed (2026-08-01: twse_daily_update failed with `-15` but last_status stayed null; gateway restarts also leave it stale). The scheduler records EVERY run in SQLite at `/opt/data/cron/executions.db` — table `executions` (id, job_id, source, process_id, pid, process_started_at, status, claimed_at, started_at, finished_at, error).
+
+```bash
+/opt/data/.venv/bin/python3 -c "
+import sqlite3
+conn = sqlite3.connect('/opt/data/cron/executions.db')
+rows = conn.execute('''SELECT job_id, status,
+                             datetime(started_at,'unixepoch','+8 hours'),
+                             substr(COALESCE(error,''),1,120)
+                      FROM executions
+                      WHERE started_at >= strftime('%s','2026-08-01 00:00:00','-8 hours')
+                      ORDER BY started_at''').fetchall()
+for r in rows: print(r)
+"
+```
+
+Statuses seen in the wild:
+- `completed` — normal
+- `failed` — error column carries the failure + captured stdout
+- `unknown` — "Scheduler restarted after this execution's owner exited before a durable terminal state" = gateway restart interrupted the run; side effects unknown
+- `running` — in-flight
+
+⚠️ Reading jobs.json via `cat | python3` triggers the tirith `pipe_to_interpreter` security scan (HIGH) and gets blocked — use `read_file` for jobs.json, and `python3 -c "import json; json.load(open('/opt/data/cron/jobs.json'))"` for validation. (The daily-review cron prompt still contains the blocked `cat | python3` form — rewrite it to the safe form.)
 
 ### Job never executed
 - Check if job is `enabled: true`

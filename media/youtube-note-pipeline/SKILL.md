@@ -187,3 +187,5 @@ result = call_llm([{'role': 'user', 'content': '...'}])
 26. **bookmark-manager LLM Fallback（2026-08-01 實測）** — `llm_enhance.py` 已改為多 provider fallback：Zen → AGNES → Groq。當 Zen 429 時自動切換，不中斷 enrich 流程。
 
 27. **簡體標籤統一轉換** — 所有 bookmark 新增/更新都會經過 `to_traditional_tags()` 轉換，避免同意思標籤有簡體+繁體兩版。已有 backfill 腳本處理既有資料。
+
+28. **跨 process 限流缺口（2026-08-01 調查）** — `_rate_limit()` 的 `threading.Lock` 只擋單 process；bookmark-enrich cron、bookmark-bot.py 打 Zen **無限流**（各自計時互不知情）。完整地圖（誰打哪個 LLM、現有 interval、風險評估）與全局檔案鎖方案（fcntl + state file）見 `references/llm-rate-limit-landscape.md`。決策待使用者確認：A（全域檔案鎖）/ B（錯開 cron 時間）。

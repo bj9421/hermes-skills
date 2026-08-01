@@ -122,10 +122,11 @@ Based on real usage, here are the categories of content that belong in SOUL.md:
 | **Identity & Tone** | How the agent should present itself | Name, role, communication style |
 | **Style Rules** | Formatting preferences, output structure | "Concise, bullet points, avoid filler" |
 | **Behavioral Guardrails** | Verification requirements, refusals | "Verify before answering uncertain Qs" |
+| **Debug & Report Protocol** | How errors are handled and reported | "Auto-debug errors → 5W1H report (What/Why/Who/When/Where/How) → save to memory → then report to user" |
 | **Safety Gates** | Approval gates, denied actions | "Ask before shell commands" |
 | **Technical Constraints** | Hardware limits, environment rules | "No sustained 100% CPU > 5 min" |
 
-**Key insight:** behavioral guardrails belong in SOUL.md, not just memory. SOUL.md is read every session into the stable identity slot. Verification rules like "cross-check 1-2 sources before answering uncertain questions" are more reliable in SOUL.md than in memory alone (memory can be stale, reorganized, or capped).
+**Key insight:** behavioral guardrails belong in SOUL.md, not just memory. SOUL.md is read every session into the stable identity slot. Verification rules like "cross-check 1-2 sources before answering uncertain questions" are more reliable in SOUL.md than in memory alone (memory can be stale, reorganized, or capped). A Debug & Report Protocol works the same way: encoding the 5W1H-report-then-memory-then-reply flow in SOUL.md (not just memory) ensures every future session reports errors the way the user expects.
 
 ## Docker Container Pitfalls
 
@@ -136,6 +137,11 @@ Container user `hermes`, home=`/home/hermes_data`:
   Path.home() = /home/hermes_data
   get_hermes_home() = /home/hermes_data/.hermes
   Real SOUL.md = /home/hermes_data/.hermes/SOUL.md
+```
+
+**⚠️ 本環境（RPi4 Docker）實況：** `HERMES_HOME` 有明確設定為 `/opt/data`（config.yaml 在 `/opt/data/config.yaml`，profile 在 `/opt/data/profiles/`），所以 `get_hermes_home()` 直接回傳 `/opt/data`，**真實 SOUL.md = `/opt/data/SOUL.md`**，不是 `/opt/data/.hermes/SOUL.md`（`.hermes/` 下的 SOUL.md 是死檔，已改名 `soul.md.nouse` 當備份）。上面 generic 例子（home=/home/hermes_data → .../.hermes/SOUL.md）只在 `HERMES_HOME` 未設定時成立。查證指令：
+```python
+python3 -c "from hermes_constants import get_hermes_home; print(get_hermes_home() / 'SOUL.md')"
 ```
 
 **The `.hermes/` subdirectory assumption is the #1 trap:** `get_hermes_home()` already returns a path that ends with `.hermes` (it's `Path.home() / ".hermes"`), so appending `.hermes/` again would be wrong. Always verify with:
