@@ -1291,13 +1291,13 @@
     "created_at": "2026-06-17T14:47:41.257313+00:00",
     "created_by": null,
     "last_patched_at": "2026-06-17T20:46:02.017402+00:00",
-    "last_used_at": "2026-07-31T18:06:29.309700+00:00",
-    "last_viewed_at": "2026-07-31T18:06:29.296308+00:00",
+    "last_used_at": "2026-08-01T18:02:45.911585+00:00",
+    "last_viewed_at": "2026-08-01T18:02:45.898190+00:00",
     "patch_count": 1,
     "pinned": false,
     "state": "active",
-    "use_count": 23,
-    "view_count": 23
+    "use_count": 24,
+    "view_count": 24
   },
   "obsidian-daily-summary": {
     "archived_at": null,
@@ -1381,14 +1381,14 @@
     "archived_at": null,
     "created_at": "2026-07-30T14:54:38.556610+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-08-01T16:17:51.705465+00:00",
-    "last_used_at": "2026-08-01T16:14:58.837141+00:00",
-    "last_viewed_at": "2026-08-01T16:14:58.823339+00:00",
-    "patch_count": 20,
+    "last_patched_at": "2026-08-01T17:16:19.234941+00:00",
+    "last_used_at": "2026-08-01T17:15:51.175495+00:00",
+    "last_viewed_at": "2026-08-01T17:15:51.161888+00:00",
+    "patch_count": 25,
     "pinned": false,
     "state": "active",
-    "use_count": 21,
-    "view_count": 21
+    "use_count": 22,
+    "view_count": 22
   },
   "petdex": {
     "archived_at": null,

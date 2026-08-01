@@ -146,7 +146,21 @@ UI：佇列頂部「🧹 清已完成」「🗑️ 清失敗」+ 每筆 ✕（do
 - 2026-08-01 實測：PID 65103（Jul31）+ PID 72064（01:14）同時運行，bookmarks #29/#30 新增成功但頁面找不到
 - 驗證：`curl -s http://localhost:5001/ | grep "card-29"` 確認 bookmark 存在
 
-### 驗證方式
+### 🔴 坑：Bilibili/小紅書 enrich spinner 卡在「補齊中...」（2026-08-02 正確修法）
+
+⚠️ **HTMX indicator 機制正解：`hx-indicator` 指向的元素（span）在請求期間被加上 `htmx-request` class — 不是加在觸發按鈕上。** 所以 `.enrich-spinner.htmx-request` 是正確的選擇器。
+
+完整修法（三件套缺一不可）：
+1. 模板：spinner span 加 inline `style="display:none"` 預設隱藏
+   ```html
+   <span class="enrich-spinner" id="enrich-spin-{{ bm.id }}" style="display:none"> 補齊中...</span>
+   ```
+2. CSS：`.enrich-spinner.htmx-request { display: inline !important; }` — **`!important` 必須**，否則 inline style 優先級壓過 class
+3. `.enrich-spinner { font-size:12px; color:var(--primary); }` 不要放 `display:none`（讓 inline style 管預設態）
+
+⚠️ **陷阱**：session 中曾把 CSS 改成 `.btn-icon.htmx-request .enrich-spinner`（以為 class 加在按鈕上）— **錯的，永遠匹配不到**。HTMX 的 `hx-indicator` 明確指向 span，class 加在 span 上。
+
+⚠️ **瀏覽器快取**：改完 CSS 後，手機用戶需**手動強制重新載入**（swipe down refresh 或清除快取）才能看到修正效果。可加 cache-busting：`<link rel="stylesheet" href="/static/style.css?v={{ commit_hash }}">`。
 
 ```bash
 curl -s -X POST http://127.0.0.1:5001/api/notehub/queue -H "Content-Type: application/json" \
@@ -200,6 +214,9 @@ function refreshWithDelay() {
 
 ### 坑
 
+- **🔴 bookmark-bot watchdog 檢查錯東西（2026-08-02 修復）**：`/opt/data/scripts/bookmark-bot-watchdog.py` 舊版 `bot_running()` 用 **Telegram getMe** 檢查 token 有效性 — token 沒過期就永遠回 True，**不管 bot process 死活** → bot 掛掉 watchdog 永不重啟 → 使用者發連結無反應。修復：改用 `pgrep -f 'bookmark-bot.py'` 檢查 process 存活（returncode 0 = 活著）。啟動改用 `/opt/data/.venv/bin/python` + log 寫入 `/tmp/bookmark-bot.log`。
+- ⚠️ **pkill/pgrep -f 自匹配陷阱**：terminal 測試時 command line 含 pattern 會誤殺/誤判自己的 shell。用 `grep -v 'grep\|bash'` 過濾，或改用精確 pattern（`hermes/scripts/bookmark-bot\.py`）。
+- ⚠️ **1 token = 1 bot**：watchdog 重啟 + 手動啟動同時存在 → 兩個 bot polling 同一 token → 衝突無回應。啟動前先確認無其他 instance。
 - **urllib.request 連 OpenCode Zen 會 403** → 改用 `http.client.HTTPSConnection`
 - **Bot token 不能重複 polling** → 同 token 開多個 process 會 Conflict error
 - **getUpdates offset 必須永遠前進** → 即使處理失敗也要 `update_id + 1`，避免無限循環
@@ -265,6 +282,32 @@ if not should_enrich(url):
 ```
 
 **結果**：Bilibili → `bilibili` tag，小紅書 → `小紅書` tag，無摘要、無 AI 幻覺。
+
+**2026-08-01 增強：bilibili 補標題（yt-dlp）** — 使用者回報「按下 LLM 補齊後沒補齊」。bilibili 雖然跳過 LLM（JS 渲染），但可用 yt-dlp 抓標題：
+
+```python
+# llm_enhance.py
+def fetch_title_ytdlp(url):
+    # /opt/data/.venv/bin/yt-dlp --skip-download --no-warnings --get-title <url>
+    # 走 bilibili 內部 API，不需 JS 渲染；只抓 metadata 不呼叫 LLM
+```
+
+routes `enrich_bookmark` 的 `not should_enrich` 分支：bilibili 先 `fetch_title_ytdlp(url)` 補 title，再設 source tag。實測 #39 從「(無標題)」→「字幕君交流场所」。⚠️ 假 URL（如 `BV1abc123`）yt-dlp 會 404 → title 保持空白（正確行為）。
+
+### 🔴 b23.tv 短鏈接：yt-dlp 可解析，fetch_title() 抓不到（2026-08-02）
+
+**b23.tv 短鏈接**（B站官方短網址）特殊：`fetch_title()`（urllib 抓 `<title>`）抓不到標題，且 LLM 對短鏈接產生「该网址是哔哩哔哩（B站）的短链接…无法直接判断」的**幻覺摘要**。但 `yt-dlp --get-title <b23.tv短鏈>` 能直接解析出真實標題（走內部 API）。
+
+**統一規則（網頁 enrich + bot 都要遵守）**：`is_bilibili(url)`（含 bilibili.com / b23.tv）→ yt-dlp 抓標題 + **跳過 LLM**（只設 `bilibili` tag）。`bookmark-bot.py` 已實作 `fetch_title_ytdlp()` + `is_bilibili()`（2026-08-02 commit `9562aa2`）。
+
+### 🔴 診斷：「按手動補齊後 reload 畫面一樣」≠ enrich 沒生效
+
+使用者常以為補齊失敗，其實**補齊成功但注意的舊筆沒按到**。診斷順序（log 是真相來源）：
+1. 查 server log：`grep -E "yt-dlp|enrich" /tmp/bookmark-manager.log | tail` — 每筆成功補齊都有 `[enrich] yt-dlp title: '<標題>'` 記錄，且手機請求是 `172.17.0.1 - - "POST /api/bookmarks/<id>/enrich" 200`
+2. 對照 DB：`SELECT id, title FROM bookmarks WHERE id IN (...)` 確認 title 是否真的更新
+3. 只有當 log 顯示手機請求沒送達（沒有對應 id 的 POST）才懷疑前端/PWA 快取
+
+實測案例：使用者說「補齊沒生效」，log 顯示他只按了 #64（成功補齊「长期稳定的免费token」），#62/#63 從沒被按過 — 是誤解不是 bug。
 
 ## Git Commits（2026-08-01）
 - `da383b9` — fix: skip enrich for Bilibili + Xiaohongshu
