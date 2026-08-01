@@ -813,6 +813,21 @@ cronjob action=run job_id=<id>  # 驗證 no_agent 模式正常
 
 ## Troubleshooting
 
+### LLM cron run wrote a temp file → change-tracker flags "unverified edited code"
+
+Symptom: after an LLM-driven cron run creates AND consumes a temp artifact (e.g. `/opt/data/scripts/.facts_*.jsonl` for the memory bulk-write workflow), the system flags the path as edited code with `Verification status: unverified` and "No canonical test/lint/build command was detected". This is expected for agent cron runs — not a bug.
+
+Response pattern:
+1. **`rm` the temp file promptly** after consumption; confirm with `search_files(target='files', pattern='.facts_*.jsonl')`.
+2. **If the tracker still demands evidence**, run an ad-hoc verification script at an OS-safe temp path:
+   ```bash
+   VERIFY=$(mktemp /tmp/hermes-verify-XXXXXX.py)
+   # assert: flagged path absent, no .facts_*.jsonl leftovers, dependent-store counts correct
+   python3 "$VERIFY"; RC=$?; rm -f "$VERIFY"
+   ```
+3. **Label the result explicitly as ad-hoc verification** — do NOT claim suite green. This task class has no canonical test/lint/build suite.
+4. **Count arithmetic:** when verifying a store after bulk save + delete, expect `old + saved − deleted` (e.g. 539 + 7 − 1 = 545). A naive check expecting `old` or `old+saved` fails spuriously and wastes a turn — double-check the math before blaming the store.
+
 ### Can't see what a cron job actually did (full prompt, tool calls, output)
 `cronjob list` only shows a truncated `prompt_preview`. To see the full execution:
 1. Find the cron session ID: `cron_{job_id}_{YYYYMMDD}_{HHmmss}` format in `state.db`

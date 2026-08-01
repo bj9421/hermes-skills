@@ -160,13 +160,13 @@
     "created_at": "2026-07-09T18:37:31.164418+00:00",
     "created_by": null,
     "last_patched_at": "2026-07-17T08:47:41.048678+00:00",
-    "last_used_at": "2026-08-01T15:24:21.165814+00:00",
-    "last_viewed_at": "2026-08-01T15:24:21.152400+00:00",
+    "last_used_at": "2026-08-01T21:29:40.847780+00:00",
+    "last_viewed_at": "2026-08-01T21:29:40.834567+00:00",
     "patch_count": 27,
     "pinned": false,
     "state": "active",
-    "use_count": 66,
-    "view_count": 66
+    "use_count": 67,
+    "view_count": 67
   },
   "baoyu-infographic": {
     "archived_at": null,
@@ -835,14 +835,14 @@
     "archived_at": null,
     "created_at": "2026-07-10T12:39:38.045007+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-08-01T14:20:25.690354+00:00",
-    "last_used_at": "2026-08-01T14:19:55.401611+00:00",
-    "last_viewed_at": "2026-08-01T14:19:55.388427+00:00",
-    "patch_count": 49,
+    "last_patched_at": "2026-08-01T21:33:45.331694+00:00",
+    "last_used_at": "2026-08-01T21:33:28.493238+00:00",
+    "last_viewed_at": "2026-08-01T21:33:28.479746+00:00",
+    "patch_count": 50,
     "pinned": false,
     "state": "active",
-    "use_count": 90,
-    "view_count": 90
+    "use_count": 91,
+    "view_count": 91
   },
   "hermes-dashboard-troubleshooting": {
     "archived_at": null,
