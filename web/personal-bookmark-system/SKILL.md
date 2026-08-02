@@ -227,6 +227,27 @@ function refreshWithDelay() {
 exec python3 /opt/data/.hermes/scripts/bookmark-bot.py "$(cat /opt/data/.bookmark-bot-token)"
 ```
 
+## 🔴 坑：app.run 一定要 threaded=True（2026-08-02）→ 已升級 waitress
+
+**Flask dev server 預設單執行緒**（werkzeug `run_simple` threaded=False）。enrich 的 yt-dlp 子程序要跑 3~10 秒，單執行緒時**所有其他請求（頁面 reload / HTMX 30s 自動刷新 / stats partial）排隊等** → 手機瀏覽器顯示不正常畫面（轉圈/空白/部分渲染/逾時）。症狀：使用者「補齊資料同時 reload」特別容易發生。
+
+**✅ 最終方案（2026-08-02 commit `be653ef`）：改用 waitress production WSGI server**
+
+```python
+# app.py 底部
+from waitress import serve
+serve(app, host='0.0.0.0', port=5001, threads=8)
+```
+
+- **waitress 多執行緒 + 不會因改檔重啟** — Flask debug reloader 在改 code 時重啟伺服器（2-5 秒空白窗）是「reload 異常畫面」的另一主因，waitress 直接根除
+- 實測：並行 5 GET / 全 200（0.08-0.16s）；enrich 進行中 reload 不阻塞（回應 0.084s）
+- ⚠️ **venv 陷阱**：server 用**專案自己的 venv**（`cd /opt/data/projects/bookmark-manager && .venv/bin/python app.py` → `bookmark-manager/.venv`），waitress 必須裝到這個 venv：`UV_CACHE_DIR=/tmp/uv-cache uv pip install waitress --python .venv/bin/python`（`/opt/data/.venv` 沒有 opencc 那些相依，裝錯位置 server 起不來：`ModuleNotFoundError: No module named 'waitress'`）
+- watchdog（`bookmark-watchdog.py`）用 `BM_DIR/.venv/bin/python3 app.py` 重啟 → 自動就是 waitress
+- **改 code 後不再自動 reload**：改完程式要手動重啟 server（`kill` 舊 process → 背景重啟），或等 watchdog（每 5 分鐘）偵測掛掉後拉起 — 但 waitress 不會因改檔掛掉，所以要手動重啟才會載入新 code
+- DB 是 WAL mode + 每 request 各自連線（get_db()），多執行緒安全
+
+過渡方案（不建議長期用）：`app.run(host='0.0.0.0', port=5001, debug=True, threaded=True)` — threaded=True 解決排隊，但 debug reloader 改檔仍會斷線。
+
 ## 標籤強制規範（normalize_source_tags）
 
 來源強制統一，避免 LLM 隨意產生不同寫法：
@@ -245,9 +266,59 @@ def normalize_source_tags(url, tags):
 2. `bookmark-bot.py` LLM 處理後
 3. cron enrich prompt
 
-### 🔴 坑：JS 渲染網站（Bilibili / 小紅書）無法 enrich
+### 🔴 bilibili 標籤豐富化（2026-08-02）：來源 tag + 影片真實 tags
 
-Bilibili 和小紅書都需要 JavaScript 渲染，普通 curl 無法抓取內容，會導致 LLM 生成「無法提供摘要」的 AI 幻覺訊息。
+**舊行為**：bilibili 只設單一 `bilibili` tag（太單調）。**新行為**：`bilibili` + 影片真實 tag（yt-dlp `-J` 從 bilibili 內部 API 抓 `tags` 欄位），去重後簡轉繁。
+
+```python
+# llm_enhance.py / bookmark-bot.py 都有
+def fetch_bilibili_meta(url):
+    # yt-dlp -J --skip-download --no-warnings <url> → json.loads(stdout)
+    # 回傳 (title, tags_list)；過濾 >20 字 tag、最多 8 個；失敗回傳 ('', [])
+```
+
+組合規則（routes_bookmarks.py enrich 分支 + bookmark-bot.py 同步）：
+```python
+new_tags = 'bilibili'
+if bili_tags:
+    new_tags = 'bilibili,' + ','.join(dict.fromkeys(bili_tags))  # 去重保留順序
+new_tags = to_traditional_tags(new_tags)  # 人工智能→人工智慧、学习→學習
+```
+
+⚠️ 簡轉繁在 server 端 `to_traditional_tags`（db.py）自動做，bot 端傳簡體原始 tags 即可。實測 7 筆 bilibili 全部標籤豐富化（如 `bilibili,人工智慧,教程,Google,claude,gpt`）。`fetch_title_ytdlp` 已改為複用 `fetch_bilibili_meta`（一次 -J 拿 title + tags）。
+
+### 🔴 bilibili 摘要（summary）三層策略（2026-08-02）
+
+**背景**：7/30 的 bilibili 書籤有真實摘要（LLM 當時可分析），8/1 短鏈接讓 LLM 產生幻覺摘要（「该网址是哔哩哔哩（B站）的短链接…」）或空白。
+
+**修法**：`fetch_bilibili_meta` 回傳 `(title, tags_list, description)`，summary 依序：
+1. **有 description 且 ≠ title** → 用 description（真實簡介）
+2. **無 description / description = title** → `summarize_from_meta(title, tags)` 用標題+標籤餵 LLM 補（**不給 URL**，避免短鏈接幻覺；合理推測、禁止編造細節）
+3. LLM 全失敗 → 空字串（誠實留空）
+
+**實現**：`llm_enhance.py` 抽出 `_llm_request(prompt, provider)` 共用發送層（Zen→AGNES→Groq），`_call_llm` 與 `summarize_from_meta` 都複用。bot 的 `summarize_from_meta` 走自己的 `llm_call`。實測 #62 #64 摘要補齊。
+
+⚠️ **LLM 摘要仍是簡體**（與 7/30 舊資料一致，使用者未要求摘要轉繁中，只有標籤要轉）。
+
+### 🔴 小紅書標籤豐富化 + 摘要（2026-08-02）— 繞過台灣 DNS 封鎖
+
+**背景**：小紅書在台灣被政府封鎖（「詐欺犯罪危害防制條例」），DNS 污染解析到 `140.111.246.32` 封鎖頁。普通 curl / yt-dlp / urllib 全部失敗（HTTP 500 或封鎖頁），LLM 對短鏈接產生幻覺摘要。
+
+**突破三步驟**（`fetch_xiaohongshu_meta`，llm_enhance.py + bookmark-bot.py 同步）：
+1. **curl 追蹤短連結**：`curl -s -o /dev/null -w '%{url_effective}' -k -L <xhslink短鏈>` → 真實 `/discovery/item/<id>?xsec_token=...` URL（xhslink 回 302 + HTML Found，urllib 不會跟）
+2. **DoH 查真實 IP**：`https://dns.google/resolve?name=www.xiaohongshu.com&type=A` → `43.170.214.10`（CNAME 到 eo.dnse0.com CDN）
+3. **curl --resolve 繞過 DNS**：`curl -k --resolve "www.xiaohongshu.com:443:<IP>" <resolved_url>` → 抓到 133KB 完整頁面
+
+**解析 `__INITIAL_STATE__` 兩個坑**：
+- ⚠️ 不能用 `.*?</script>` regex（JSON 內有 nested script 會截斷）→ 用**大括號平衡**掃描
+- ⚠️ JSON 內有 `"jsAssetsList":undefined`（非法 JSON）→ 先 `re.sub(r':undefined\b', ':null')` 再 `json.loads`
+- 資料路徑：`state.noteData.data.noteData`（不是 `note.noteDetailMap`）→ `title` / `desc` / `tagList[].name`
+
+**組合規則**（與 bilibili 一致）：標籤 = `小紅書` + 筆記真實 tags（去重簡轉繁）；摘要 = 真實 desc（無 desc 用 `summarize_from_meta`）。實測 #26 #27 #33 補齊成功。
+
+⚠️ **假連結**（如 `explore/123456` 測試資料）解析失敗 → 誠實留空（正確行為，不產生幻覺摘要）。
+
+**容器 curl 坑**：`--no-check-certificate` 不存在（老版本）→ 用 `-k`。
 
 **解決方案**：在 `llm_enhance.py` 新增 `should_enrich()` 檢查。
 
@@ -281,9 +352,9 @@ if not should_enrich(url):
         get_source_icon=get_source_icon)
 ```
 
-**結果**：Bilibili → `bilibili` tag，小紅書 → `小紅書` tag，無摘要、無 AI 幻覺。
+**結果**：Bilibili → `bilibili` tag（2026-08-02 起為 `bilibili` + 影片真實 tags，見上方「標籤豐富化」），小紅書 → `小紅書` tag，無摘要、無 AI 幻覺。
 
-**2026-08-01 增強：bilibili 補標題（yt-dlp）** — 使用者回報「按下 LLM 補齊後沒補齊」。bilibili 雖然跳過 LLM（JS 渲染），但可用 yt-dlp 抓標題：
+**解決方案**：在 `llm_enhance.py` 新增 `should_enrich()` 檢查。
 
 ```python
 # llm_enhance.py
@@ -379,7 +450,8 @@ def to_traditional_tags(tags):
 
 - 每 10 分鐘掃 `processed=0` 的書籤
 - 抓頁面 → LLM 摘要+標籤 → 更新 DB
-- Bilibili 來源需強制設 tag = "bilibili"
+- **Bilibili 來源**（2026-08-02 prompt 已更新，與 enrich 流程一致）：用 yt-dlp `-J` 抓真實 tags + description，標籤 = `bilibili` + 影片真實 tags（不是單一 bilibili）；小紅書 → 單一 `小紅書` tag
+- ⚠️ 此 cron 是 LLM 驅動（no_agent=False），與 bookmark-watchdog / cron-watchdog-fast 每 5-10 分鐘同時開火是**正常**的（都輕量，不會互相干擾）
 
 ## Tailscale Serve
 
@@ -423,6 +495,7 @@ app.py 已從 766 行 / 53 函數 / cohesion 0.10 拆成上述模組結構（coh
 ## 相關參考檔案
 
 - `references/js-rendered-sites.md` — Bilibili / 小紅書等 JS 渲染網站的 enrich 處理（should_enrich、normalize_source_tags、HTML 返回坑）
+- `references/xiaohongshu-taiwan-block.md` — 小紅書台灣 DNS 封鎖調查 + 繞過方案（DoH + --resolve）+ xhslink 302 特性 + 容器 SSL 坑
 
 ## 前端側頁注意（Blogger 滑出式）
 
