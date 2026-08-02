@@ -248,6 +248,7 @@ Traceback points into `load_hermes_dotenv` → python-dotenv `resolve_variables`
 - `references/daily-review-process.md` — Daily-review (每日工作檢討) cron workflow: data sources (jobs.json via read_file, executions.db, git log, session_search), overnight-session pitfall, 5W1H report format.
 - `scripts/cron_watchdog.py` — Auto-repair watchdog script (no_agent). Reads jobs.json, auto-patches auth/drift errors to big-pickle, silent on success. See Auto-Repair Watchdog section above.
 - `references/github-private-repo-backup-cron.md` — GitHub 私 repo 備份 cron 完整流程：API 建 repo（無 gh CLI、`curl -k`）、一次性 PAT push（不寫進 remote config）、上傳前安全檢查清單、push-only no_agent 備份腳本（不 auto-commit，AHEAD=0 安靜 exit 0）、公開/私有隔離原則。實戰：bookmark-manager → bj9421/bookmark-manager（🔒 private，cron `8c43651cd066` 每 2h）。
+- `references/holographic-obsidian-sync-topology.md` — Holographic→Obsidian 同步 cron（`2a7ce532d001`）：三份分歧腳本副本的 live-path 指紋鑑識、MOC 雙檔狀態（`Holographic/MOC.md` 新鮮 vs 根目錄 `首頁 MOC.md` 過期）、chmod 777 手機同步坑、memory DB 查詢被 tirith 誤擋的 workaround。
 
 ## Core Concepts
 
@@ -466,6 +467,18 @@ chmod +x ~/.hermes/scripts/foo.sh
 ```
 
 Verification: `cronjob action=list` shows the script name. The actual file read at run-time is `~/.hermes/scripts/<script_name>`.
+
+### ⚠️ Pitfall: duplicate copies of the same script — find which one actually ran
+
+Same-named sync scripts accumulate in `/opt/data/`, `/opt/data/scripts/`, `/opt/data/.hermes/scripts/`
+and **diverge** (e.g. the holographic sync: the newer root copy writes `首頁 MOC.md`, the live
+`/opt/data/scripts/` copy writes `Holographic/MOC.md` with flat links). The path in the cron `prompt`
+is NOT proof of the live path — a legacy job's pre-run output may come from a different copy entirely.
+
+**Fingerprint the pre-run output before editing:** echo lines unique to one copy (`Using Python: …`),
+file names printed by the script (`MOC.md` vs `首頁 MOC.md … (vault root)`), or on-disk output style
+(flat `[[X]]` vs `[[Holographic/X]]` links). Editing the non-live copy changes nothing about cron
+behavior. Full worked example: `references/holographic-obsidian-sync-topology.md`.
 
 ## 🐕 no_agent Watchdog Pattern（正常安靜，異常才叫）
 
