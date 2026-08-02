@@ -441,6 +441,24 @@ routes `enrich_bookmark` 的 `not should_enrich` 分支：bilibili 先 `fetch_ti
 
 **⚠️ server 重啟坑**：waitress 無 reloader，改 code 要手動重啟。但 **pkill -f "python app.py" 只殺 bash 外殼、python child 變孤兒繼續跑舊 code**（新 server 因 port 衝突失敗）。正確做法：`ps -eo pid,cmd | grep "\.venv/bin/python app.py"` 拿精確 PID → `kill <pid>` → background 重啟。
 
+## GitHub 私 repo 備份 + 部署同步（2026-08-02）
+
+**🔒 私 repo**：`https://github.com/bj9421/bookmark-manager`（private — 使用者硬性要求：書籤專案**絕不進公開 repo**，公開/私有嚴格隔離）。
+
+**只備份 code（37 檔）**；`bookmarks.db`（含小紅書 xsec_token 等私人資料）刻意排除（`.gitignore` 的 `*.db`）— **DB 永遠不上 GitHub**。`graphify-out/` 也已移出追蹤（`git rm -r --cached` 保留本地檔）。
+
+**自動同步 cron** `8c43651cd066` 每 2h 跑 `/opt/data/scripts/bookmark-manager-backup.sh`（+ `.hermes/scripts` 副本）：
+- **只 push 已 commit 的 code，不 auto-commit**（半成品不會上雲）
+- 未 push commit 數 = 0 → 安靜 exit 0；有 → push 並通知
+- 一次性 `https://oauth2:${PAT}@...` URL push，**不把 token 寫進 remote config**
+- 🔴 **坑**：一次性 URL push 後本地無 `origin/main` tracking ref → `git rev-list origin/main..HEAD` 報 unknown revision。腳本必須 `git fetch <url> main` + `FETCH_HEAD..HEAD` 算未 push 數（詳見 `github-repo-management` skill「Container/RPi4 實戰筆記」+ `hermes-cron-management` references/github-private-repo-backup-cron.md）
+
+**RPi3 部署決策（2026-08-02 定案，寫入 Obsidian 遷移計劃階段 4）**：
+- 首次遷移 → **rsync 從 RPi4**（code+DB 一次到位，不需 GitHub 認證）
+- 日常 code 更新 → **git pull 私 repo**（PAT 或 SSH key）
+- **DB 永不走 GitHub**（xsec_token）→ 靠 rsync 每小時備份雙保險
+- bot token 用 `scp` 從 RPi4 複製（`~/.config/bookmark-bot/token`，chmod 600），不走 GitHub
+
 ## Git Commits（2026-08-01）
 - `da383b9` — fix: skip enrich for Bilibili + Xiaohongshu
 - `c8abd23` — fix: add Xiaohongshu tag normalization

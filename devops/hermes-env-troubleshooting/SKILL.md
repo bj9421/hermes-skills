@@ -778,6 +778,38 @@ git checkout abc123 -- software-development/ha-powers/SKILL.md
 
 ---
 
+### 23. Hermes Docker Image 版本檢查與升級（2026-08-02 實測）
+
+**Image 名稱與 Tag 結構**（官方 `nousresearch/hermes-agent`）：
+- `latest` / `main` — **滾動更新**（跟 main branch，隨時可能換內容）
+- `vYYYY.M.D` — **日期穩定版**（如 `v2026.7.30`、`v2026.7.20`、`v2026.7.7.2`）；GitHub Releases 版本對照（如 v0.18.1 ↔ v2026.7.7）
+- **全部支援 linux/arm64**（RPi4 可直接 pull，amd64 + arm64 雙架構）
+- 大小變化：2026-04 約 2.4GB → 2026-08 約 915MB（已瘦身）
+
+**查最新版本：**
+```bash
+# Docker Hub tags 頁（找最新 vYYYY.M.D tag，不是 latest — 那是滾動的）
+#   https://hub.docker.com/r/nousresearch/hermes-agent/tags
+# 或 GitHub Releases：
+#   https://github.com/NousResearch/hermes-agent/releases
+```
+
+**決策建議**：生產用固定版本 tag（如 `v2026.7.30`）而非 `latest` — `latest`/`main` 是滾動更新，無法重現/回溯。
+
+**升級流程：**
+```bash
+docker pull nousresearch/hermes-agent:v2026.7.30
+# 用原本的 docker run 指令重建容器，換 image tag
+# image 無狀態 — bind mount 的 /opt/data（HERMES_HOME）資料全部保留
+# ⚠️ 容器 env（HERMES_DASHBOARD_* 等）要照舊帶上，否則 dashboard run script
+#    因 $HERMES_DASHBOARD falsy 直接退出（見 hermes-s6-container-supervision skill）
+```
+
+**升級後驗證清單**：
+1. `hermes --version` 顯示新版本
+2. `/opt/data` bind mount 正確（config/skills/sessions 全保留 = 升級成功）
+3. dashboard 200、gateway 回覆正常
+
 ### 22. Third-Party CLI Tool Installation in Docker Container
 
 Third-party CLI tools installed via `uv tool install` often fail in the Docker container because `uv` defaults to paths under `/root/` (which are read-only for the `hermes` user). A general-purpose workaround:
