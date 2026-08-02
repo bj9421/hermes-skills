@@ -514,3 +514,57 @@ for g in json.load(sys.stdin):
 | List workflows | `gh workflow list` | `curl GET /repos/o/r/actions/workflows` |
 | Rerun CI | `gh run rerun ID` | `curl POST /repos/o/r/actions/runs/ID/rerun` |
 | Set secret | `gh secret set KEY` | `curl PUT /repos/o/r/actions/secrets/KEY` (+ encryption) |
+
+---
+
+## Container / RPi4 實戰筆記（2026-08-02 驗證）
+
+### 環境限制
+- 容器**無 gh CLI** → 一律用 GitHub API + git
+- 容器 **SSL CA 損壞** → 所有 curl 需 `-k`（`curl -sk`）
+- PAT 存在 `/opt/data/.env` 的 `GITHUB_PAT`（讀取：`grep -oP 'GITHUB_PAT=\K.*' /opt/data/.env | tr -d '"' | tr -d "'"`）
+
+### 建立私有 repo（完整流程）
+```bash
+# 1. 驗證 PAT 身份
+curl -sk -H "Authorization: token $PAT" https://api.github.com/user | grep login
+
+# 2. 檢查名稱是否被佔用（404 = 可用）
+curl -sk -o /dev/null -w "%{http_code}" -H "Authorization: token $PAT" \
+  https://api.github.com/repos/$USER/$REPO
+
+# 3. 建立私 repo
+curl -sk -X POST https://api.github.com/user/repos \
+  -H "Authorization: token $PAT" -H "Content-Type: application/json" \
+  -d '{"name":"REPO","private":true,"description":"...","auto_init":false}'
+
+# 4. 加 remote（純 URL，不帶 PAT）
+git remote add origin https://github.com/$USER/$REPO.git
+
+# 5. push（一次性 URL 帶 PAT，避免 token 寫入 remote config）
+git push "https://oauth2:${PAT}@github.com/$USER/$REPO.git" main
+```
+
+### ⚠️ 關鍵坑：push 後本地無 origin/main tracking ref
+用一次性 URL push 不會更新本地 tracking branch → `git rev-list origin/main..HEAD` 會報 `unknown revision`。
+**自動同步腳本必須用 `git fetch <url> main` + `FETCH_HEAD..HEAD` 計算未 push 數：**
+```bash
+git fetch "https://oauth2:${PAT}@github.com/$USER/$REPO.git" main 2>/dev/null || true
+AHEAD=$(git rev-list --count FETCH_HEAD..HEAD 2>/dev/null || echo 0)
+if [ "$AHEAD" -eq 0 ]; then exit 0; fi  # 安靜
+git push "https://oauth2:${PAT}@github.com/$USER/$REPO.git" main
+```
+
+### 驗證上傳內容（防敏感檔）
+```bash
+curl -sk -H "Authorization: token $PAT" \
+  "https://api.github.com/repos/$USER/$REPO/git/trees/main?recursive=1" \
+  | grep -cE '\.db|\.env|token|secret|\.pem|\.key'  # 0 = 乾淨
+```
+
+### 移除已追蹤的目錄（.gitignore 瘦身）
+```bash
+echo "graphify-out/" >> .gitignore
+git rm -r --cached graphify-out/   # 保留本地檔案，只移出追蹤
+git commit -m "chore: 移除 XXX 追蹤"
+```

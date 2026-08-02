@@ -679,14 +679,14 @@
     "archived_at": null,
     "created_at": "2026-06-17T14:47:40.899215+00:00",
     "created_by": null,
-    "last_patched_at": null,
-    "last_used_at": "2026-07-25T06:43:14.381579+00:00",
-    "last_viewed_at": "2026-07-25T06:43:14.370359+00:00",
-    "patch_count": 0,
+    "last_patched_at": "2026-08-02T05:56:24.823672+00:00",
+    "last_used_at": "2026-08-02T05:56:13.752043+00:00",
+    "last_viewed_at": "2026-08-02T05:56:13.739640+00:00",
+    "patch_count": 1,
     "pinned": false,
     "state": "active",
-    "use_count": 3,
-    "view_count": 3
+    "use_count": 6,
+    "view_count": 6
   },
   "google-trends-behavior": {
     "archived_at": null,
@@ -835,14 +835,14 @@
     "archived_at": null,
     "created_at": "2026-07-10T12:39:38.045007+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-08-02T02:45:14.577951+00:00",
-    "last_used_at": "2026-08-02T02:44:39.866359+00:00",
-    "last_viewed_at": "2026-08-02T02:44:39.852790+00:00",
-    "patch_count": 51,
+    "last_patched_at": "2026-08-02T05:54:17.616573+00:00",
+    "last_used_at": "2026-08-02T05:53:48.519673+00:00",
+    "last_viewed_at": "2026-08-02T05:53:48.505220+00:00",
+    "patch_count": 54,
     "pinned": false,
     "state": "active",
-    "use_count": 92,
-    "view_count": 92
+    "use_count": 95,
+    "view_count": 95
   },
   "hermes-dashboard-troubleshooting": {
     "archived_at": null,
@@ -1381,14 +1381,14 @@
     "archived_at": null,
     "created_at": "2026-07-30T14:54:38.556610+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-08-02T04:03:51.916378+00:00",
-    "last_used_at": "2026-08-02T04:03:45.621536+00:00",
-    "last_viewed_at": "2026-08-02T04:03:45.609411+00:00",
-    "patch_count": 45,
+    "last_patched_at": "2026-08-02T05:31:08.712416+00:00",
+    "last_used_at": "2026-08-02T05:20:41.947069+00:00",
+    "last_viewed_at": "2026-08-02T05:20:41.934624+00:00",
+    "patch_count": 51,
     "pinned": false,
     "state": "active",
-    "use_count": 35,
-    "view_count": 35
+    "use_count": 39,
+    "view_count": 39
   },
   "petdex": {
     "archived_at": null,

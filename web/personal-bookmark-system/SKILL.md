@@ -278,12 +278,28 @@ def log_access(response):
 
 ```python
 def normalize_source_tags(url, tags):
-    if any(dom in url for dom in ['bilibili.com', 'b23.tv']):
-        return 'bilibili'
-    if any(dom in url for dom in ['xiaohongshu.com', 'xhslink.com']):
-        return '小紅書'
-    return tags
+    """Force source-consistent tags.
+
+    - bilibili/小紅書：強制覆蓋為單一來源 tag（JS 渲染站，防 LLM 幻覺標籤）
+    - 其他已知來源（youtube/github/...）：合併來源 tag 到最前（不覆蓋 LLM 真實 tags）
+    - 未知來源：原樣回傳
+    """
 ```
+
+### 🔴 來源標籤自動套用（2026-08-02 commit `cd7718a`）
+
+**需求**：所有書籤自動帶來源標籤（youtube/github/小紅書/bilibili...），不只 bilibili/小紅書。
+
+**實作**（單一邏輯來源，統一在 server 端）：
+1. `llm_enhance.py`：`SOURCE_TAG_RULES` 對應表（30+ 平台：youtube/youtu.be→youtube、github→github、bilibili/b23.tv→bilibili、xiaohongshu/xhslink→小紅書、twitter/x.com→twitter、instagram、medium、reddit、stackoverflow、zhihu→知乎、weibo→微博、douyin→抖音、spotify、notion、wikipedia、pinterest、twitch、vimeo、substack、patreon、discord、telegram、maps.app.goo.gl/goo.gl→google-maps、google、amazon、netflix、huggingface、arxiv、paperswithcode、nvidia、openai、anthropic、microsoft、apple、news.ycombinator.com→hacker-news）
+2. `detect_source_tag(url)` → 回傳來源標籤或 ''
+3. `ensure_source_tag(url, tags)` → INSERT 路徑用：合併不覆蓋（`youtube,AI,教程`）
+4. `normalize_source_tags(url, tags)` → enrich 路徑用：bilibili/小紅書強制覆蓋，其他合併到最前
+5. `routes_bookmarks.py` add_bookmark INSERT 前：`to_traditional_tags(ensure_source_tag(url, data.get('tags', '')))` — **bot 走 server API 自動受惠，不需改 bot**
+
+**backfill**：`backfill_source_tags.py`（專案根目錄）掃描既有書籤補來源標籤，實測 32 筆（youtube 26/github 5/google-maps 1）。新來源加入對應表後可重跑。
+
+⚠️ **bilibili/小紅書強制覆蓋**是刻意的（防 LLM 對短鏈接產生幻覺標籤）；其他平台合併是刻意的（保留 LLM 真實 tags）。改動時勿混用語意。
 
 同步在三個地方：
 1. `llm_enhance.py` enrich 流程
@@ -404,6 +420,27 @@ routes `enrich_bookmark` 的 `not should_enrich` 分支：bilibili 先 `fetch_ti
 
 實測案例：使用者說「補齊沒生效」，log 顯示他只按了 #64（成功補齊「长期稳定的免费token」），#62/#63 從沒被按過 — 是誤解不是 bug。
 
+## 分頁功能（2026-08-02 commit `729bd5e`）
+
+**設計（使用者確認方案 A）**：依裝置動態 page size — 手機 10 筆/頁（單欄 ~2.5 屏）、桌機 20 筆/頁。**篩選條件（tag/search/starred/read/type）一路套用**到所有分頁。
+
+**後端**（routes_bookmarks.py）：
+- `_is_mobile_ua()`（UA 含 mobile/android/iphone/ipad）→ `_page_size()` 10 或 20
+- `_pagination()`：讀 `page` param（default 1），clamp 到 `[1, total_pages]`
+- `_page_query_string()`：保留目前所有 filter（`urlencode({k:v for k,v in request.args.items() if k != 'page'})`）
+- `index()` + `bookmarks_partial()`：先 `COUNT(*)` 算 total → `LIMIT ? OFFSET ?`，傳 `current_page`/`total_pages`/`page_query` 給模板
+- page 超界自動 clamp（如只有 3 頁按到 99 → 回第 3 頁）
+
+**前端**：
+- `_bookmark_list.html` 尾端分頁 bar：上一頁/下一頁 + `{{ current_page }} / {{ total_pages }} 頁`，`hx-get="/bookmarks?{{ page_query }}&page=N"` + `hx-push-url="true"`
+- **🔴 關鍵坑：卡片操作後刷新不能用 `htmx.trigger('#bookmark-list','load')`** — 那會回到 element 初始 hx-get（丟失 page）。改 `syncList()`：`htmx.ajax('GET', '/bookmarks'+window.location.search, {target:'#bookmark-list', swap:'outerHTML'})` 讀目前 URL 保留分頁+篩選。star/read/delete/batch 全改用 `syncList();syncStats()`
+- `index.html` bookmark-list 初始 `hx-get` 帶 `page_query` + `current_page`
+- 標籤點擊連結**刻意不帶 page**（切換篩選 → 回第 1 頁，正確行為）
+
+**實測**：桌機 45 筆 → 3 頁（20/20/5）；手機 → 5 頁（10×4+5）；youtube 26 筆桌機 → 20+6；手機 → 10+10+6；`?page=99` clamp 到末頁。
+
+**⚠️ server 重啟坑**：waitress 無 reloader，改 code 要手動重啟。但 **pkill -f "python app.py" 只殺 bash 外殼、python child 變孤兒繼續跑舊 code**（新 server 因 port 衝突失敗）。正確做法：`ps -eo pid,cmd | grep "\.venv/bin/python app.py"` 拿精確 PID → `kill <pid>` → background 重啟。
+
 ## Git Commits（2026-08-01）
 - `da383b9` — fix: skip enrich for Bilibili + Xiaohongshu
 - `c8abd23` — fix: add Xiaohongshu tag normalization
@@ -519,8 +556,10 @@ app.py 已從 766 行 / 53 函數 / cohesion 0.10 拆成上述模組結構（coh
 ## 相關參考檔案
 
 - `references/js-rendered-sites.md` — Bilibili / 小紅書等 JS 渲染網站的 enrich 處理（should_enrich、normalize_source_tags、HTML 返回坑）
+- `references/scale-and-pagination.md` — 規模極限實測（10k 筆內 OK、50k+ 卡死；瓶頸在 HTML 渲染/傳輸非 SQLite）+ 分頁設計原則（篩選條件必須帶上 page 參數）
 - `references/xiaohongshu-taiwan-block.md` — 小紅書台灣 DNS 封鎖調查 + 繞過方案（DoH + --resolve）+ xhslink 302 特性 + 容器 SSL 坑
 - `references/deployment-and-migration.md` — 記憶體實測（server 75MB / bot 26MB）、RPi3 1GB + SSD 遷移可行性、輕量替代方案比較（bemarked/Shiori）、遷移計劃文件位置（Obsidian 開發架構）
+- `references/mobile-app-packaging.md` — 手機 App 包裝評估：TWA 側載 $0 / 上架 $25+域名、GitHub APK 技術辨識（repo 根目錄特徵）、iOS PWA 限制（50MB / iOS 16.4 push / 手動安裝）、Bubblewrap 坑（assetlinks 指紋）
 
 ## 前端側頁注意（Blogger 滑出式）
 

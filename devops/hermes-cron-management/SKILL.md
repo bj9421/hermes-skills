@@ -202,6 +202,16 @@ cp /opt/data/cron/jobs.json /opt/data/cron/jobs.json.bak.pre-clear-$(date +%Y%m%
 python3 /opt/data/scripts/cron_watchdog.py; echo $?   # expect 0 + no stdout = quiet
 ```
 
+**⚠️ Symptom D variant (2026-08-02 bookmark-enrich case): the watchdog is FINE — a *monitored* job is the real failure.** User complained "不是改 noagent嗎" about cron-watchdog-fast alerting repeatedly. Diagnosis showed the watchdog WAS no_agent and healthy — it was faithfully reporting that a DIFFERENT job (`bookmark-enrich`, `deb71e8d5dbd`) had `last_status: error`. That job was still **LLM-driven** but its work was pure script (DB query → curl enrich API): every run idled 600s waiting for a non-streaming Zen response → timeout → watchdog reported → user saw the watchdog alert and assumed it was the broken one.
+
+**Diagnosis order when a watchdog spams:**
+1. `cronjob action=list` — find WHICH job(s) carry `last_status: error`. If the watchdog itself is `ok`, the alert is about a monitored job.
+2. Read that job's output log (`/opt/data/cron/output/<job_id>/` newest file) — `waiting for non-streaming API response` + idle near 600s = LLM job that doesn't need an LLM.
+3. Convert the monitored job to no_agent (see Conversion Assessment below): `cronjob action=update job_id=<id> script="bookmark_enrich.py" no_agent=true prompt=""` — the script must follow the watchdog pattern (silent exit 0 when nothing to do, output when it did work, exit 1 on real failure).
+4. Verify: manual run exits 0 quietly → `cronjob action=run` → `execution_success: true` → run the watchdog once → expect silent exit 0.
+
+**Rule of thumb:** pure DB-query + curl polling jobs are no_agent candidates even when they were originally created as LLM jobs for convenience. An LLM job that just checks `processed=0` rows and fires an API is paying provider tokens and adding a 600s-idle failure mode for zero reasoning value.
+
 ### Symptom E: `KeyError: 'HERMES_KANBAN_BOARD'` on an agent job
 Traceback points into `load_hermes_dotenv` → python-dotenv `resolve_variables`. If it fires at the same minute as a gateway restart, it's a **restart race** (env partially torn down during `.env` load), NOT a config problem. Verify the script standalone (`auto_memory_scan.py 3` → exit 0), clear the error, next tick recovers.
 
@@ -236,6 +246,7 @@ Traceback points into `load_hermes_dotenv` → python-dotenv `resolve_variables`
 - `references/gateway-restart-and-scheduler-stall.md` — Full 2026-08-01 incident: restart-kill (`-15`), 12h scheduler-stall heartbeat detection, catch-up burst, watchdog stale-error spam, dotenv KeyError race, verification + follow-ups.
 - `references/daily-review-process.md` — Daily-review (每日工作檢討) cron workflow: data sources (jobs.json via read_file, executions.db, git log, session_search), overnight-session pitfall, 5W1H report format.
 - `scripts/cron_watchdog.py` — Auto-repair watchdog script (no_agent). Reads jobs.json, auto-patches auth/drift errors to big-pickle, silent on success. See Auto-Repair Watchdog section above.
+- `references/github-private-repo-backup-cron.md` — GitHub 私 repo 備份 cron 完整流程：API 建 repo（無 gh CLI、`curl -k`）、一次性 PAT push（不寫進 remote config）、上傳前安全檢查清單、push-only no_agent 備份腳本（不 auto-commit，AHEAD=0 安靜 exit 0）、公開/私有隔離原則。實戰：bookmark-manager → bj9421/bookmark-manager（🔒 private，cron `8c43651cd066` 每 2h）。
 
 ## Core Concepts
 
