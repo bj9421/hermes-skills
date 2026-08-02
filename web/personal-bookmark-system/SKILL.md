@@ -214,9 +214,11 @@ function refreshWithDelay() {
 
 ### 坑
 
+- 🔴 **排隊回覆（2026-08-02 commit `6d258ee`）**：連續貼多條時 bot 顯示「⏳ 已排隊（第 N/M 筆）」→ 處理完用 `editMessageText` 把 ⏳ 編輯成結果（聊天室不塞爆）。`process_update(token, update, queue_pos, batch_size)` 由 main loop 傳入（getUpdates 一次拉回幾筆就顯示幾筆）。編輯失敗 fallback 回 delete+重發。
 - **🔴 bookmark-bot watchdog 檢查錯東西（2026-08-02 修復）**：`/opt/data/scripts/bookmark-bot-watchdog.py` 舊版 `bot_running()` 用 **Telegram getMe** 檢查 token 有效性 — token 沒過期就永遠回 True，**不管 bot process 死活** → bot 掛掉 watchdog 永不重啟 → 使用者發連結無反應。修復：改用 `pgrep -f 'bookmark-bot.py'` 檢查 process 存活（returncode 0 = 活著）。啟動改用 `/opt/data/.venv/bin/python` + log 寫入 `/tmp/bookmark-bot.log`。
 - ⚠️ **pkill/pgrep -f 自匹配陷阱**：terminal 測試時 command line 含 pattern 會誤殺/誤判自己的 shell。用 `grep -v 'grep\|bash'` 過濾，或改用精確 pattern（`hermes/scripts/bookmark-bot\.py`）。
 - ⚠️ **1 token = 1 bot**：watchdog 重啟 + 手動啟動同時存在 → 兩個 bot polling 同一 token → 衝突無回應。啟動前先確認無其他 instance。
+- 🔴 **改 bookmark-bot.py 後必須手動重啟 bot（2026-08-02 實測）**：~~watchdog 只檢查 process 存活（getMe/pgrep），不檢查 code 版本 → bot 會一直跑舊 code~~。**已根治（commit `bf51986`）**：watchdog 現含 md5 code-hash 偵測（`/tmp/bookmark-bot.codehash` 記錄已啟動版本，code 變更 → 自動 kill + 重啟，cron 每 5 分檢查）。實例：bot 01:03 啟動（舊 code 無小紅書 DoH），10:08 更新 code 但沒重啟 → 之後新連結 #65/#66 沒吃到新邏輯（小紅書標題空 + LLM 幻覺標籤「短連結,分享,無法確定」）。診斷：`ps -eo pid,lstart,cmd | grep bookmark-bot.py`（啟動時間）對比 `ls -la` 的 code mtime。重啟：`kill <pid>` → `cd /opt/data/.hermes/scripts && /opt/data/.venv/bin/python bookmark-bot.py "$(cat /opt/data/.bookmark-bot-token)"`（background）。改完 code 務必**自己重啟 + 實測**，不能只 cp 同步副本就交差；已改的舊書籤手動 `POST /api/bookmarks/<id>/enrich` 補跑。⚠️ watchdog 升級後若要立即生效（不等 5 分 cron），手動跑一次：`/opt/data/.venv/bin/python /opt/data/.hermes/scripts/bookmark-bot-watchdog.py`（偵測到 code 變更會重啟；健康時 silent）。
 - **urllib.request 連 OpenCode Zen 會 403** → 改用 `http.client.HTTPSConnection`
 - **Bot token 不能重複 polling** → 同 token 開多個 process 會 Conflict error
 - **getUpdates offset 必須永遠前進** → 即使處理失敗也要 `update_id + 1`，避免無限循環
@@ -247,6 +249,28 @@ serve(app, host='0.0.0.0', port=5001, threads=8)
 - DB 是 WAL mode + 每 request 各自連線（get_db()），多執行緒安全
 
 過渡方案（不建議長期用）：`app.run(host='0.0.0.0', port=5001, debug=True, threaded=True)` — threaded=True 解決排隊，但 debug reloader 改檔仍會斷線。
+
+### 🔴 坑：waitress 不打 access log（2026-08-02 commit `cc8245c`）
+
+升級 waitress 後 **access log 消失**（Flask dev server 會印、waitress 不會）→ 手機請求無記錄，使用者報「某時間點頁面掛掉」時無法查證。修法：`app.py` 加 `@app.after_request` 記 access log（remote_addr / method / path / 耗時）寫入 `/tmp/bookmark-manager.log`：
+
+```python
+import logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s', filename='/tmp/bookmark-manager.log')
+
+@app.after_request
+def log_access(response):
+    logging.getLogger('access').info('%s %s %s', request.remote_addr, request.method, request.path)
+    return response
+```
+
+### 🔴 坑：使用者報「頁面掛掉/渲染不正常」先查顯示、不是資料（2026-08-02）
+
+症狀：使用者截圖顯示舊/簡體內容，且強調「網頁渲染不出來、那時間點掛掉了」— **多半不是資料問題（DB/標籤早已修好），是手機 PWA 快取**。診斷順序：
+1. `curl -s http://127.0.0.1:5001/` 看 server 真實輸出（新內容？繁體標籤？）
+2. 對比使用者截圖（舊內容？簡體？）→ server 新 + 手機舊 = PWA 快取
+3. 修法：bump `static/sw.js` 的 `CACHE` 版本（v1→v2，commit `cc8245c`），手機載入新 sw.js 自動清舊快取；之後任何 UI 改版都應 bump
+4. ⚠️ 不要一聽到「還是不行」就回頭改資料/轉簡繁 — 先確認 server 輸出 vs 使用者看到的差異；同時確認 log 有記錄手機請求（若無 → 見上方 access log 坑）
 
 ## 標籤強制規範（normalize_source_tags）
 
@@ -449,9 +473,9 @@ def to_traditional_tags(tags):
 ## LLM enrichment cron
 
 - 每 10 分鐘掃 `processed=0` 的書籤
-- 抓頁面 → LLM 摘要+標籤 → 更新 DB
-- **Bilibili 來源**（2026-08-02 prompt 已更新，與 enrich 流程一致）：用 yt-dlp `-J` 抓真實 tags + description，標籤 = `bilibili` + 影片真實 tags（不是單一 bilibili）；小紅書 → 單一 `小紅書` tag
-- ⚠️ 此 cron 是 LLM 驅動（no_agent=False），與 bookmark-watchdog / cron-watchdog-fast 每 5-10 分鐘同時開火是**正常**的（都輕量，不會互相干擾）
+- **2026-08-02 重構（commit `4d8e31e`）**：cron prompt 改為**統一呼叫 server enrich API**（`POST http://127.0.0.1:5001/api/bookmarks/<id>/enrich`），不再自行實作抓取/LLM — 邏輯單一來源，杜絕三處不同步
+- 配套：enrich 端點 JS 渲染站分支（bilibili/小紅書/其他）也設 `processed=1`（否則 cron 每 10 分重複掃同一批 → 重複 DoH/yt-dlp；重試需手動按 🤖）
+- ⚠️ 任何 enrich 邏輯改動只要改 server `llm_enhance.py` + bot `bookmark-bot.py` 兩處即可（cron 已不需要同步）
 
 ## Tailscale Serve
 
@@ -496,6 +520,7 @@ app.py 已從 766 行 / 53 函數 / cohesion 0.10 拆成上述模組結構（coh
 
 - `references/js-rendered-sites.md` — Bilibili / 小紅書等 JS 渲染網站的 enrich 處理（should_enrich、normalize_source_tags、HTML 返回坑）
 - `references/xiaohongshu-taiwan-block.md` — 小紅書台灣 DNS 封鎖調查 + 繞過方案（DoH + --resolve）+ xhslink 302 特性 + 容器 SSL 坑
+- `references/deployment-and-migration.md` — 記憶體實測（server 75MB / bot 26MB）、RPi3 1GB + SSD 遷移可行性、輕量替代方案比較（bemarked/Shiori）、遷移計劃文件位置（Obsidian 開發架構）
 
 ## 前端側頁注意（Blogger 滑出式）
 

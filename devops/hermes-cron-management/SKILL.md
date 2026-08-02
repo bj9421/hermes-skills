@@ -799,6 +799,21 @@ cronjob action=run job_id=<id>  # 驗證 no_agent 模式正常
 `cronjob action=create` 的 `script` 欄位只接受 `~/.hermes/scripts/` 下的**相對檔名**，不能用絕對路徑。
 腳本必須先複製到 `/opt/data/.hermes/scripts/` 才能被 cron 排程器讀取。
 
+### ⚠️ Watchdog 覆蓋範圍地圖：只守「存活」，不守「邏輯」
+
+使用者問過「自動審查/debug 是全局還是只有書籤專案」— 誠實答案是**分層且不完整**，不要對使用者過度宣稱「全自動排障」：
+
+| 層級 | 機制 | 範圍 | 極限 |
+|------|------|------|------|
+| Cron 排程狀態 | `cron-watchdog-fast`（每 10 分，全局唯一） | 所有 job 的 `last_status` / `last_error` | 只抓「執行失敗」，不抓服務內部邏輯 |
+| 服務存活 | 各專案自建 watchdog（bookmark × 2、台股、Q2…） | 該服務 process / HTTP 存活 | 只檢查「活不活」，不檢查「對不對」 |
+| 程式邏輯 bug | ❌ 無自動偵測 | — | 只能靠 cron 失敗被 watchdog 抓到 / 使用者回報 / agent 主動巡邏 |
+
+關鍵教訓：
+- **新服務上線時 watchdog 要手動建**（no_agent + 安靜模式 pattern 見上）— 沒建就沒有任何自動守護
+- 「改碼後自動查核」是 agent 工作紀律（SOUL.md），**不是系統機制** — 換 session 或 cron 背景執行時不會自動觸發
+- 回報給使用者時先盤點：哪個 watchdog 管哪個服務、哪些服務沒有 watchdog，再決定要不要補
+
 ### 與 LLM-driven 巡檢的互補
 
 | 機制 | 角色 | 頻率 | 能力 |

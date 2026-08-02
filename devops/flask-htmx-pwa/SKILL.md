@@ -82,6 +82,37 @@ def pwa_sw():
 
 ---
 
+## Production Server（waitress）與 access log
+
+Flask dev server 不適合長期運行（debug reloader 改檔即重啟、單執行緒排隊）。改用 waitress：
+
+```python
+from waitress import serve
+serve(app, host='0.0.0.0', port=5001, threads=8)
+```
+
+🔴 **waitress 不打 access log**（werkzeug dev server 會印、waitress 不會）→ 升級後手機請求全部無記錄，使用者報「某時間點頁面掛掉」時無法查證。需自加：
+
+```python
+import logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s', filename='/tmp/app.log')
+
+@app.after_request
+def log_access(response):
+    logging.getLogger('access').info('%s %s %s', request.remote_addr, request.method, request.path)
+    return response
+```
+
+## PWA 快取更新紀律（2026-08-02 實戰教訓）
+
+sw.js 用 network-first + cache fallback：**server 資料已修好、手機仍顯示舊內容 = PWA 快取，不是 server 掛掉**。
+
+診斷：`curl http://localhost:PORT/ | grep <新內容>` 對比使用者截圖 — server 新、手機舊 → 快取問題。
+
+修法：bump `sw.js` 的 `const CACHE = 'bookmark-manager-v1'` → `'bookmark-manager-v2'`，手機下次載入新 sw.js 自動清舊快取。任何 UI 內容/樣式改版都應 bump 版本，否則使用者會一直看到舊畫面並回報「掛掉了」。
+
+---
+
 ## Tailscale Serve 設定
 
 在 RPi **host** 上執行（Docker 容器內無 tailscale CLI）：
