@@ -420,6 +420,44 @@ routes `enrich_bookmark` 的 `not should_enrich` 分支：bilibili 先 `fetch_ti
 
 實測案例：使用者說「補齊沒生效」，log 顯示他只按了 #64（成功補齊「长期稳定的免费token」），#62/#63 從沒被按過 — 是誤解不是 bug。
 
+## 🔴 網頁版新增書籤失效調查（2026-08-02，修復中）
+
+**現象**：使用者報「網頁版的新增書籤功能失效」（點新增沒反應/列表不更新）。
+
+### 關鍵診斷技術 — log 先行前端/後端分流
+
+先看 access log（`/tmp/bookmark-manager.log`）使用者訪問時段**有沒有 `POST /api/bookmarks`**：
+- **完全沒有** → 前端問題（表單沒送出 / JS 壞 / PWA 快取），**別去查後端路由**（endpoint 用 curl 實測即可證明正常）
+- 有 POST 但 4xx/5xx → 後端問題
+
+### 已確認事實（2026-08-02 調查）
+
+- server 活（HTTP 200）+ 端點全正常：curl 實測 `POST /api/bookmarks` 200（HX-Request 回列表 HTML）、`POST /api/bookmarks/fetch-meta-form` 200
+- 使用者訪問時段（19:31-19:33）log 只有 GET（/、/bookmarks、/sw.js、/stats），**零 POST** → 前端問題
+- 🔴 **巢狀 `id="bookmark-list"` 確認存在**：`<main id="bookmark-list">` 內 `{% include '_bookmark_list.html' %}` 根元素也是 `<div id="bookmark-list">` → 重複 id → `hx-target="#bookmark-list"` 歧義（詳見 htmx-frontend skill「重複 id 陷阱」）
+- 使用者多次請求 `/sw.js` → 正在用 PWA（cache v2）→ H1 嫌疑大
+- htmx 2.0.4
+
+### ✅ 根因確認 + 修復（commit `d7b6dd0`，2026-08-02）
+
+**使用者回報**：點「➕ 新增書籤」表單**沒有彈出來**。
+
+**根因（排除法 + 渲染 HTML 分析）**：
+- Server、POST endpoint、fetch-meta-form、htmx 2.0.4 全部正常（curl 實測 200）
+- 渲染後 HTML 中 **`add-form` div 在 `<main>`（書籤列表）之後**（line 2165，`</main>` 在 2160）→ 點「➕」執行 `display:flex` **成功**，但表單出現在**頁面最底部**（20 筆卡片畫面外）→ 看起來「沒彈出來」
+- 附帶 bug：**巢狀 `id="bookmark-list"`**（`<main id="bookmark-list">` + include 的 partial 根 `<div id="bookmark-list">`）→ 重複 id
+
+**修復（3 項）**：
+1. **`add-form` 移到 `<header>` 正下方**（search-bar 前）→ 點「➕」表單彈在頂部，立即可見
+2. **`<main>` id 改 `bookmark-list-slot`** → 消除巢狀 id；partial 根保留 `id="bookmark-list"`（HTMX swap 後新元素仍需此 id 供後續 target）
+3. **sw.js cache bump v2 → v3**（每次 UI 改版都要 bump，見上方 PWA 坑）
+
+**驗證**：渲染後 HTML 確認 add-form 在 header 後（line 28）、`bookmark-list` id 唯一（grep -c = 1）、sw.js v3、POST 200 + 回傳列表 HTML。
+
+**⚠️ 教訓（給未來的自己）**：
+- 「表單沒彈出來」先檢查表單元素在 HTML 的**位置**，不是只看 onclick/JS — inline onclick 正常但元素在畫面外 = 使用者看到「沒反應」
+- 巢狀 id 是 HTMX 的隱形殺手：`hx-target="#id"` 會命中第一個匹配，swap 後行為難預測。容器元素（main）與 partial 根**絕不能共用 id**
+
 ## 分頁功能（2026-08-02 commit `729bd5e`）
 
 **設計（使用者確認方案 A）**：依裝置動態 page size — 手機 10 筆/頁（單欄 ~2.5 屏）、桌機 20 筆/頁。**篩選條件（tag/search/starred/read/type）一路套用**到所有分頁。

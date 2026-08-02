@@ -76,6 +76,22 @@ function refreshWithDelay() {
 - 若需掛在 reverse proxy 子路徑下（如 `/bm/`），所有 `/` 前綴路徑需改成相對路徑
 - **最佳實踐**：HTMX 應用掛 proxy root `/`，不要用子路徑
 
+## 🔴 重複 id 陷阱（partial include 巢狀同名 id）
+
+Flask/Jinja 慣例是包裝元素 + `{% include %}` partial，若兩者 id 相同 → 渲染後 DOM 有**兩個相同 id**：
+
+```html
+<main class="content" id="bookmark-list" hx-trigger="load" ...>
+    {% include '_bookmark_list.html' %}   <!-- 根元素也是 <div id="bookmark-list"> -->
+</main>
+```
+
+- `hx-target="#bookmark-list"` 變成歧義 → HTMX 可能 swap 到錯誤元素，表單提交後列表不更新/區塊消失
+- `document.getElementById('bookmark-list')` 永遠只拿到第一個
+- **修法**：partial 根元素不要與包裝元素同 id（partial 改 id，或包裝元素不給 id、target 直接指 partial 自己的 id）
+
+診斷：`curl -s http://127.0.0.1:5001/ | grep -c 'id="bookmark-list"'` — 出現 2 次以上即中招。
+
 ## 常見模式
 
 ### 表單提交
