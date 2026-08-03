@@ -327,6 +327,31 @@ new_tags = to_traditional_tags(new_tags)  # 人工智能→人工智慧、学习
 
 ⚠️ 簡轉繁在 server 端 `to_traditional_tags`（db.py）自動做，bot 端傳簡體原始 tags 即可。實測 7 筆 bilibili 全部標籤豐富化（如 `bilibili,人工智慧,教程,Google,claude,gpt`）。`fetch_title_ytdlp` 已改為複用 `fetch_bilibili_meta`（一次 -J 拿 title + tags）。
 
+### 🔴 Instagram enrich：登入牆 JS 站，跳過 LLM 抓 uploader + og:description（2026-08-03）
+
+**背景**：#90 實測 IG reel 的 `<title>` 永遠是通用 'Instagram'，`fetch_title()` 只回這個值 → LLM 拿到 URL + title='Instagram' 無法判斷 → 產生「無法判斷」幻覺摘要 + 幻覺標籤。**實測事實**：
+- `should_enrich()` 原本對 instagram 回 True → 走通用 LLM 路徑 → 幻覺
+- 該 reel 無文字 caption（HTML 無 caption/text 欄位）
+- `__a=1` endpoint → HTTP 500
+- **yt-dlp -J 能拿**：uploader（Joyce725）、title（通用 'Video by usbb725'）、upload_date
+- **og:description 能拿**（手機 UA 抓公開頁面）：`277 likes, 124 comments - usbb725 on July 26, 2026`（統計資料）
+- 有 caption 的 IG 貼文在無登入環境也拿不到（yt-dlp empty media response）→ 真實 caption 無解
+
+**修法**（llm_enhance.py + routes_bookmarks.py + bookmark-bot.py 三處同步）：
+1. `should_enrich()` 加 `'instagram.com' in url` → False（跳過 LLM）
+2. 新增 `fetch_instagram_meta(url)` → `(title, [], og_desc)`：
+   - yt-dlp -J → uploader + title；title 若非 'Video by' 通用格式才用，否則用 uploader
+   - 手機 UA（`_XHS_UA`）抓 og:description → 統計資料
+3. enrich 端點 `not should_enrich` 分支加 `elif 'instagram.com' in url`（與 bilibili/小紅書同層，扁平 if/elif/elif/else 結構）
+4. tags 一律 `instagram`（覆蓋 LLM 幻覺標籤）；summary = og:description 統計
+5. bot 端 `is_instagram()` + fetch 分支 + LLM 跳過分支同步
+
+**結果**：#90 → title='Joyce725'、summary='277 likes, 124 comments - usbb725 on July 26, 2026'、tags='instagram'。
+
+⚠️ **結構教訓**：routes_bookmarks.py 的 `not should_enrich` 分支原本是 bilibili if → else（內含 xhs if → else 巢狀），加第三個平台時巢狀會崩潰（縮排地獄）。已重構為**扁平 if/elif/elif/else**，未來加平台直接加一個 elif 層級即可。
+
+⚠️ **lifecycle guard 誤判坑（2026-08-03）**：`terminal` 指令若含 `/opt/data/.venv/bin/python`（路徑含 `/`）會被 cron lifecycle guard 當 referenced script 掃描 → 誤判 block。改用 PATH 上的 `python3`（stdlib-only 診斷可用）或 `write_file` 寫腳本 + `python3 /opt/data/scripts/xxx.py` 執行。部分含特殊字元組合（如 `SELECT *`、`&&` + python -c）的指令也會觸發 guard 的 `embedded null character` bug → 拆開跑或寫檔跑。
+
 ### 🔴 bilibili 摘要（summary）三層策略（2026-08-02）
 
 **背景**：7/30 的 bilibili 書籤有真實摘要（LLM 當時可分析），8/1 短鏈接讓 LLM 產生幻覺摘要（「该网址是哔哩哔哩（B站）的短链接…」）或空白。

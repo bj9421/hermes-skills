@@ -159,14 +159,14 @@
     "archived_at": null,
     "created_at": "2026-07-09T18:37:31.164418+00:00",
     "created_by": null,
-    "last_patched_at": "2026-07-17T08:47:41.048678+00:00",
-    "last_used_at": "2026-08-02T18:50:52.279647+00:00",
-    "last_viewed_at": "2026-08-02T18:50:52.265844+00:00",
-    "patch_count": 27,
+    "last_patched_at": "2026-08-03T00:53:43.418302+00:00",
+    "last_used_at": "2026-08-03T01:02:44.413305+00:00",
+    "last_viewed_at": "2026-08-03T01:02:44.394872+00:00",
+    "patch_count": 28,
     "pinned": false,
     "state": "active",
-    "use_count": 69,
-    "view_count": 69
+    "use_count": 71,
+    "view_count": 71
   },
   "baoyu-infographic": {
     "archived_at": null,
@@ -862,13 +862,13 @@
     "created_at": "2026-08-02T11:33:29.593356+00:00",
     "created_by": null,
     "last_patched_at": null,
-    "last_used_at": "2026-08-02T11:33:29.606682+00:00",
-    "last_viewed_at": "2026-08-02T11:33:29.593409+00:00",
+    "last_used_at": "2026-08-03T01:45:11.016684+00:00",
+    "last_viewed_at": "2026-08-03T01:45:10.992811+00:00",
     "patch_count": 0,
     "pinned": false,
     "state": "active",
-    "use_count": 1,
-    "view_count": 1
+    "use_count": 2,
+    "view_count": 2
   },
   "hermes-desktop-plugins": {
     "archived_at": null,
@@ -1394,14 +1394,14 @@
     "archived_at": null,
     "created_at": "2026-07-30T14:54:38.556610+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-08-02T12:05:19.766925+00:00",
-    "last_used_at": "2026-08-02T12:05:08.340013+00:00",
-    "last_viewed_at": "2026-08-02T12:05:08.327450+00:00",
-    "patch_count": 54,
+    "last_patched_at": "2026-08-03T01:56:24.797783+00:00",
+    "last_used_at": "2026-08-03T01:45:11.046051+00:00",
+    "last_viewed_at": "2026-08-03T01:45:11.031298+00:00",
+    "patch_count": 56,
     "pinned": false,
     "state": "active",
-    "use_count": 44,
-    "view_count": 44
+    "use_count": 45,
+    "view_count": 45
   },
   "petdex": {
     "archived_at": null,
