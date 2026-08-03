@@ -64,6 +64,22 @@ Only when the path is one or more `https://github.com/...` URLs, or several loca
 
 ### Step 1 - Ensure graphify is installed
 
+**Before installing anything, check for existing installs outside PATH.** A project often has its own venv (e.g. `.venv_graphify/`, `.venv/`) that `which` / `import` in the current interpreter will NOT find. Do NOT jump to install when detection fails — look first:
+
+```bash
+# 1. Scan the target project for its own venv(s) and any graphify install
+find "$INPUT_PATH" -maxdepth 3 -name ".venv*" -type d 2>/dev/null
+find "$INPUT_PATH" -maxdepth 4 -path "*/bin/graphify*" 2>/dev/null
+# 2. Check .gitignore / requirements for declared tool env (e.g. a .venv_graphify/ line)
+grep -n "graphify\|venv" "$INPUT_PATH/.gitignore" "$INPUT_PATH/requirements.txt" 2>/dev/null
+# 3. If a project venv is found, test ITS interpreter directly
+for _v in "$INPUT_PATH"/.venv_graphify/bin/python "$INPUT_PATH"/.venv/bin/python; do
+    [ -x "$_v" ] && "$_v" -c "import graphify" 2>/dev/null && { PYTHON="$_v"; break; }
+done
+```
+
+If any of these finds a working graphify, set PYTHON to that interpreter and skip installation entirely. Only proceed to install when ALL of the above come up empty — and even then, treat `uv tool install` / `pip install` failures (exit 127, permission errors) as environment problems, NOT as "not installed", and stop to re-check for existing installs rather than working around the environment.
+
 ```bash
 # Detect the correct Python interpreter (handles uv tool, pipx, venv, system installs)
 PYTHON=""

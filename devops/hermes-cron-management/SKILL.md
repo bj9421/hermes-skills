@@ -491,7 +491,8 @@ This is how no_agent handles it:
 | 腳本行為 | no_agent 反應 | 使用者收到 |
 |---------|--------------|---------|
 | `exit 0` + **無 stdout** | ✅ exit 0 + 空輸出 = **安靜（不發任何訊息）** | 🤐 沒事就是最好的消息 |
-| `exit ≠ 0` + stderr/訊息 | ⚠️ 排程器自動通知 | 錯誤通知送達 |
+| `exit 0` + **有 stdout** | ✅ exit 0 + 非空輸出 = **報告原樣送出**（no_agent 成功路徑 verbatim 送 stdout） | 📋 完整報告 |
+| `exit ≠ 0` + stderr/訊息 | ⚠️ 排程器通知，但**輸出會被 failure summarizer 改寫**（見下方 EXIT-CODE CONTRACT） | ⚠️ 可能是誤導模板 |
 
 ### 實作方式
 
@@ -516,6 +517,18 @@ fi
 - exit 1 + 錯誤訊息 → 使用者收到 raw error，沒有 LLM 幫忙分析
 - 如果你的 watchdog 需要錯誤時智慧處理（retry、判斷嚴重性、摘要），請保留 LLM 模式
 
+### ⚠️ EXIT-CODE CONTRACT（2026-08-03 scheduler 誤報 bug 實測）
+
+**事實：no_agent 失敗（exit ≠ 0）的輸出不會原樣送達。** Hermes scheduler 會把 script stdout 丟進 `_summarize_cron_failure_for_delivery()`（`/opt/hermes/cron/scheduler.py` line 3989 一帶；no_agent 正確 alert 在 line 2828 被丟棄），該函數用**關鍵字比對**選錯誤模板 — stdout 含 `TimeoutError` / `timeout` 字樣 → 誤選「⚠️ Cron 'X' failed: provider timeout. Fallback chain was exhausted」模板，即使 job 根本是 no_agent、provider 完全沒掛。
+
+**真實案例：** `cron-watchdog-fast`（6f64a0b2995b，no_agent）偵測到 finmind job 的 `TimeoutError` → exit 1 → 使用者收到「provider timeout. Fallback chain was exhausted」誤導通知。job 本身沒問題，是 scheduler 的 bug。
+
+**修法（腳本層，不能 patch /opt/hermes — 那是安裝目錄，Docker 重建會被覆蓋）：**
+
+> **有報告要送 → `exit 0` + 報告寫 stdout。** no_agent 成功路徑會把非空 stdout 原樣送出。只有「無事可報」才 exit 0 + 空輸出（安靜）；只有接受輸出可能被誤判改寫時才 exit 1。
+
+實測：`cron_watchdog.py` 改 `exit 0` + 報告在 stdout → 下個 10 分鐘 tick `last_status: ok`、使用者收到完整報告、無誤報。⚠️ 附註：exit 0 且 stdout 非空仍會過 wake-gate 檢查，但 wake gate 只解析最後一行是否為 JSON `{"wakeAgent": false}`，一般報告不會誤觸。
+
 ### 適用場景
 
 | 適合此模式 | 不適合 |
@@ -536,6 +549,21 @@ fi
 ```
 
 使用者接受這個 trade-off — 如果腳本本身的錯誤訊息就夠清楚（HTTP 503、disk full），不需要 LLM 翻譯。如果需要智慧處理，保留 LLM 模式或把錯誤處理邏輯寫進腳本本身。
+
+### 常駐服務（固定 port server / daemon）用 cron watchdog 當 spawner，不要用 s6
+
+要在容器內長期跑一個服務（固定 port 的靜態 server、bot、daemon），**不要加 s6 service** — s6 服務定義在 Docker image 內（`/opt/hermes/docker/s6-rc.d/<svc>/run`，由 `user/contents.d/` 聚合），容器升級重建就被覆蓋，加了等於沒加。`/etc/s6-overlay/s6-rc.d/user{2}/` 只是 bundle（`type: bundle`），指向內建服務。詳見 `hermes-s6-container-supervision` skill 的 topology。
+
+持久方案 = **cron no_agent watchdog 兼 spawner**：
+
+1. Watchdog script（Python）：`socket.connect_ex(('127.0.0.1', port))` 檢查 port；沒 listen 就用 `subprocess.Popen([sys.executable, '-m', 'http.server', str(port), '--bind', '0.0.0.0'], cwd=SERVE_DIR, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)` 拉起來 — `start_new_session=True` 讓 server 脫離 cron runner，cron 結束不會一起死。
+2. 只印 stdout 在有動作時（重啟）；健康時完全靜默 → no_agent 不會發通知。
+3. `cronjob action=create name=<x>-watchdog schedule="every 5m" script="<x>-watchdog.py" no_agent=true`。
+4. Job 定義在 `/opt/data/cron/jobs.json`（bind mount → 容器重建後自動載入），watchdog 下個 tick 就把服務拉回來。
+
+已部署範例：`/opt/data/scripts/graphify-server-watchdog.py`（serves bookmark-manager graphify-out on 5050，cron `graphify-server-watchdog` 15ef94840148）；`/opt/data/scripts/bookmark-bot-watchdog.py`（bot 重啟 + code-hash 偵測）。
+
+**對外存取前提：** host 必須有 port 映射（`docker ps --format '{{.Names}}\t{{.Ports}}'` 看得到 `0.0.0.0:5050->5050`），否則容器內 listen 也沒用；沒映射要重建容器加 `-p`（需使用者同意，會短暫斷線）。
 
 ## no_agent Conversion Assessment
 
@@ -779,7 +807,7 @@ Agent 收到通知後只回報錯誤、等用戶指示 → 用戶認為「按規
 ```
 every 10m → cron_watchdog.py (no_agent)
   ├─ exit 0 + 空 stdout → 安靜（不通知用戶）
-  └─ exit 1 + 報告 → 通知用戶（自動修復 + 需人工的診斷）
+  └─ exit 0 + 報告 stdout → 原樣送出給用戶（2026-08-03 起；exit 1 會被 failure summarizer 改寫，見 EXIT-CODE CONTRACT）
 ```
 
 ### 自動修復範圍
@@ -802,6 +830,8 @@ every 10m → cron_watchdog.py (no_agent)
 **腳本路徑：** `/opt/data/scripts/cron_watchdog.py`（同時存在 `~/.hermes/scripts/` 供 cron 使用）
 **建立時間：** 2026-07-25
 **Cron job ID：** `6f64a0b2995b`（name: `cron-watchdog-fast`）
+
+⚠️ **副本分歧陷阱（2026-08-03）：** 改 `/opt/data/scripts/cron_watchdog.py` 時發現 `/opt/data/.hermes/scripts/cron_watchdog.py` 是**舊版**（缺 self-skip、仍是 exit 1）。Patch 後務必 `diff` 兩副本並同步，或用下次 tick 的 `last_status` + 使用者收到的訊息內容確認哪個是 live。本 session 實測：patch `/opt/data/scripts/` 版後下個 tick 生效（`last_status: ok`、無誤報）→ live 是 `/opt/data/scripts/` 版。
 
 ### 建立步驟（供未來重建參考）
 

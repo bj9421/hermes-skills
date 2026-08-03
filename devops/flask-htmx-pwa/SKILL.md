@@ -113,6 +113,18 @@ sw.js 用 network-first + cache fallback：**server 資料已修好、手機仍�
 
 ---
 
+## Flask+SQLite 測試 pattern（2026-08-03 實戰）
+
+Flask app 上 pytest 前先處理三件事（否則測試卡真實網路/LLM、或 database locked）：
+
+1. **每測試獨立臨時 DB**：`tempfile.mkdtemp()` → 覆寫 `db.DB_PATH`（import app **前**）→ `db.init_db()` → yield app → cleanup（unlink db/-wal/-shm）。完整範本見 `templates/conftest_flask_sqlite.py`
+2. **autouse fixture monkeypatch 所有外部副作用**：`fetch_title`/`llm_enhance`/`extract_favicon` 回傳空、背景 worker（`_ensure_worker`）no-op — worker thread 會佔住臨時 DB → **database locked**
+3. 測 route 用 `app.test_client()`；測 HTMX 分支帶 `headers={'HX-Request': 'true'}`
+
+🔴 **HTMX 端點回傳陷阱**：任何可能被 HTMX `hx-post` + `hx-target` 呼叫的端點，必須依 `request.headers.get('HX-Request') == 'true'` 分流 — HTMX 回 HTML fragment（回 JSON 會把 JSON 字串塞進 swap 目標），API/bot 才回 JSON。bookmark-manager 的 enrich、add_bookmark duplicate 都踩過此坑。
+
+---
+
 ## Tailscale Serve 設定
 
 在 RPi **host** 上執行（Docker 容器內無 tailscale CLI）：
