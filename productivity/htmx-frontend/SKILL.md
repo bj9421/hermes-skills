@@ -127,6 +127,28 @@ def add_bookmark():
     return jsonify({'ok': True})
 ```
 
+### 🔴 連結上的 side-effect：`hx-post` 會 preventDefault 破壞跳轉 → 用 `hx-on::click` + `htmx.ajax()`（2026-08-04 實測）
+
+**陷阱：** 在 `<a href="..." target="_blank">` 上加 `hx-post="/api/..."`（想「點擊時順便發請求」），
+HTMX 會對帶 `hx-*` 屬性的 `<a>` **preventDefault** → 新分頁不會開，只剩 AJAX 發出去。連結壞掉。
+
+**正確做法：** 用 `hx-on::click` + `htmx.ajax()` 發**不 swap 的 side-effect 請求**，默認行為完全不受影響：
+
+```html
+<a href="{{ bm.url }}" target="_blank" rel="noopener"
+   hx-on::click="htmx.ajax('POST','/api/bookmarks/{{ bm.id }}/mark-read',{swap:'none'}); setTimeout(()=>htmx.ajax('GET','/stats',{target:'#stats-card',swap:'outerHTML'}),300)">
+    {{ bm.title }}
+</a>
+```
+
+要點：
+- `htmx.ajax(method, url, {swap:'none'})` — 純 side-effect，不攔截預設行為、不換 DOM
+- 需要即時刷新其他區塊時，`setTimeout` 之後再 `htmx.ajax('GET', ...)` 手動抓（不要塞在同一 click 內）
+- 後端 route 照常回 `jsonify({'ok': True})`（`swap:'none'` 時回應內容不進 DOM）
+- 這仍符合零自訂 JS 原則：`htmx.ajax` 是 HTMX 內建 API，不是手寫 fetch
+
+**判斷口訣：** 連結要「開了又順便記一筆」→ `hx-on::click` + `htmx.ajax`；連結要「點擊就換內容」→ 才用 `hx-get/hx-post` + `hx-swap`。
+
 ### Inline 編輯模式（✏️ 卡片內編輯）
 
 適合清單中每筆資料的快速編輯，不開 modal、不跳頁。
