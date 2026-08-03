@@ -17,13 +17,13 @@
     "created_at": "2026-06-17T19:38:01.377817+00:00",
     "created_by": null,
     "last_patched_at": "2026-07-13T10:17:14.570969+00:00",
-    "last_used_at": "2026-08-02T09:01:38.225425+00:00",
-    "last_viewed_at": "2026-08-02T09:01:38.211582+00:00",
+    "last_used_at": "2026-08-03T09:00:34.495276+00:00",
+    "last_viewed_at": "2026-08-03T09:00:34.482346+00:00",
     "patch_count": 30,
     "pinned": false,
     "state": "active",
-    "use_count": 55,
-    "view_count": 55
+    "use_count": 56,
+    "view_count": 56
   },
   "airtable": {
     "archived_at": null,
@@ -835,14 +835,14 @@
     "archived_at": null,
     "created_at": "2026-07-10T12:39:38.045007+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-08-02T18:52:03.736864+00:00",
-    "last_used_at": "2026-08-02T18:51:09.615325+00:00",
-    "last_viewed_at": "2026-08-02T18:51:09.603101+00:00",
-    "patch_count": 61,
+    "last_patched_at": "2026-08-03T09:04:08.176406+00:00",
+    "last_used_at": "2026-08-03T09:03:48.879893+00:00",
+    "last_viewed_at": "2026-08-03T09:03:48.865411+00:00",
+    "patch_count": 62,
     "pinned": false,
     "state": "active",
-    "use_count": 100,
-    "view_count": 100
+    "use_count": 101,
+    "view_count": 101
   },
   "hermes-dashboard-troubleshooting": {
     "archived_at": null,
@@ -1680,14 +1680,14 @@
     "archived_at": null,
     "created_at": "2026-06-05T04:42:21.059808+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-08-01T13:18:30.101144+00:00",
-    "last_used_at": "2026-08-01T13:17:31.882992+00:00",
-    "last_viewed_at": "2026-08-01T13:17:31.869829+00:00",
-    "patch_count": 229,
+    "last_patched_at": "2026-08-03T09:04:37.146244+00:00",
+    "last_used_at": "2026-08-03T09:04:14.033376+00:00",
+    "last_viewed_at": "2026-08-03T09:04:14.020038+00:00",
+    "patch_count": 232,
     "pinned": false,
     "state": "active",
-    "use_count": 257,
-    "view_count": 257
+    "use_count": 258,
+    "view_count": 258
   },
   "taiwan-stock-finmind-pipeline": {
     "archived_at": "2026-07-09T13:55:42.635991+00:00",
