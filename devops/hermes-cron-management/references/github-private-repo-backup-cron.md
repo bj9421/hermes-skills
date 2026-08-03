@@ -72,7 +72,29 @@ cron：`cronjob action=create name=<repo>-github-backup script="<repo>-backup.sh
 - push 失敗 → exit ≠ 0 → 排程器通知。
 - 頻率與 skills backup 一致（2h）；`deliver: origin`。
 
-## 6. 公開/私有隔離原則（用戶硬性要求）
+## 6. 🔴 多機協作下的 non-fast-forward（push 被拒，2026-08-03 實戰）
+
+push-only 備份腳本在 **repo 變成 multi-machine 拓撲後必然 periodic 失敗**：另一台機器（實例：Pi 3 推入 `DEPLOY-PI3.md` 等 5 commits）推進 remote 後，本機 push 被拒：
+
+```
+! [rejected]  main -> main (non-fast-forward)
+hint: Updates were rejected because the tip of your current branch is behind
+```
+
+**診斷（先證明 remote commits 在本地祖先鏈 → 可安全 FF）：**
+```bash
+git fetch "https://oauth2:${PAT}@github.com/<owner>/<repo>.git" main
+git rev-list --left-right --count FETCH_HEAD...HEAD        # 1  9  = 遠端獨有 1、本地獨有 9
+git merge-base --is-ancestor <remote-commit> HEAD          # yes → fast-forward 安全
+```
+**修法（FF merge 後再 push，絕不 `--force`）：**
+```bash
+git merge FETCH_HEAD -m "Merge remote commits from <machine>"
+bash /opt/data/scripts/<repo>-backup.sh                     # 重跑 → exit 0
+```
+**腳本層硬化選項：** (a) push 前 `git fetch` + `git merge FETCH_HEAD`（FF 安全，非 FF 會 fail loud 留給人工）；(b) 接受失敗由 watchdog / 每日盤查補救。實戰中採 (b) — 盤查時 fetch+merge+push 一氣呵成，10 commits 同步成功。
+
+## 7. 公開/私有隔離原則（用戶硬性要求）
 
 - 每個專案獨立 git repo、獨立 remote；備份腳本**寫死路徑**，不會跨 repo push。
 - 私專案（如 bookmark-manager）**永遠只進私 repo**；公開 repo（hermes-skills / HA-POWERS-Docs）維持現狀。
