@@ -381,13 +381,13 @@
     "created_at": "2026-07-22T00:56:59.271313+00:00",
     "created_by": null,
     "last_patched_at": "2026-08-02T15:58:08.930032+00:00",
-    "last_used_at": "2026-08-03T16:04:48.772736+00:00",
-    "last_viewed_at": "2026-08-03T16:04:48.754082+00:00",
+    "last_used_at": "2026-08-04T15:55:41.342874+00:00",
+    "last_viewed_at": "2026-08-04T15:55:41.331053+00:00",
     "patch_count": 1,
     "pinned": false,
     "state": "active",
-    "use_count": 7,
-    "view_count": 7
+    "use_count": 8,
+    "view_count": 8
   },
   "dashboard-web-debugging": {
     "archived_at": null,
@@ -926,14 +926,14 @@
     "archived_at": null,
     "created_at": "2026-07-11T18:51:49.608784+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-08-01T15:13:17.585755+00:00",
-    "last_used_at": "2026-08-01T15:11:59.089786+00:00",
-    "last_viewed_at": "2026-08-01T15:11:59.076259+00:00",
-    "patch_count": 40,
+    "last_patched_at": "2026-08-04T15:01:41.244655+00:00",
+    "last_used_at": "2026-08-04T15:28:47.896794+00:00",
+    "last_viewed_at": "2026-08-04T15:28:47.855054+00:00",
+    "patch_count": 45,
     "pinned": false,
     "state": "active",
-    "use_count": 57,
-    "view_count": 57
+    "use_count": 70,
+    "view_count": 70
   },
   "hermes-s6-container-supervision": {
     "archived_at": "2026-07-09T20:35:46.837005+00:00",
@@ -1330,13 +1330,13 @@
     "created_at": "2026-07-16T12:44:25.471676+00:00",
     "created_by": "agent",
     "last_patched_at": "2026-08-03T16:15:07.406042+00:00",
-    "last_used_at": "2026-08-03T16:14:57.821957+00:00",
-    "last_viewed_at": "2026-08-03T16:14:57.808723+00:00",
+    "last_used_at": "2026-08-04T15:58:15.639476+00:00",
+    "last_viewed_at": "2026-08-04T15:58:15.626473+00:00",
     "patch_count": 25,
     "pinned": false,
     "state": "active",
-    "use_count": 25,
-    "view_count": 25
+    "use_count": 26,
+    "view_count": 26
   },
   "obsidian-vault-cleanup": {
     "archived_at": null,
@@ -1408,13 +1408,13 @@
     "created_at": "2026-07-30T14:54:38.556610+00:00",
     "created_by": "agent",
     "last_patched_at": "2026-08-04T12:57:52.700944+00:00",
-    "last_used_at": "2026-08-04T12:53:29.400403+00:00",
-    "last_viewed_at": "2026-08-04T12:53:29.386738+00:00",
+    "last_used_at": "2026-08-04T15:28:47.910048+00:00",
+    "last_viewed_at": "2026-08-04T15:28:47.868475+00:00",
     "patch_count": 78,
     "pinned": false,
     "state": "active",
-    "use_count": 57,
-    "view_count": 57
+    "use_count": 59,
+    "view_count": 59
   },
   "petdex": {
     "archived_at": null,

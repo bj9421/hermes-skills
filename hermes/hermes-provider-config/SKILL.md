@@ -24,7 +24,7 @@ When encountering provider errors or any tool failures:
 
 **Do NOT** just report an error and stop waiting for instructions. The user expects proactive resolution.
 
-See `references/multi-provider-cascade-failure.md` for full diagnostic procedures, `references/opencode-troubleshooting.md` for OpenCode-specific issues, and `references/provider-status-testing.md` for the parallel curl-testing workflow to evaluate fallback health in real time.
+See `references/multi-provider-cascade-failure.md` for full diagnostic procedures, `references/opencode-troubleshooting.md` for OpenCode-specific issues, `references/provider-status-testing.md` for the parallel curl-testing workflow, and `references/nvidia-nim-free-models.md` for tested NIM free models.
 
 ---
 
@@ -178,6 +178,34 @@ custom_providers:
 - When a model is deprecated, add the new name alongside the old one — no downtime
 
 **Common error during migration:** If the config still has `model:` (singular) alongside `models:` (dict), Hermes ignores `models:`. Remove the old `model:` field entirely.
+
+## Reasoning Models (step-3.7-flash, DeepSeek R1, etc.)
+
+Reasoning models return **two output fields**:
+
+| Field | Content |
+|-------|---------|
+| `content` | Final response (may be `null` if max_tokens too small) |
+| `reasoning` | Chain of thought / thinking process |
+| `reasoning_content` | Same as `reasoning` (redundant) |
+
+**Critical: max_tokens must be large enough for reasoning to complete**
+- `max_tokens < 100` → reasoning gets truncated, `content` stays `null`
+- **Official NVIDIA recommendation: `max_tokens: 16384`** for step-3.7-flash
+- Minimum usable: `max_tokens >= 200` for reasoning models
+- Check `finish_reason: "length"` to detect truncation
+
+**If `content` is `null`:**
+1. Check `finish_reason` — if `"length"`, increase `max_tokens`
+2. Check `reasoning` field — model did respond, just truncated
+3. Retry with `max_tokens >= 500` for complex prompts
+
+**Real-world test (2026-08-04):**
+- `max_tokens: 50` → content=null, reasoning truncated
+- `max_tokens: 1000` → content="我是Step...", reasoning present
+- `max_tokens: 16384` → official recommendation, full output
+
+See `references/nvidia-nim-free-models.md` for tested free models list and known issues.
 
 ## Non-Chat APIs (Image Gen, TTS, Embeddings)
 
@@ -422,6 +450,14 @@ API 回 429 (Too Many Requests)
 **語意提醒：** Hermes 內建是**反應式**（撞 429 後退避/fallback）；自家 script 的 RPM limiter 是**主動式**（呼叫前先等間隔避免 429）— 兩者互補，不是替代。
 
 ## Pitfalls
+
+### NVIDIA NIM Free Tier Quirks
+- Free endpoints have **40 RPM limit** per account
+- Models may return 529 (overloaded) during peak hours
+- `stepfun-ai/step-3.7-flash` requires `max_tokens >= 200` or content is null
+- Some models (deepseek-v4-flash, llama-3.1-70b) are frequently overloaded
+- Use `z-ai/glm-5.1` as fallback when step-3.7-flash is slow
+- Intermittent 500 errors on free tier — retry with backoff
 
 ### Cascade Failure Pattern
 When ALL providers in your fallback chain fail simultaneously with DIFFERENT error codes (e.g., 500 + 503 + 401), this is almost certainly an **upstream issue**, not a config problem. Do NOT spend time debugging configs — search the web first.
