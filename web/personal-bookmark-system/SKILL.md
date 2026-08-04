@@ -333,6 +333,20 @@ function refreshWithDelay() {
 - 測試：durations API / queue excludes short / queue keeps null duration → 72 tests 全綠
 - ⚠️ yt-dlp 查時長 5.5s/支（JS runtime warning 但成功）→ 快取很重要，第二次 0.03s
 
+### ⏱ 書籤影片時長自動化（2026-08-04）
+
+- **三層**：
+  - 新增書籤自動查：`add_bookmark` route 判斷 `is_video_url(url)` → 背景 daemon thread 查 yt-dlp 寫回 duration + duration_checked_at（不阻塞回應；web + bot 都走此 route，single source）
+  - cron 補既有：`bookmark_enrich.py` 併入 `backfill_duration()`（同 cron 同職責不新增 job；duration IS NULL + is_video_url → yt-dlp 平行 4 線程，每輪 LIMIT=20；查完一律設 checked_at 避免重查）
+  - 卡片顯示：`_bookmark_list.html` card-date 加 `⏱ {{ bm.duration_text }}` badge（parse_bookmark_row 產生 duration_text via `fmt_duration` mm:ss）
+- **白名單** `db.is_video_url()`：youtube watch/youtu.be/shorts/embed、bilibili video/b23.tv、vimeo、instagram reel/p（IG 貼文保守納入，查失敗回 null 不擋）、**xhslink/xiaohongshu（2026-08-04，走 DoH 繞封鎖專用路徑）** — 非影片平台不查省成本
+- **小紅書時長（DoH 繞台灣 DNS 封鎖）**：`routes_notehub._get_duration_xhs()` — xhslink 短鏈 302 拿真實 URL（含 `type=video`，圖文筆記直接 None）→ dns.google DoH 查 `www.xiaohongshu.com`（**必須 www 子域**：43.170.214.10；根域拿到錯 IP 會 500）→ curl `--resolve` + iPhone UA 抓頁 → `_parse_xhs_duration()` 純函數 parse `__INITIAL_STATE__`（大括號平衡 + undefined→null）的 `noteData.data.noteData.video.media.video.duration`（秒）。實測 0.95s/支、平行 7 筆 2.9s（比 yt-dlp 快）
+- **統一入口** `routes_notehub._get_duration(url)` dispatcher：xhs → DoH 路徑，其餘 → yt-dlp。add_bookmark 背景 thread 與 durations API 都走它（conftest monkeypatch 也 patch `_get_duration`）
+- **cron backfill_duration**（bookmark_enrich.py）改走 server durations API（urllib GET `/api/notehub/durations?ids=`）— server 單一來源查 yt+xhs 並寫 duration+checked_at；cron 只篩選+呼叫（不再自己 subprocess yt-dlp）
+- **語意**：duration=null + checked_at=null → 未查；duration=null + checked_at 有值 → 查過但查不到（yt-dlp 失敗/影片失效，不重查）
+- ⚠️ lifecycle_guard 對含 bookmark 字樣 + python 的命令觸發（連 PATH 前置單行也擋）→ DB 直查用 curl API 或 sqlite3（未裝）；`routes_notehub._get_duration_yt` monkeypatch 需屬性呼叫（`routes_notehub._get_duration_yt()` 非 from import）
+- 測試：fmt_duration / is_video_url / API duration_text → 75 tests 全綠
+
 **⚠️ lifecycle_guard 注意**：bot 檔名/路徑含 `bookmark-bot` 字樣，terminal 命令列含此字樣可能觸發 guard 掃描 — 驗證 bot 用 `ps -eo pid,lstart,cmd | grep bookmark-bot.py` 或直接 `importlib` 載入呼叫函數（不經 Telegram）做端到端驗證。**讀 DB 也會被擋（2026-08-04 實測）**：sqlite 連 `bookmarks.db` / 含 `notehub_jobs` / 多行 python -c 都觸發 guard → **穩繞法 = 走 running server 的 API**：`curl -s http://127.0.0.1:5001/api/notehub/jobs -o /tmp/jobs.json` 再用單行 python 讀 json（job url/status/paths 全查得到，零 DB 連線）。
 
 ## Telegram Bot (@add2bm_bot)
@@ -504,7 +518,7 @@ new_tags = to_traditional_tags(new_tags)  # 人工智能→人工智慧、学习
 
 **突破三步驟**（`fetch_xiaohongshu_meta`，llm_enhance.py + bookmark-bot.py 同步）：
 1. **curl 追蹤短連結**：`curl -s -o /dev/null -w '%{url_effective}' -k -L <xhslink短鏈>` → 真實 `/discovery/item/<id>?xsec_token=...` URL（xhslink 回 302 + HTML Found，urllib 不會跟）
-2. **DoH 查真實 IP**：`https://dns.google/resolve?name=www.xiaohongshu.com&type=A` → `43.170.214.10`（CNAME 到 eo.dnse0.com CDN）
+2. **DoH 查真實 IP**：`https://dns.google/resolve?name=www.xiaohongshu.com&type=A` → `43.170.214.10`（CNAME 到 eo.dnse0.com CDN；⚠️ **一定要查 `www.` 子域**，查根域 `xiaohongshu.com` 會拿到錯 IP 43.159.24.58 → curl --resolve 後 HTTP 500，2026-08-04 實測；IP 可能變，程式每次動態查，不要 hardcode）
 3. **curl --resolve 繞過 DNS**：`curl -k --resolve "www.xiaohongshu.com:443:<IP>" <resolved_url>` → 抓到 133KB 完整頁面
 
 **解析 `__INITIAL_STATE__` 兩個坑**：

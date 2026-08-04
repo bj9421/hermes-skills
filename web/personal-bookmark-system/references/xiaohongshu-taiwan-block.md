@@ -35,6 +35,29 @@
 - 4 筆書籤（#26 #27 #33 #40）enrich：#26 #27 #33 補齊成功（真實標籤簡轉繁 + 真實摘要）；#40 是假連結（`explore/123456`）→ 誠實留空（正確行為）
 - commit：bookmark-manager `e2e47b2`、scripts `8a05454`
 
+## 🔴 2026-08-04 補強：一定要查 `www.` 子域，根域會拿到錯 IP
+
+實測交叉驗證（兩個 DoH 來源一致）：
+
+| DoH 查詢 | 回傳 IP | curl --resolve 結果 |
+|----------|---------|---------------------|
+| `xiaohongshu.com`（**根域**） | `43.159.24.58` | ❌ HTTP 500（170 bytes 錯誤頁） |
+| `www.xiaohongshu.com`（**www 子域**） | `43.170.214.10` | ✅ HTTP 302 → `-L` 後 200、154KB 完整頁 |
+
+- **規則：DoH 查詢與 curl --resolve 的 host 都要用 `www.xiaohongshu.com`**（CDN CNAME 只掛在 www 子域；根域解析到別台 → 500）。初次 500 時先確認是不是查成根域，不要急著改 UA/header
+- 手機 UA 是必需的（無 UA 也可能 500）
+- DoH 備援：`https://cloudflare-dns.com/dns-query?name=www.xiaohongshu.com&type=A`（header `accept: application/dns-json`）與 dns.google 回傳一致，可交叉比對
+- 完整繞過鏈實測通過：xhslink 302 → 拿真實 URL → DoH 查 www 子域 → `curl -k --resolve www.xiaohongshu.com:443:<IP> -A <手機UA> -L` → 200 + `__INITIAL_STATE__` + `<title>`
+
+## 🎬 短鏈 302 可判斷是否影片（`type=video`）
+
+xhslink 短鏈 302 到真實 URL 時，**影片筆記的 query string 帶 `type=video`**（2026-08-04 實測：`...?app_platform=android&type=video&xsec_token=...`）。這讓「小紅書影片判斷」不需要開頁面就能做：先 curl -L 短鏈看 302 目標參數 → `type=video` = 影片。小紅書時長功能若要做，可沿此路徑（解析 `noteData.video` 的 duration）；圖文筆記無此參數。注意：小紅書**不在** `is_video_url` 白名單（yt-dlp extractor 已棄用查不到時長）— 要查時長需專屬路徑，不可用通用 yt-dlp。
+
+## 🖥️ 使用者瀏覽器端解法（與 agent 端繞過無關）
+
+- agent（server 端）繞過 = DoH + curl --resolve，**不需使用者做任何設定**
+- 但使用者「自己」用 Chrome/Edge 開小紅書仍走系統 DNS → 被污染打不開。解法 = 瀏覽器內建「安全 DNS」（DoH）：Chrome 設定 → 隱私權和安全性 → 使用安全 DNS；Edge 設定 → 隱私權、搜尋與服務 → 安全性 → 使用安全的 DNS — 選 Cloudflare 或 Google。設定後瀏覽器直接可開，不需其他工具
+
 ## 容器 SSL 坑
 
 - Docker CA 損壞 → urllib 報 `SSL: CERTIFICATE_VERIFY_FAILED: self-signed certificate` → 用 `-k`（curl）/ `ssl._create_unverified_context()`（urllib）
