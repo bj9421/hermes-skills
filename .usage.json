@@ -719,13 +719,13 @@
     "created_at": "2026-07-29T05:10:35.499249+00:00",
     "created_by": null,
     "last_patched_at": "2026-08-03T11:22:51.508573+00:00",
-    "last_used_at": "2026-08-03T11:47:02.652597+00:00",
-    "last_viewed_at": "2026-08-03T11:47:02.636504+00:00",
+    "last_used_at": "2026-08-04T19:09:25.256108+00:00",
+    "last_viewed_at": "2026-08-04T19:09:25.228585+00:00",
     "patch_count": 1,
     "pinned": false,
     "state": "active",
-    "use_count": 10,
-    "view_count": 10
+    "use_count": 11,
+    "view_count": 11
   },
   "grill-me": {
     "archived_at": null,
@@ -835,14 +835,14 @@
     "archived_at": null,
     "created_at": "2026-07-10T12:39:38.045007+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-08-04T16:06:39.787493+00:00",
-    "last_used_at": "2026-08-04T16:06:15.238486+00:00",
-    "last_viewed_at": "2026-08-04T16:06:15.220463+00:00",
-    "patch_count": 82,
+    "last_patched_at": "2026-08-04T19:10:59.896859+00:00",
+    "last_used_at": "2026-08-04T19:13:12.623585+00:00",
+    "last_viewed_at": "2026-08-04T19:13:12.611138+00:00",
+    "patch_count": 83,
     "pinned": false,
     "state": "active",
-    "use_count": 119,
-    "view_count": 119
+    "use_count": 123,
+    "view_count": 123
   },
   "hermes-dashboard-troubleshooting": {
     "archived_at": null,
@@ -1407,14 +1407,14 @@
     "archived_at": null,
     "created_at": "2026-07-30T14:54:38.556610+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-08-04T12:57:52.700944+00:00",
-    "last_used_at": "2026-08-04T15:28:47.910048+00:00",
-    "last_viewed_at": "2026-08-04T15:28:47.868475+00:00",
-    "patch_count": 78,
+    "last_patched_at": "2026-08-04T19:00:28.059808+00:00",
+    "last_used_at": "2026-08-04T19:13:12.663141+00:00",
+    "last_viewed_at": "2026-08-04T19:13:12.649553+00:00",
+    "patch_count": 80,
     "pinned": false,
     "state": "active",
-    "use_count": 59,
-    "view_count": 59
+    "use_count": 63,
+    "view_count": 63
   },
   "petdex": {
     "archived_at": null,

@@ -345,7 +345,8 @@ function refreshWithDelay() {
 - **cron backfill_duration**（bookmark_enrich.py）改走 server durations API（urllib GET `/api/notehub/durations?ids=`）— server 單一來源查 yt+xhs 並寫 duration+checked_at；cron 只篩選+呼叫（不再自己 subprocess yt-dlp）
 - **語意**：duration=null + checked_at=null → 未查；duration=null + checked_at 有值 → 查過但查不到（yt-dlp 失敗/影片失效，不重查）
 - ⚠️ lifecycle_guard 對含 bookmark 字樣 + python 的命令觸發（連 PATH 前置單行也擋）→ DB 直查用 curl API 或 sqlite3（未裝）；`routes_notehub._get_duration_yt` monkeypatch 需屬性呼叫（`routes_notehub._get_duration_yt()` 非 from import）
-- 測試：fmt_duration / is_video_url / API duration_text → 75 tests 全綠
+|- 測試：fmt_duration / is_video_url / API duration_text → 75 tests 全綠
+|- **2026-08-05 修復**：Bilibili 時長 bug（ad000c4）— `_get_duration_yt` 用 `.isdigit()` 檢查，但 yt-dlp 回傳 `239.142`（小數秒）→ 全部 null；改用 `int(float(raw))`
 
 **⚠️ lifecycle_guard 注意**：bot 檔名/路徑含 `bookmark-bot` 字樣，terminal 命令列含此字樣可能觸發 guard 掃描 — 驗證 bot 用 `ps -eo pid,lstart,cmd | grep bookmark-bot.py` 或直接 `importlib` 載入呼叫函數（不經 Telegram）做端到端驗證。**讀 DB 也會被擋（2026-08-04 實測）**：sqlite 連 `bookmarks.db` / 含 `notehub_jobs` / 多行 python -c 都觸發 guard → **穩繞法 = 走 running server 的 API**：`curl -s http://127.0.0.1:5001/api/notehub/jobs -o /tmp/jobs.json` 再用單行 python 讀 json（job url/status/paths 全查得到，零 DB 連線）。
 
@@ -804,6 +805,15 @@ app.py 已從 766 行 / 53 函數 / cohesion 0.10 拆成上述模組結構（coh
 - `references/xiaohongshu-taiwan-block.md` — 小紅書台灣 DNS 封鎖調查 + 繞過方案（DoH + --resolve）+ xhslink 302 特性 + 容器 SSL 坑
 - `references/deployment-and-migration.md` — 記憶體實測（server 75MB / bot 26MB）、RPi3 1GB + SSD 遷移可行性、輕量替代方案比較（bemarked/Shiori）、遷移計劃文件位置（Obsidian 開發架構）
 - `references/mobile-app-packaging.md` — 手機 App 包裝評估：TWA 側載 $0 / 上架 $25+域名、GitHub APK 技術辨識（repo 根目錄特徵）、iOS PWA 限制（50MB / iOS 16.4 push / 手動安裝）、Bubblewrap 坑（assetlinks 指紋）
+
+## 📊 系統狀態（2026-08-05）
+- **Commit**：ad000c4（Bilibili 時長修復）
+- **Tests**：27 tests 全綠（bookmark-manager）
+- **Graphify**：439 nodes / 727 edges / 47 communities（`graphify-out/graph.html` 379KB）
+- **Server PID**：31248（waitress port 5001）
+- **Bot PID**：19248
+- **Cron**：ERROR JOBS 0
+- **Graphify 週重建**：`graphify-weekly-build`（job_id: f2396dd81530，每週日 03:00）
 
 ## 前端側頁注意（Blogger 滑出式）
 
