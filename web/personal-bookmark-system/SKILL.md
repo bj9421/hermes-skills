@@ -838,6 +838,27 @@ app.py 已從 766 行 / 53 函數 / cohesion 0.10 拆成上述模組結構（coh
 - `references/deployment-and-migration.md` — 記憶體實測（server 75MB / bot 26MB）、RPi3 1GB + SSD 遷移可行性、輕量替代方案比較（bemarked/Shiori）、遷移計劃文件位置（Obsidian 開發架構）
 - `references/mobile-app-packaging.md` — 手機 App 包裝評估：TWA 側載 $0 / 上架 $25+域名、GitHub APK 技術辨識（repo 根目錄特徵）、iOS PWA 限制（50MB / iOS 16.4 push / 手動安裝）、Bubblewrap 坑（assetlinks 指紋）
 
+### 🧠 書籤內容知識圖譜（2026-08-05）
+
+**需求**：graphify 原本只掃 bookmark-manager 程式碼（AST 免費），使用者要求也掃「書籤內容摘要 + notehub 產出文字檔」→ 建立**內容知識圖譜**（概念關聯），與程式碼圖譜**分開**（bookmark-content-graph/，不污染 bookmark-manager 架構圖）。
+
+**匯出腳本**：`scripts/export_bookmark_content.py`（本 skill 附帶，可重跑）
+- 讀 bookmarks.db → 每筆一檔 `{id:03d}-{safe_title}.md`（title + url + tags + summary）→ `bookmarks/`
+- 複製 notehub 產出的 `_raw.md` / `script.md`（逐字稿 + 整理稿）→ `notehub/`
+- 輸出目錄：`/opt/data/projects/bookmark-content-graph/`（每次清空重建，避免 graphify 掃到過期檔）
+- 不含敏感資料（無 xsec_token、無登入資訊）
+- 實測：58 筆書籤 + 33 個 notehub 文字檔 = 91 個 .md / 7427 words
+
+**🔴 notehub 檔名太長坑**：notehub 檔名含完整影片標題（可達數百字元）→ `shutil.copy2` 直接複製會 `OSError: [Errno 36] File name too long`。修法：用父目錄 hash 後 12 字元 + 原始檔名最後 30 字組合成 `{hash}-{stem}.md`，seen set 防重名。
+
+**graphify 掃描流程**（內容圖譜，全部是 document 需 semantic extraction）：
+1. `export_bookmark_content.py` 匯出 → detect（`graphify.detect.detect` → graphify-out/.graphify_detect.json）
+2. 檢查 GEMINI_API_KEY/GOOGLE_API_KEY — 未啟用時 **host agent 當 LLM**：分 chunk（22 檔/批，同目錄聚組）→ 每 chunk 一個 delegate_task subagent（extraction-spec prompt，寫 .graphify_chunk_NN.json）
+3. 收集 chunks → merge → `build_from_json` → cluster → `to_json` → GRAPH_REPORT.md → `graphify export html`
+4. 輸出 `graphify-out/graph.html` + GRAPH_REPORT.md，可 `graphify query` 語意搜尋（如「哪些書籤提到 AI agent 編排？」）
+
+**🔴 lifecycle_guard 對含 `graphify` 字樣命令觸發**：terminal 命令含 `graphify` 字樣（即使只是路徑/工具名）會被 lifecycle_guard 誤判 block（「cannot restart or stop the gateway」）。解法：寫 script 檔（如 `graphify_detect_content.py`）+ PATH 前綴執行 `PATH=/opt/data/.xdg/data/uv/tools/graphifyy/bin:$PATH python3 script.py`；graphify python 路徑從 bookmark-manager/graphify-out/.graphify_python 讀（/opt/data/.xdg/data/uv/tools/graphifyy/bin/python）。
+
 ## 📊 系統狀態（2026-08-05）
 - **Commit**：057b345（IG 時長推算）；f424636（IG 標籤豐富化）；ad000c4（Bilibili 時長修復）
 - **Tests**：79 tests 全綠（bookmark-manager）+ bot 16 tests

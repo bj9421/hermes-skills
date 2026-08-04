@@ -719,13 +719,13 @@
     "created_at": "2026-07-29T05:10:35.499249+00:00",
     "created_by": null,
     "last_patched_at": "2026-08-03T11:22:51.508573+00:00",
-    "last_used_at": "2026-08-04T19:09:25.256108+00:00",
-    "last_viewed_at": "2026-08-04T19:09:25.228585+00:00",
+    "last_used_at": "2026-08-04T21:15:38.427038+00:00",
+    "last_viewed_at": "2026-08-04T21:15:38.394912+00:00",
     "patch_count": 1,
     "pinned": false,
     "state": "active",
-    "use_count": 11,
-    "view_count": 11
+    "use_count": 15,
+    "view_count": 15
   },
   "grill-me": {
     "archived_at": null,
@@ -1134,14 +1134,14 @@
     "archived_at": null,
     "created_at": "2026-07-29T05:11:55.418379+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-08-03T11:20:31.944364+00:00",
-    "last_used_at": "2026-08-03T11:19:26.456874+00:00",
-    "last_viewed_at": "2026-08-03T11:19:26.444592+00:00",
-    "patch_count": 14,
+    "last_patched_at": "2026-08-04T21:02:16.750501+00:00",
+    "last_used_at": "2026-08-04T21:03:19.793831+00:00",
+    "last_viewed_at": "2026-08-04T21:03:19.767953+00:00",
+    "patch_count": 16,
     "pinned": false,
     "state": "active",
-    "use_count": 8,
-    "view_count": 8
+    "use_count": 14,
+    "view_count": 14
   },
   "legacy-script-cleanup": {
     "archived_at": null,
@@ -1407,14 +1407,14 @@
     "archived_at": null,
     "created_at": "2026-07-30T14:54:38.556610+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-08-04T20:42:43.288452+00:00",
-    "last_used_at": "2026-08-04T20:44:35.238825+00:00",
-    "last_viewed_at": "2026-08-04T20:44:35.225066+00:00",
-    "patch_count": 83,
+    "last_patched_at": "2026-08-04T20:53:36.606860+00:00",
+    "last_used_at": "2026-08-04T21:15:38.410771+00:00",
+    "last_viewed_at": "2026-08-04T21:15:38.381013+00:00",
+    "patch_count": 85,
     "pinned": false,
     "state": "active",
-    "use_count": 66,
-    "view_count": 66
+    "use_count": 68,
+    "view_count": 68
   },
   "petdex": {
     "archived_at": null,

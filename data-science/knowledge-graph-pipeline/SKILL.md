@@ -248,6 +248,18 @@ graphify god-nodes                    # Most connected concepts
 | Permission denied on `/root/` | HOME not set | `export HOME=/opt/data` |
 | `No module named 'graphify'` | Graphify not installed | Run install step above |
 
+## Chunked graph building (manual extraction for bookmark/summary corpora)
+
+See `references/chunked-graph-builder.md` for the full pattern with code, bugs found, and output schema. Quick summary:
+
+1. Read all files first — **notehub transcript files may be binary-encoded** even with `.md` extension. Always decode with `errors='replace'` as fallback.
+2. Define a `norm()` function that lowercases, replaces non-alnum with `_`, and collapses runs — this produces stable node IDs from file paths.
+3. Use a `nid(stem, entity)` helper; keep entity IDs short and lowercase to avoid ID collisions.
+4. **Cross-file edge tuple bug:** If your edge-collection function does `X.append((..., FILES[sf]))` internally, the tuple already contains the resolved path — do NOT do `FILES[sf]` again when iterating. Use `sf` directly.
+5. Output schema: `{nodes, edges, hyperedges, input_tokens, output_tokens}` — all nodes need `id, label, file_type, source_file`; all edges need `source, target, relation, confidence, confidence_score, source_file`.
+6. `file_type` values: `document`, `concept`, `rationale`, `code`. `relation` values: `references`, `conceptually_related_to`, `semantically_similar_to`, `rationale_for`. `confidence` values: `EXTRACTED` (score must be 1.0) or `INFERRED` (score ∈ {0.95,0.85,0.75,0.65,0.55,0.9,0.6}).
+7. Max 3 hyperedges recommended; each must have ≥3 nodes and reference existing node IDs.
+
 ## Pitfalls
 
 - **Don't** pass `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` — Graphify only reads `GEMINI_API_KEY` (for built-in Gemini backend) or custom providers via `providers.json`
