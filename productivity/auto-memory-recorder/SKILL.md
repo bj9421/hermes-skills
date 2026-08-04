@@ -109,6 +109,8 @@ The script handles deduplication automatically.
 
 **⚠️ Scanner returns 1 line / near-empty (2026-07-17):** Even when sessions exist in the window, `auto_memory_scan.py` can return just 1 line of output (e.g. session count and titles with no candidate facts). This happens when the window contains only cron sessions or sessions with zero-length assistant `content` (due to compaction). Unlike the "noise" case above (false positives from cron instruction text), this is the "signal-free" case. The fix is the same: bypass the scanner and call `session_search()` directly to inspect recent sessions manually.
 
+**⚠️ Scanner returns 0 despite fresh activity (2026-08-04):** The scanner filters by `started_at > cutoff`, NOT `last_active`. A long-running Telegram session (started >24h ago, user chatting intermittently) can be the ONLY recent activity but score 0 at BOTH 3h and 24h windows because its `started_at` falls outside both cutoffs — while `session_search()` browse mode still shows it as the top session with `last_active` minutes ago. Diagnosis: run `session_search()` (browse) and compare `started_at` vs `last_active`. Fix: peek at the top non-cron session via `session_search(session_id=..., window=...)` regardless of what the scanner printed. This is distinct from the "noise" case (false positives) and the "1 line" case (signal-free) — it's the "stale started_at" case (activity hidden by long-lived session).
+
 **Session_search bypass workflow** (when scanner output is self-referential noise):
 1. Skip the scanner output entirely — do NOT try to widen the window
 2. Use `session_search()` with no arguments (browse mode) to list all recent sessions chronologically

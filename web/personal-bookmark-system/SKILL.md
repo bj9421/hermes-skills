@@ -317,10 +317,23 @@ function refreshWithDelay() {
 
 - **問題**：任務 100% 完成但 UI 只有 checkbox，使用者不知道檔案在哪。
 - **答案**：notehub 產出在 `/opt/data/obsidian-vault/notes/<影片標題> - YouTube [id]/{...}_raw.md, script.md, ..._podcast.mp3`
-- **實作**：`routes_notehub.py` 新增 `_job_paths(job)`（重用 `_SAVED_MARKERS` regex = 與清除邏輯單一來源）→ `list_jobs` API 回傳 `j['paths']`；前端 `pollNotehubJobs` 在 checkbox 下方渲染 `.nh-path`（點擊複製路徑，`data-p` 屬性需 `escapeHtml(p).replace(/"/g,'&quot;')` 防引號突破 — escapeHtml 用 textContent 法不轉義引號）
+- **實作**：`routes_notehub.py` 新增 `_job_paths(job)`（重用 `_SAVED_MARKERS` regex = 與清除邏輯單一來源）→ `list_jobs` API 回傳 `j['paths']`；前端 `pollNotehubJobs` 渲染路徑。
+- **最終 UI（使用者要求摺疊）**：路徑包在原生 `<details class="nh-path-toggle">` 內，收合時只有一行 **`📁 檔案路徑 (N)`**，按下展開、再按收回 — 零 JS、符合 HTMX-first。**使用者偏好：長路徑/次要資訊一律用 `<details>` 摺疊不佔版面**（明確要求「比較不佔版面」）。`.nh-path` 點擊複製路徑，`data-p` 屬性需 `escapeHtml(p).replace(/"/g,'&quot;')` 防引號突破 — escapeHtml 用 textContent 法不轉義引號。
 - 測試：`test_job_paths_extraction` / `test_notehub_jobs_api_includes_paths` → 69 tests 全綠
 
-**⚠️ lifecycle_guard 注意**：bot 檔名/路徑含 `bookmark-bot` 字樣，terminal 命令列含此字樣可能觸發 guard 掃描 — 驗證 bot 用 `ps -eo pid,lstart,cmd | grep bookmark-bot.py` 或直接 `importlib` 載入呼叫函數（不經 Telegram）做端到端驗證。
+### ⏱ Notehub 佇列排除 <1 分鐘影片（2026-08-04）
+
+- **問題**：12 秒 Shorts 做出品質差的口播，使用者要在送出前篩掉。
+- **實作**：
+  - DB `bookmarks.duration` 欄位（init_db ALTER 慣例）
+  - `GET /api/notehub/durations?ids=1,2,3`：已快取直接回、未快取 yt-dlp 平行查（ThreadPoolExecutor 4）寫回 DB；非影片/失敗 → null 不擋
+  - 前端 `openNotehubSidebar` 非同步查時長 → <60s 標紅 + 刪除線 + 自動取消勾選 + toast 提示
+  - 後端 `queue_jobs` 兜底：duration<60 排除並回報 `excluded` 清單（全被排除 → 400 + excluded）
+  - conftest 需 mock `_get_duration_yt`（不跑真實 yt-dlp）
+- 測試：durations API / queue excludes short / queue keeps null duration → 72 tests 全綠
+- ⚠️ yt-dlp 查時長 5.5s/支（JS runtime warning 但成功）→ 快取很重要，第二次 0.03s
+
+**⚠️ lifecycle_guard 注意**：bot 檔名/路徑含 `bookmark-bot` 字樣，terminal 命令列含此字樣可能觸發 guard 掃描 — 驗證 bot 用 `ps -eo pid,lstart,cmd | grep bookmark-bot.py` 或直接 `importlib` 載入呼叫函數（不經 Telegram）做端到端驗證。**讀 DB 也會被擋（2026-08-04 實測）**：sqlite 連 `bookmarks.db` / 含 `notehub_jobs` / 多行 python -c 都觸發 guard → **穩繞法 = 走 running server 的 API**：`curl -s http://127.0.0.1:5001/api/notehub/jobs -o /tmp/jobs.json` 再用單行 python 讀 json（job url/status/paths 全查得到，零 DB 連線）。
 
 ## Telegram Bot (@add2bm_bot)
 

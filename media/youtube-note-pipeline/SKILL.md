@@ -200,3 +200,9 @@ result = call_llm([{'role': 'user', 'content': '...'}])
 30. **Zen timeout ≠ 429（2026-08-01 實測）** — 大請求（產生 podcast 腳本）在 Zen 免費層優先權低，45s 會 `The read operation timed out` 被當失敗；小請求（摘要）正常。**兩個不同症狀：429 FreeUsageLimitError = 每日額度用完；timeout = 大請求回應慢**。`call_zen()` timeout 已調 **45s → 90s**（llm.py:206）。job 顯示「Zen LLM failed: The read operation timed out」≠ 限流，別誤判為 429。
 
 31. **fallback 無狀態設計（2026-08-01 驗證）** — `call_llm()` 每次呼叫**先試 Zen**，只有失敗才 fallback AGNES → Groq，無持久化狀態檔。**Zen 恢復後自動調回，不需手動切換**。若 Zen 卡死較久想快速回到 Zen：直接重試 job 即可，不用改任何 code。
+
+32. **🔴 YouTube Shorts URL 偵測 bug（2026-08-04 實測，重做案例）** — `_extract_video_id()` 與 `YOUTUBE_PATTERNS` **都必須**包含 `youtube\.com/shorts/`，否則 shorts 影片不被 `detect()` 認出 → fallback 到通用網頁抓取 → **把 YouTube 頁面雜訊（簡介/媒體/著作權/© Google LLC）當逐字稿** → LLM script 寫「內容不完整」道歉信 → podcast 唸道歉信。**症狀辨識**：raw.md 內容是 YouTube 頁面 chrome 文字 = extractor 誤判成通用網頁，不是影片真的沒字幕。已修：兩個 regex 都補 `youtube\.com/shorts/`（extractors/youtube.py）。修復驗證：`_extract_video_id('https://youtube.com/shorts/XXXX')` 回 11 字元 id + `detect()` True，再接 `_fetch_via_api` 確認無字幕 → 走 Whisper fallback。
+
+33. **Shorts 很短，逐字稿短是正常的** — 12 秒 Shorts 的完整台詞只有 ~49 字（列舉式），Whisper 轉寫正確但極短。**重做/除錯前先驗證影片時長**：`yt-dlp --print "%(duration)s 秒" <url>`。LLM 口播腳本會以真實台詞為基礎大幅擴寫 — **回報時誠實告知真實 vs 生成的比例**，不要讓使用者誤以為那 49 字是「內容不足」或把擴寫冒充原話。
+
+34. **notehub 輸出目錄可能變（notes/ vs 口播/）** — 完成檔可能在 `obsidian-vault/notes/` 或 `obsidian-vault/口播/`（依 notehub 版本/設定）。回答「檔案在哪」**別硬編碼目錄**，以 job output 的 `✅ Pipeline complete! Output:` 行或 UI paths 欄位為準（worker output 是唯一真相來源）。
