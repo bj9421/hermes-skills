@@ -835,14 +835,14 @@
     "archived_at": null,
     "created_at": "2026-07-10T12:39:38.045007+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-08-04T04:48:40.082548+00:00",
-    "last_used_at": "2026-08-04T04:48:18.786978+00:00",
-    "last_viewed_at": "2026-08-04T04:48:18.772879+00:00",
-    "patch_count": 81,
+    "last_patched_at": "2026-08-04T16:06:39.787493+00:00",
+    "last_used_at": "2026-08-04T16:06:15.238486+00:00",
+    "last_viewed_at": "2026-08-04T16:06:15.220463+00:00",
+    "patch_count": 82,
     "pinned": false,
     "state": "active",
-    "use_count": 118,
-    "view_count": 118
+    "use_count": 119,
+    "view_count": 119
   },
   "hermes-dashboard-troubleshooting": {
     "archived_at": null,
@@ -1329,14 +1329,14 @@
     "archived_at": null,
     "created_at": "2026-07-16T12:44:25.471676+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-08-03T16:15:07.406042+00:00",
-    "last_used_at": "2026-08-04T15:58:15.639476+00:00",
-    "last_viewed_at": "2026-08-04T15:58:15.626473+00:00",
-    "patch_count": 25,
+    "last_patched_at": "2026-08-04T16:06:39.890128+00:00",
+    "last_used_at": "2026-08-04T16:05:50.282335+00:00",
+    "last_viewed_at": "2026-08-04T16:05:50.268894+00:00",
+    "patch_count": 27,
     "pinned": false,
     "state": "active",
-    "use_count": 26,
-    "view_count": 26
+    "use_count": 27,
+    "view_count": 27
   },
   "obsidian-vault-cleanup": {
     "archived_at": null,

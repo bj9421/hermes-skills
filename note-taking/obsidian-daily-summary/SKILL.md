@@ -108,6 +108,7 @@ The vault has a dedicated top-level `/Hermes/` folder (independent from project 
 - Write in Traditional Chinese (Taiwan).
 - Use content-enriched format (主旨/討論/結論 blockquotes) — never plain session listings.
 - If no sessions found for the day, write only "今日無對話記錄" in the overview.
+- **No human sessions but cron sessions ran (2026-08-04):** keep 概覽 as 無對話記錄 with a one-line note (e.g. 今日無 Telegram/TUI/CLI 真人對話，N 個 session 全為 cron), then list the day's cron activity (time + job name + msg count) under 技術細節/備忘 and keep daily-review output paths in 相關檔案 — richer than a blank log, still a valid 無對話記錄 day. Query: `SELECT source, COUNT(*) FROM sessions WHERE date(started_at,'unixepoch','localtime')=? GROUP BY source` to confirm 0 human, then `ORDER BY started_at` for the cron detail list.
 - Frontmatter: `date`, `sessions`, `messages`, `sources`.
 
 ## Batch Backfill (One-Time Import)
@@ -167,6 +168,7 @@ User reported logs missing since 7/17. Investigation found `deliver: local` was 
 4. **Multi-day sessions**: A session that started yesterday but the user replied today will have `started_at` from yesterday. Use `message` timestamps for the filter instead of session `started_at` if needed for accuracy.
 5. **⚠️ Security scanner blocks emoji in Python code output**: When running Python that prints emoji characters (e.g., `📱`, `💬`, `🖥`), the Hermes security scanner may flag "Variation selector characters detected" and block execution. The scanner interprets Unicode variation selectors in terminal output as potential steganographic encoding.
    - **Workaround:** Use `chr()` calls instead of literal emoji: `chr(0x1f4ac)` instead of `'💬'`.
+   - **Python 字串內嵌 emoji escape 易踩雷（2026-08-04 實測）：** `\u0001f4cb` 是**控制字元**（`\u` 只吃 4 位 hex），不是 📋；BMP 以外的 emoji 必須用 `\U0001F4CB`（大寫 U、8 位 hex）或 `chr(0x1f4cb)`。驗證腳本用 marker 比對日誌內容時曾因此誤判 MISSING，花兩次 retry 才發現。
    - **Scope:** Affects the terminal tool output and potentially cron job delivery.
    - **Discovered:** 2026-07-16 during batch backfill execution.
 6. **Template location**: The daily-log template lives at `17uu/templates/session-daily-log.md` (under the 17uu project), not under `Hermes/`. This is a structural reference, not part of the output.
