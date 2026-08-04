@@ -233,6 +233,20 @@ function refreshWithDelay() {
 - 標題 `<a>` 用 `hx-on::click="htmx.ajax('POST','/api/bookmarks/<id>/mark-read',{swap:'none'})"` — **不能用 `hx-post`**（HTMX 對帶 hx-post 的元素 preventDefault，會擋掉 `target="_blank"` 新分頁跳轉）；`hx-on::click` 不攔截默認行為，純 side-effect
 - 點擊後 `setTimeout(()=>htmx.ajax('GET','/stats',{target:'#stats-card',swap:'outerHTML'}),300)` 刷新 unread 統計
 
+### 🔴 FTS5 全文搜尋 F4（2026-08-04 commit `4808c0c`）
+
+**Schema**（schema.sql）：`bookmarks_fts` 虛擬表用 **trigram tokenizer**（中文不需分詞器）+ external content（`content='bookmarks'` 不重複存資料）+ 三支觸發器（INSERT/DELETE/UPDATE 同步）。UPDATE trigger 是 delete+insert 兩段式。
+
+**Migration**（db.py init_db）：`fts_count < bm_count` 時執行 `INSERT INTO bookmarks_fts(bookmarks_fts) VALUES('rebuild')` 從 bookmarks 重建索引 — 可安全重複執行；FTS5 不可用時 except pass 不阻斷啟動。
+
+**Search**（build_filters）：
+- **≥3 字元 → FTS5 MATCH**（`id IN (SELECT rowid FROM bookmarks_fts WHERE bookmarks_fts MATCH ?)`），query 包雙引號 phrase + 內部雙引號重複 escape（`"` → `""`）
+- **<3 字元 → LIKE fallback**（trigram 對 <3 字元不回傳，實測「智慧」「AI」「教學」全 0）— fallback 含 `tags LIKE ?`（F4 新增，舊版 search 不含 tags）
+
+⚠️ **首次 migration 陷阱**：第一次 init_db 後 MATCH 可能全 0（rebuild 與 trigger 建立時序），**再跑一次 init_db** 即觸發 rebuild 補齊；條件判斷保證後續每次都對。Live 驗證：youtube 34 筆、小紅書 7 筆、新增書籤即時進索引、刪除即時清索引。
+
+⚠️ **URL 搜尋**：`example.com/fts-live-test` 這種含 `/` 的 query 用雙引號 phrase 包住沒問題（slash 不是 FTS5 特殊字元）。
+
 ## Telegram Bot (@add2bm_bot)
 
 輕量 bot，零依賴（stdlib only）。
