@@ -348,6 +348,22 @@ function refreshWithDelay() {
 |- 測試：fmt_duration / is_video_url / API duration_text → 75 tests 全綠
 |- **2026-08-05 修復**：Bilibili 時長 bug（ad000c4）— `_get_duration_yt` 用 `.isdigit()` 檢查，但 yt-dlp 回傳 `239.142`（小數秒）→ 全部 null；改用 `int(float(raw))`
 
+### ⏱ Instagram 影片時長（2026-08-05 commit `057b345`）：formats tbr + HEAD Content-Length 推算
+
+**背景**：yt-dlp `--print duration` 對 IG 回 **NA**（無 duration 欄位）；oembed / `?__a=1` / 公開頁面 HTML（只有 CSS animation duration）全部拿不到。**唯一可用路徑**：yt-dlp `-J` 的 `formats` 有完整 video format（含 `tbr` bitrate + 真實 CDN URL）。
+
+**推算公式**：`duration = Content-Length × 8 / (tbr × 1000)`（tbr 單位 kbps）
+1. `yt-dlp -J --skip-download` → 過濾 video formats（`vcodec` 非 none + 有 `tbr` + 有 `url`）
+2. 選**中間品質** format（`video_fmts[len//2]` — 避免最高畫質太大、最低太失真）
+3. HEAD 請求該 format 的 `url`（CDN，需 `User-Agent: Mozilla/5.0`）→ `Content-Length` header
+4. `int(round(size * 8 / (tbr * 1000)))`
+
+**驗證**：#97=104s、#92=19s；**9 個 format 交叉驗證差異 0s**（每個 format 的 size/tbr 比值相同 — 這是公式可信度的關鍵證據）。
+
+**實作**：`routes_notehub.py` 新增 `_get_duration_ig(url)`，`_get_duration` dispatcher 加 `if 'instagram.com' in url:` 分支。`urllib.request` 需在檔案頂部 import（函數內用）。timeout：yt-dlp 45s + HEAD 15s。
+
+**測試**：`test_ig_duration_calc`（monkeypatch `subprocess.run` 回假 formats JSON + `urllib.request.urlopen` 回假 Content-Length；fake format 必須含 `format_id` 欄位否則 print 時 KeyError）→ 79 tests 全綠。
+
 **⚠️ lifecycle_guard 注意**：bot 檔名/路徑含 `bookmark-bot` 字樣，terminal 命令列含此字樣可能觸發 guard 掃描 — 驗證 bot 用 `ps -eo pid,lstart,cmd | grep bookmark-bot.py` 或直接 `importlib` 載入呼叫函數（不經 Telegram）做端到端驗證。**讀 DB 也會被擋（2026-08-04 實測）**：sqlite 連 `bookmarks.db` / 含 `notehub_jobs` / 多行 python -c 都觸發 guard → **穩繞法 = 走 running server 的 API**：`curl -s http://127.0.0.1:5001/api/notehub/jobs -o /tmp/jobs.json` 再用單行 python 讀 json（job url/status/paths 全查得到，零 DB 連線）。
 
 ## Telegram Bot (@add2bm_bot)
@@ -495,6 +511,22 @@ new_tags = to_traditional_tags(new_tags)  # 人工智能→人工智慧、学习
 5. bot 端 `is_instagram()` + fetch 分支 + LLM 跳過分支同步
 
 **結果**：#90 → title='Joyce725'、summary='277 likes, 124 comments - usbb725 on July 26, 2026'、tags='instagram'。
+
+### 🔴 Instagram 標籤豐富化（2026-08-05 commit `f424636`）
+
+**推翻 2026-08-03 的「真實 caption 無解」結論**：#92/#97 實測 **yt-dlp -J 的 `description` 欄位能拿到真實 caption（非登入牆）**，含 hashtags。之前只 parse uploader/title，漏掉了 description。
+
+- #97（DD姐養生論）：caption 有 `#蛋白質 #健身 #肌肉 #dd姐養身論` → tags = `instagram,蛋白質,健身,肌肉,dd姐養身論`
+- #92（視想家™）：caption 無 hashtags 但有豐富文字 → LLM 從 caption 產標籤 = `instagram,接受自己,獨特風格,轉念視角,喜劇人生,自我成長`
+
+**三層實作**（llm_enhance.py + routes_bookmarks.py + bookmark-bot.py 兩副本同步）：
+1. `fetch_instagram_meta` 升級：yt-dlp -J 抓 `description`（真實 caption）當 summary（**優先於 og:description 統計**）；regex `#([\w\u4e00-\u9fff]+)` 從 caption 提取 hashtags → tags_list（去重、≤20 字、最多 8 個）
+2. 無 hashtags → 新函數 `tags_from_meta(title, description)`：用 caption 餵 LLM 產 3-5 標籤（**不給 URL 防幻覺**；Zen→AGNES→Groq fallback）
+3. `_apply_meta_enrich` 加分支：`if not meta_tags and meta_desc and 'instagram.com' in url:` → LLM 補標籤
+
+**bot 端**：`is_instagram` 分支原本 `tags='instagram'` 固定 → 改 `instagram + bili_tags`（caption hashtags）；watchdog md5 偵測自動重啟，改完 cp 兩副本即可。
+
+**測試**：+2（`test_ig_hashtags_extraction` / `test_ig_no_hashtags_returns_empty_tags`，monkeypatch `subprocess.run` 回傳假 yt-dlp JSON — ⚠️ 直接 patch 全域 `subprocess.run`，不是 patch llm_enhance 的屬性，因函數內 `import subprocess` 是區域變數）→ **78 + 16 = 94 tests 全綠**。
 
 ⚠️ **結構教訓**：routes_bookmarks.py 的 `not should_enrich` 分支原本是 bilibili if → else（內含 xhs if → else 巢狀），加第三個平台時巢狀會崩潰（縮排地獄）。已重構為**扁平 if/elif/elif/else**，未來加平台直接加一個 elif 層級即可。**（2026-08-03 T3 再精簡**：三個分支已抽共用 `_apply_meta_enrich(conn, bid, bm, url, meta_fn, source_tag)` — 87 行重複 pattern → 9 行呼叫，行為不變；新平台只需加一個 elif + 傳 meta_fn/source_tag）
 
@@ -807,12 +839,11 @@ app.py 已從 766 行 / 53 函數 / cohesion 0.10 拆成上述模組結構（coh
 - `references/mobile-app-packaging.md` — 手機 App 包裝評估：TWA 側載 $0 / 上架 $25+域名、GitHub APK 技術辨識（repo 根目錄特徵）、iOS PWA 限制（50MB / iOS 16.4 push / 手動安裝）、Bubblewrap 坑（assetlinks 指紋）
 
 ## 📊 系統狀態（2026-08-05）
-- **Commit**：ad000c4（Bilibili 時長修復）
-- **Tests**：27 tests 全綠（bookmark-manager）
+- **Commit**：057b345（IG 時長推算）；f424636（IG 標籤豐富化）；ad000c4（Bilibili 時長修復）
+- **Tests**：79 tests 全綠（bookmark-manager）+ bot 16 tests
+- **IG 完成度**：標籤（caption hashtags + LLM 補）+ 時長（formats tbr + HEAD 推算）雙齊
 - **Graphify**：439 nodes / 727 edges / 47 communities（`graphify-out/graph.html` 379KB）
-- **Server PID**：31248（waitress port 5001）
-- **Bot PID**：19248
-- **Cron**：ERROR JOBS 0
+- **Cron**：ERROR JOBS 0；盤查 job 已轉 no_agent（`cron_daily_check.sh`，秒級不再 600s timeout）
 - **Graphify 週重建**：`graphify-weekly-build`（job_id: f2396dd81530，每週日 03:00）
 
 ## 前端側頁注意（Blogger 滑出式）

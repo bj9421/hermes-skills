@@ -835,14 +835,14 @@
     "archived_at": null,
     "created_at": "2026-07-10T12:39:38.045007+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-08-04T19:10:59.896859+00:00",
-    "last_used_at": "2026-08-04T19:13:12.623585+00:00",
-    "last_viewed_at": "2026-08-04T19:13:12.611138+00:00",
-    "patch_count": 83,
+    "last_patched_at": "2026-08-04T20:34:20.985644+00:00",
+    "last_used_at": "2026-08-04T20:42:20.182126+00:00",
+    "last_viewed_at": "2026-08-04T20:42:20.165957+00:00",
+    "patch_count": 84,
     "pinned": false,
     "state": "active",
-    "use_count": 123,
-    "view_count": 123
+    "use_count": 126,
+    "view_count": 126
   },
   "hermes-dashboard-troubleshooting": {
     "archived_at": null,
@@ -1407,14 +1407,14 @@
     "archived_at": null,
     "created_at": "2026-07-30T14:54:38.556610+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-08-04T19:00:28.059808+00:00",
-    "last_used_at": "2026-08-04T19:13:12.663141+00:00",
-    "last_viewed_at": "2026-08-04T19:13:12.649553+00:00",
-    "patch_count": 80,
+    "last_patched_at": "2026-08-04T20:42:43.288452+00:00",
+    "last_used_at": "2026-08-04T20:44:35.238825+00:00",
+    "last_viewed_at": "2026-08-04T20:44:35.225066+00:00",
+    "patch_count": 83,
     "pinned": false,
     "state": "active",
-    "use_count": 63,
-    "view_count": 63
+    "use_count": 66,
+    "view_count": 66
   },
   "petdex": {
     "archived_at": null,

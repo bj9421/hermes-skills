@@ -48,17 +48,21 @@ command: cd /opt/data/projects/bookmark-manager && /opt/data/.xdg/bin/graphify u
 - Communities: 47
 - Output: `graphify-out/graph.html` (379KB)
 
-### 3. 每日排程盤查回報 Timeout 修復 (dd239cd537ae)
+### 3. 每日排程盤查回報 Timeout 修復 (dd239cd537ae) — 已轉 no_agent 根治
 
 **Problem**: Job timing out at 604s (limit 600s) every run.
 
-**Root Cause**: LLM-driven job doing status reporting doesn't need LLM. 600s idle timeout triggered while waiting for API response.
+**Root Cause**: LLM-driven job doing status reporting doesn't need LLM. 600s idle timeout triggered while waiting for non-streaming API response (`last activity: waiting for non-streaming API response`). watchdog 每 10 分重報同一錯誤（Symptom D）。
 
-**Fix Applied**:
-1. Simplified prompt (removed verbose formatting)
-2. Added `timeout: 120` to job config
+**Fix Applied（最終方案 = no_agent 轉換）**:
+1. 寫 `/opt/data/scripts/cron_daily_check.sh`（bash + python3 heredoc 讀 `/opt/data/cron/jobs.json`，分類 ✅今日成功 / ❌錯誤 / ⏳待執行，輸出繁體中文報告）— 執行 <1 秒
+2. `cp` 到 `~/.hermes/scripts/cron_daily_check.sh` + chmod +x（⚠️ cronjob update 的 script 欄位只接受 `~/.hermes/scripts/` 相對檔名，絕對路徑會被拒：「Script path must be relative to ~/.hermes/scripts/」）
+3. `cronjob action=update job_id=dd239cd537ae script="cron_daily_check.sh" no_agent=true`
+4. `cronjob action=run` → succeeded → `last_status: ok`
 
-**Status**: Job still errors but with shorter timeout. Consider converting to no_agent for permanent fix.
+**Status**: ✅ 已根治。no_agent 模式執行 <1 秒，watchdog 不再重報（第一次手動 run 後 last_status 由 error → ok）。
+
+**教訓**: 每日盤查類的「LLM 讀狀態 + 格式化作報告」job 是 no_agent 高優先候選 — 只要報告是 jobs.json 的確定性格式化輸出，完全不需要 LLM。轉換三步驟：寫 script（Watchdog pattern）→ cp 到 ~/.hermes/scripts/ → update no_agent=true。與 bookmark-enrich / holographic-sync 同類（見 SKILL.md Symptom D variant）。
 
 ## System Health
 
