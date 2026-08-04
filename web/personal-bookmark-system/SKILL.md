@@ -247,6 +247,81 @@ function refreshWithDelay() {
 
 ⚠️ **URL 搜尋**：`example.com/fts-live-test` 這種含 `/` 的 query 用雙引號 phrase 包住沒問題（slash 不是 FTS5 特殊字元）。
 
+### 🔴 Tag 合併工具 F5（2026-08-04 commit `5d3e6f9`）
+
+**背景**：`merge_tags`/`rename_tag`/`delete_tag` 三端點原本存在但**零測試 + 兩個 bug**：
+1. `WHERE tags LIKE '%tag%'` 子字串誤匹配 — merge「AI」會誤改「AI工具」/「AI程式設計」（與 build_filters 修過的同款 bug）
+2. `set()` + `sorted()` 打亂標籤原始順序（「youtube,AI,教程」→「AI,教程,youtube」）
+
+**修法**：`routes_tags.py` 抽 `_rewrite_tag(conn, old_tag, new_tag=None)` 共用 helper：
+- 精確匹配：`(',' || REPLACE(tags, ' ', '') || ',') LIKE '%,old,%'`
+- 順序保留：遍歷 parts，old_tag 首次位置被 new_tag 取代（new_tag 已存在則不重複加）、其他 tag 去重保留順序
+- new_tag=None → delete 語意（移除該標籤）
+- merge/rename 後 `sync_tags_from_bookmark(all_mode=True)` 清孤兒；delete 另 `DELETE FROM tags WHERE name=?`
+
+**雙軌請求**：`request.get_json(silent=True) or request.form` — JSON（bot/curl）+ HTMX form-urlencoded 都通。
+
+**UI**（tags.html）：「🔀 合併」按鈕改 `<details>` 展開的 **HTMX inline form**（`hx-post="/api/tags/merge"` + `hx-swap="none"` + `hx-on::after-request` 成功 reload / `hx-on::response-error` alert 錯誤）— select 目標標籤下拉（不用打字，避免打錯字產生新分裂標籤）。CSS `.tag-merge`/`.merge-form` 在 style.css。舊 prompt 式 `mergeTag()` JS 已移除。
+
+**測試**：`tests/test_tag_manage.py` 11 案例（精確匹配 / 順序保留（`_rewrite_tag` 單元）/ 合併去重 / 同標籤 400 / 缺參數 400 / 孤兒清除 / form-encoded / rename / delete / tags 表同步）。**42 passed**。
+
+⚠️ 純 API 用法：`POST /api/tags/merge {"from":"AI","to":"機器學習"}` → `{ok, merged: N}`；UI 的 select 只列現有標籤，但 JSON API 可指定不存在的 to（合併同時改名，刻意保留的彈性）。
+
+### 🔴 Bot 增強 F6（2026-08-04）
+
+**Server 新增 `GET /api/bookmarks` JSON 端點**（routes_bookmarks.py，與 POST add 同 path 不同 method）：`search`（FTS5 含 tags）/ `tag` / `starred=1` / `limit`（default 20 max 50）/ 依 created_at DESC；回傳 `{ok, count, bookmarks: [parse_bookmark_row 完整 dict]}`。這是 bot /search、/recent 的資料來源。
+
+**Bot 新增**（bookmark-bot.py，兩副本 /opt/data/scripts + /opt/data/.hermes/scripts 同步；watchdog md5 偵測自動重啟）：
+- `/search 關鍵字` → `search_bookmarks()` 打 GET 端點（FTS5 搜尋含 tags）；每筆結果獨立訊息 + 操作按鈕
+- `/recent [N]` → `recent_bookmarks(N)`（N clamp 1-10）
+- `/help` `/start` → 使用說明
+- 操作按鈕 inline keyboard：`✓已讀`(read:ID → POST mark-read) / `⭐星號`(star:ID → POST star) / `🗑️刪除`(del:ID → DELETE) — **收藏成功訊息也附**（`👇 操作 #ID`）
+- callback_query 處理：`handle_callback_query()` → 執行 API → `answerCallbackQuery`（消除按鈕 loading）+ `editMessageText`（原訊息附加結果註記）；main loop `allowed_updates` 加 `'callback_query'`
+- `process_update` 開頭：`text.strip().startswith('/')` → handle_command（原本無 URL 直接 return，指令從沒被處理）
+
+**🔴 405 bug（實測抓到）**：`search_bookmarks`/`recent_bookmarks` 原本用 `http_post()`（method='POST'）打 GET 端點 → server 405 → 搜尋永遠空。新增 `http_get_json(url)`（urllib GET + User-Agent）修正。**教訓：bot 打 server REST 端點要依 method 選對函數。**
+
+**測試**：`/opt/data/scripts/test_bot_f6.py` 16 案例（importlib 載入連字號檔名模組 `bookmark-bot.py` — `import bookmark_bot` 會失敗，要用 `spec_from_file_location`）；專案 tests 新增 3 個 GET 端點測試。**45 + 16 = 61 passed**。
+
+### 📥📤 Chrome/Edge 匯入匯出 G1（2026-08-04）
+
+**重點澄清**：Chrome/Edge 的「匯出書籤」產生的 HTML 檔**就是 Netscape Bookmark File Format**（業界標準）— 說「做 Netscape 匯入匯出」=「做 Chrome/Edge 匯入匯出」，同一件事。使用者原本誤以為是兩回事。
+
+**模組 `bookmark_io.py`**（純函數 + bp_io Blueprint，註冊進 app.py）：
+- `build_netscape_html(bookmarks)`：DB dicts → Netscape HTML（`<!DOCTYPE NETSCAPE-Bookmark-file-1>`、`ADD_DATE` epoch、`TAGS="t1,t2"` 屬性、html.escape 標題/URL）
+- `parse_netscape_html(content, folder_mode)`：HTMLParser 解析 → `[{url, title, folder, tags}]`
+- `GET /api/bookmarks/export`：全書籤 → attachment HTML（filename `bookmarks-export-YYYYMMDD.html`）
+- `POST /api/bookmarks/import`：multipart `file` + `folder_mode`（first 最外層 / all 完整路徑 / none）→ canonicalize 去重、executemany 批次、**不觸發 LLM**（大量匯入不燒額度）、回傳 `{imported, duplicates, errors}`；HTMX 回傳 OOB fragment
+
+**🔴 parser 巢狀資料夾 bug（實測修正 2 次）**：
+1. H3 結束就 push → 兄弟資料夾（「其他書籤」）殘留在 stack。**正確：H3 結束只記 `_pending_folder`，等 `<DL>` 開始才 push**
+2. pop 條件 `len(folders) > depth` → 不 pop。**正確：`while depth > 0 and len(folders) >= depth`**（頂層 DL depth=1 不對應資料夾，folders 長度 ≥ depth 表示最上層資料夾內容 DL 關閉）
+
+**🔴 測試污染教訓**：`app.test_client()` 直接 import app（不用 pytest conftest）會寫入**真實 DB**（db.py `DB_PATH` 固定 = 專案/bookmarks.db）。live 驗證匯入 route 的安全手法 = 上傳「全重複 URL」檔（imported=0 duplicates=N，零污染）。誤污染時清理：DELETE + `sync_tags_from_bookmark(all_mode=True)`。
+
+**🔴 processed=0 鐵律（2026-08-04 修潛伏 bug）**：匯入書籤一律 `processed=0`（summary 留空）→ bookmark-enrich cron（`deb71e8d5dbd`，no_agent，`/opt/data/scripts/bookmark_enrich.py`：每 10 分鐘、LIMIT 5 筆/輪、curl POST `/api/bookmarks/<id>/enrich`、120s timeout、Zen→AGNES→Groq fallback）自動補摘要。⚠️ **切勿設 `1 if tags else 0`** — 匯入書籤幾乎都有標籤（資料夾→標籤 + 來源標籤）→ processed=1 → cron 永不撿 → **摘要永遠空白**（使用者「大量匯入摘要怎麼處理」一問揭穿的潛伏 bug）。速度估算：500 筆 ÷ 5 筆/10 分 ≈ 16 小時補完；要快 = 調 bookmark_enrich.py 的 LIMIT 或加 batch enrich UI（目前 batch bar 無 enrich action）。防回歸測試：`test_import_sets_processed_zero`。
+
+**壓力測試數據（tests/test_import_stress.py，6 案例）**：2000 筆 ~1s、10000 筆 4.4s、500 全重複 0.25s（imported=0 duplicates=500）、匯入 5000 筆進行中併發 GET / 照常 200（WAL 讀寫並行、不崩潰）。設計 = 單一 request + `executemany` 批次插入 + URL set 一次去重。**防回歸**：`test_import_no_llm_calls` 用 `inspect.getsource(bookmark_io)` 檢查 banned 字串（`fetch_title` / `llm_enhance(` / `urllib` / `requests.` / `urlopen` / `http.client`）— ⚠️ **別檢查 `'http'`**，會誤報輸出模板的 `HTTP-EQUIV`。
+
+**UI**：header「🔄 匯入/匯出」`<details>` 下拉 — 📤 匯出連結 + 📥 HTMX multipart 上傳 form（file + folder_mode select）+ `#import-result` OOB。
+
+### 🤖 批量補摘要（2026-08-04，使用者要求）
+
+- **`_enrich_one(conn, bid)` 核心函數**（routes_bookmarks.py）：route `POST /api/bookmarks/<id>/enrich` 與 batch `action='enrich'` 共用，維持單一來源。回傳 `(status, detail)`：`ok`（LLM）/ `meta`（JS 站 yt-dlp/DoH）/ `error`。
+- 🔴 **LLM 回空也設 processed=1** — 否則 bookmark-enrich cron 每 10 分鐘重複撿同一筆 → 重複燒 LLM 額度（本次抓到的隱藏 bug）
+- **batch enrich**：同步處理、**上限 20 筆/次**（400 拒絕超額）、回傳 `{ok, enriched, failed:[{id,error}]}`；UI batch bar「🤖 補摘要」按鈕（confirm → alert 結果）
+- **cron LIMIT 5→20**（兩副本同步改）：大量匯入後 500 筆約 4 小時補完（20 筆/10分）。bookmark_enrich.py 是 no_agent、curl POST 每筆 enrich API（120s timeout）
+- 測試：`test_batch_enrich_sets_processed`（防回歸）/ `test_batch_enrich_missing_does_not_crash` / `test_batch_enrich_limit` → 67 tests 全綠
+
+### 🎧 Notehub 工作佇列顯示完成路徑（2026-08-04）
+
+- **問題**：任務 100% 完成但 UI 只有 checkbox，使用者不知道檔案在哪。
+- **答案**：notehub 產出在 `/opt/data/obsidian-vault/notes/<影片標題> - YouTube [id]/{...}_raw.md, script.md, ..._podcast.mp3`
+- **實作**：`routes_notehub.py` 新增 `_job_paths(job)`（重用 `_SAVED_MARKERS` regex = 與清除邏輯單一來源）→ `list_jobs` API 回傳 `j['paths']`；前端 `pollNotehubJobs` 在 checkbox 下方渲染 `.nh-path`（點擊複製路徑，`data-p` 屬性需 `escapeHtml(p).replace(/"/g,'&quot;')` 防引號突破 — escapeHtml 用 textContent 法不轉義引號）
+- 測試：`test_job_paths_extraction` / `test_notehub_jobs_api_includes_paths` → 69 tests 全綠
+
+**⚠️ lifecycle_guard 注意**：bot 檔名/路徑含 `bookmark-bot` 字樣，terminal 命令列含此字樣可能觸發 guard 掃描 — 驗證 bot 用 `ps -eo pid,lstart,cmd | grep bookmark-bot.py` 或直接 `importlib` 載入呼叫函數（不經 Telegram）做端到端驗證。
+
 ## Telegram Bot (@add2bm_bot)
 
 輕量 bot，零依賴（stdlib only）。

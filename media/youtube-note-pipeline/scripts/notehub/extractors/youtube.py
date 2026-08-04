@@ -17,7 +17,7 @@ from .base import BaseExtractor, ExtractResult
 
 def _extract_video_id(url: str) -> str | None:
     patterns = [
-        r"(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/embed/)([a-zA-Z0-9_-]{11})",
+        r"(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/embed/|youtube\.com/shorts/)([a-zA-Z0-9_-]{11})",
         r"^([a-zA-Z0-9_-]{11})$",
     ]
     for p in patterns:
@@ -166,6 +166,7 @@ class YouTubeExtractor(BaseExtractor):
         r"youtube\.com/watch",
         r"youtu\.be/",
         r"youtube\.com/embed/",
+        r"youtube\.com/shorts/",
     ]
 
     def detect(self, input_path: str) -> bool:
