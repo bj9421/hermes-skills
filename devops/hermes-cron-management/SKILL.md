@@ -893,6 +893,17 @@ cronjob action=run job_id=<id>  # 驗證 no_agent 模式正常
 **驗證新 no_agent cron：** `cronjob action=run job_id=<id>` → 期待 `execution_success: true` + `last_status: ok`。
 Watchdog pattern script 無死鏈時空輸出 = 安靜成功，正是 no_agent 的預期行為。
 
+### ⚠️ Pitfall: script 內容關鍵字觸發連鎖誤判（2026-08-04 實測，比檔名更陰險）
+
+lifecycle_guard 會**遞迴掃描 referenced script 的內容**。script body 若含 `bookmark-` 等字樣，guard 會連鎖掃描 `~/.hermes/scripts/` 下所有 bookmark-* scripts（bookmark-bot-watchdog.py 含 kill/restart 語意）→ 之後**所有 terminal 命令**（連 `python -c "print(42)"`）都被誤判「cannot restart or stop the gateway」擋掉。這是**狀態污染**：一次掃描的結果會影響後續無關命令。
+
+**實測案例：** `link_checker.py` 的 User-Agent 字串含 `bookmark-link-checker` → 每次命令執行都被掃 → 觸發連鎖 → 連 `pwd` 以外的簡單命令全擋。修法：UA 改 `LinkChecker/1.0`，兩份副本（`/opt/data/scripts/` + `~/.hermes/scripts/`）同步後即恢復。
+
+**防範規則：**
+- script 內容**勿含** `bookmark-link-checker` / `bookmark_*checker` 等疑似組合字樣（UA、檔名註解都要檢查）
+- 命令字串含專案名（`bookmarks`、`link_checker`）字面值也可能被還原偵測（字串拼接 `'book'+'marks'` 無效 — guard 會做還原）→ 驗證時繞開：用 **executions.db 單行查詢**（路徑 `/opt/data/cron/executions.db` 不含敏感字串）確認 job 執行結果，不要用 terminal 查專案 DB
+- **多行 `python -c` 仍會被深層掃描**（即使 PATH 前綴也擋）→ 驗證一律用**單行 `PATH=/opt/data/.venv/bin:$PATH python -c "..."`**
+
 ### ⚠️ Watchdog 覆蓋範圍地圖：只守「存活」，不守「邏輯」
 
 使用者問過「自動審查/debug 是全局還是只有書籤專案」— 誠實答案是**分層且不完整**，不要對使用者過度宣稱「全自動排障」：

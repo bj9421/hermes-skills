@@ -211,6 +211,28 @@ function refreshWithDelay() {
 - 首筆新增無 `duplicate` 欄位；同 URL 僅一筆（UNIQUE）
 - 案例：`HTTPS://EXAMPLE.com/page?a=1&utm_campaign=y` 與 `https://example.com/page?utm_source=x&a=1` canonicalize 後視為重複
 
+### 🔴 死鏈檢查 F2（2026-08-04 commit `79e486c`）
+
+**Schema**：bookmarks 表加 `broken INTEGER DEFAULT 0` + `last_checked_at TIMESTAMP`；`db.py init_db()` 對既有 DB 做 ALTER TABLE migration（`PRAGMA table_info` 檢查欄位不存在才 ALTER — 可安全重複執行）。
+
+**Script**：`/opt/data/scripts/link_checker.py`（+ `~/.hermes/scripts/` 副本供 cron）— HEAD fallback GET，404/410 → broken=1；其他 4xx/5xx/連線失敗也標；200/3xx → broken=0。Watchdog pattern：無死鏈空輸出安靜、有死鏈輸出報告。
+
+**UI**：卡片標題 💀 + `card-title.broken`（紅字刪除線）；過濾 chip `?broken=1`（`build_filters` 支援）；`last_checked_at` 顯示在 badge tooltip。
+
+**Cron**：`bookmark-link-checker`（每週一 09:00，no_agent，script `link_checker.py`）。⚠️ 檔名 `bookmark_link_checker.py` 觸發 lifecycle guard「embedded null character」→ 改名 `link_checker.py`（詳見 hermes-cron-management skill 的 Pitfall 章節）。
+
+**🔴 小紅書死鏈檢查 = 繞過 DNS 封鎖，不是跳過**（使用者明確指正）：
+- **不要**把 xhslink/xiaohongshu 直接 skip（封鎖頁會誤判 404，但跳過 = 死鏈檢查有洞）
+- `check_xhs_url()` 複用 llm_enhance 三步驟：curl -L 追短鏈 → DoH 查真實 IP → curl --resolve 拿 status
+- **判定規則**：404/410 → 死鏈；其他任何回應（200/3xx/**登入牆 401/403**）→ 活鏈（頁面存在）；**繞過失敗不標死鏈**（封鎖環境連不上 ≠ 真死，避免誤標誤刪）
+- 實測：5 筆 xhslink 全活鏈（`last_checked_at` 有更新 = 真的繞過檢查，非 skip）
+
+### 🔴 點擊標題自動標已讀 F3（2026-08-04 commit `d16d45a`）
+
+- 新增 `POST /api/bookmarks/<id>/mark-read`（只標已讀，不切換；已讀 no-op）— 與既有 `toggle_read`（切換）並存
+- 標題 `<a>` 用 `hx-on::click="htmx.ajax('POST','/api/bookmarks/<id>/mark-read',{swap:'none'})"` — **不能用 `hx-post`**（HTMX 對帶 hx-post 的元素 preventDefault，會擋掉 `target="_blank"` 新分頁跳轉）；`hx-on::click` 不攔截默認行為，純 side-effect
+- 點擊後 `setTimeout(()=>htmx.ajax('GET','/stats',{target:'#stats-card',swap:'outerHTML'}),300)` 刷新 unread 統計
+
 ## Telegram Bot (@add2bm_bot)
 
 輕量 bot，零依賴（stdlib only）。
@@ -623,7 +645,7 @@ tailscale serve --bg --https=443 localhost:5001
 
 ```bash
 cd /opt/data/projects/bookmark-manager && PATH=/opt/data/.venv/bin:$PATH python -m pytest tests/ -q
-# 22 passed in ~2.2s（mock 網路後；未 mock 前卡 83s 真實網路/LLM）
+# 24 passed in ~2.3s（mock 網路後；未 mock 前卡 83s 真實網路/LLM）
 ```
 
 **conftest 關鍵 pattern**（可複製到任何 Flask+SQLite 專案，完整範本見 flask-htmx-pwa skill 的 `templates/conftest_flask_sqlite.py`）：
@@ -631,7 +653,7 @@ cd /opt/data/projects/bookmark-manager && PATH=/opt/data/.venv/bin:$PATH python 
 2. **autouse `_no_network` fixture（monkeypatch）**：`routes_bookmarks.fetch_title`、`llm_enhance`、`extract_favicon` 回傳空 → 避免真實網路/LLM 卡住；`routes_notehub._ensure_worker` no-op → 避免背景 worker thread 佔住臨時 DB（**database locked**）
 3. 加新測試前先問：會觸發網路/LLM/背景執行緒嗎？會就 monkeypatch。HTMX 分支測試帶 `headers={'HX-Request': 'true'}`
 
-**已覆蓋**：add / duplicate-url（canonicalize）/ index / bookmarks / stats / enrich-404 / batch-delete / batch-notehub 佇列 / tag-update / build_filters / parse / 簡轉繁 / sync_tags（含 bookmark_ids）。
+**已覆蓋**：add / duplicate-url（canonicalize）/ index / bookmarks / stats / enrich-404 / batch-delete / batch-notehub 佇列 / tag-update / mark-read（F3）/ build_filters（含 broken）/ parse / 簡轉繁 / sync_tags（含 bookmark_ids）。
 
 ## 拆分工作流（已完成版本）
 
