@@ -94,7 +94,17 @@ def main():
     # python -m notehub --synthesize <url1> <url2> [<url3>...] [--podcast solo|dual] [--ppt] [--visual]
     if "--synthesize" in args:
         idx = args.index("--synthesize")
-        sources = [a for a in args[idx + 1:] if not a.startswith("--")]
+        # 🔴 2026-08-05 Phase 5：過濾 flag（--lang X、--podcast X、--voice-a X、--voice-b X）
+        raw = args[idx + 1:]
+        sources, skip_next = [], False
+        for i, a in enumerate(raw):
+            if skip_next:
+                skip_next = False
+                continue
+            if a.startswith("--"):
+                skip_next = a in ('--lang', '--podcast', '--voice-a', '--voice-b')
+                continue
+            sources.append(a)
         if len(sources) < 2:
             print("Usage: python -m notehub --synthesize <url1> <url2> [<url3>...] "
                   "[--podcast solo|dual] [--ppt] [--visual] [--lang zh] [--voice-a 台女] [--voice-b 台男]",
