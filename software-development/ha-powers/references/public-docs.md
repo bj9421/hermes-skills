@@ -22,6 +22,6 @@ https://github.com/bj9421/HA-POWERS-Docs
 
 ## Version
 
-- Last synced: 2026-07-10
-- ha-powers skill version: 1.5.0
-- Added: README/ARCHITECTURE split for mobile compatibility (see `references/readme-mobile-split.md`)
+- Last synced: 2026-08-05
+- ha-powers skill version: 1.9.0
+- Added: Review vs Debug 分工（Phase 5 + When to Use + Decision Tree），README/ARCHITECTURE 雙語同步
