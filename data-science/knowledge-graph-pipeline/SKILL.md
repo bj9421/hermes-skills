@@ -260,6 +260,36 @@ See `references/chunked-graph-builder.md` for the full pattern with code, bugs f
 6. `file_type` values: `document`, `concept`, `rationale`, `code`. `relation` values: `references`, `conceptually_related_to`, `semantically_similar_to`, `rationale_for`. `confidence` values: `EXTRACTED` (score must be 1.0) or `INFERRED` (score ∈ {0.95,0.85,0.75,0.65,0.55,0.9,0.6}).
 7. Max 3 hyperedges recommended; each must have ≥3 nodes and reference existing node IDs.
 
+## Subagent-based semantic extraction (no Gemini key, 2026-08-05 proven)
+
+When there is NO `GEMINI_API_KEY` and no provider configured, graphify's built-in LLM path can't run. Proven alternative on Hermes: **the host agent IS the LLM** — dispatch `delegate_task` subagents, one per chunk, each reading the chunk file list and writing `.graphify_chunk_<NN>.json`. Verified on 91 bookmark-summary + notehub-transcript markdown files → 471 nodes / 605 edges / 50 communities.
+
+**Pipeline (scripts in `/opt/data/scripts/graphify_*_content.py`):**
+1. `export_bookmark_content.py` — export DB rows to one markdown per bookmark (title+summary+tags+URL), copy notehub `_raw.md`/`script.md` → `bookmark-content-graph/{bookmarks,notehub}/`
+2. `graphify_detect_content.py` — detect corpus (all `document` type)
+3. `graphify_split_content.py` — split file list into 5 chunk list files (`.graphify_chunk_list_<NN>.txt`, ~22 files each; dispatch ≤3 concurrently in 2 waves)
+4. `delegate_task` × N — each subagent gets the extraction-spec prompt (see `graphify` skill `references/extraction-spec.md`): read chunk list, extract JSON, **write `.graphify_chunk_<NN>.json` to disk itself**. The consolidated summary returned is truncated — never rely on it for the payload.
+5. `graphify_merge_content.py` — merge 5 chunk JSONs (concat nodes/edges/hyperedges)
+6. `graphify_build_content.py` — build graph → `graph.json` + `GRAPH_REPORT.md` + `graph.html` via `graphify export html`
+
+**Pitfalls:**
+- Subagents cannot write to `/tmp` (HERMES_WRITE_SAFE_ROOT is `/opt/data`) — keep chunk JSON under the project dir.
+- Subagent read_file may flag transcripts as "binary" (encoding quirks) — instruct them to read via Python UTF-8 decode.
+- FILE_LIST paths may contain simplified-Chinese chars while on-disk names are traditional — use FILE_LIST paths verbatim for `source_file` per the extraction-spec rule.
+
+## Serving multiple graphs (graphify has NO serve command)
+
+`graphify serve` / `graphify --root` do NOT exist — the "graphify server" on port 5050 is a plain `python3 -m http.server` serving a `graphify-out/` dir (watchdog-started). To serve a SECOND graph on the SAME port, use a path subdirectory:
+
+```bash
+mkdir -p /opt/data/projects/<proj>/graphify-out/content-graph
+cp <other-graph>/graphify-out/{graph.html,GRAPH_REPORT.md} .../graphify-out/content-graph/
+# http://host:5050/graph.html          (code graph)
+# http://host:5050/content-graph/graph.html  (content graph)
+```
+
+For Flask (bookmark-manager port 5001), copy into `static/` instead: `http://host:5001/static/content-graph/graph.html`. Same port, different paths — no extra server process.
+
 ## Pitfalls
 
 - **Don't** pass `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` — Graphify only reads `GEMINI_API_KEY` (for built-in Gemini backend) or custom providers via `providers.json`
