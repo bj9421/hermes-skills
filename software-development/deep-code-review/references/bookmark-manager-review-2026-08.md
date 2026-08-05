@@ -3,6 +3,29 @@
 5 個核心檔案：routes_notehub.py / routes_bookmarks.py / llm_enhance.py / db.py / bookmark_io.py
 （另讀 schema.sql + app.py 佐證）。以下 19 項皆含實測驗證結果。**下次 review 此專案先對照本表，勿重報；可逐項確認是否已修。**
 
+## 修復狀態（2026-08-05 完成，19/19 全修 ✅）
+
+全部已修復並 commit（`fix(code-review)` 系列）。測試 100 passed（含新增 `tests/test_review_fixes.py` +18、`tests/test_notehub_claim.py` +3）。
+- #1 FTS5：db.py build_filters 移除引號（trigram 不需保留引號）
+- #2 limit：`type=int` + `max(1, min(x,50))`
+- #3 canonicalize：先拆 `?` 再拆 host
+- #4 LIKE：`ESCAPE '\'` + 轉義
+- #5 XHS float：`isinstance(dur, (int,float))`
+- #6 daemon thread：try/finally close
+- #7 duration_checked_at：SELECT 連欄位一起檢查
+- #8 LLM 型別：list→join、str() coerce
+- #9 marker：stderr+stdout 都留、頭尾各留
+- #10 worker 認領：**兩半都修** — `claim_notehub_job()`（`UPDATE ... WHERE status='queued'` + rowcount）+ `_ensure_worker` 重啟時 running→queued；worker 迴圈認領失敗 skip
+- #11 孤兒標籤：單筆 DELETE 後 sync_tags
+- #12 PATCH /tags：to_traditional_tags + 型別檢查
+- #13 SSRF：`_check_fetch_url_safe()` 共用 helper（http/https + ipaddress 擋內網）
+- #14 summary 空白：enrich 條件改 `not data.get('summary')` + 保留使用者 tags
+- #15 conn finally：已修（llm_enhance.py:374）— ⚠️ 曾誤報「未修」，實際已修
+- #16 batch ids：isinstance list + int
+- #17 import：try/except + rowcount
+- #18 NOT IN (NULL)：used 空 → `DELETE FROM tags`
+- #19 busy_timeout：`_connect()` 設 busy_timeout=30s
+
 ## HIGH
 
 1. **db.py:219-221** — FTS5 搜尋含不平衡 `"`（≥3 字元）→ `OperationalError: unterminated string` → 500。✅實測（`MATCH '"""'`、`'a b "c'` 都炸）。修：try/except 退 LIKE 或先過濾引號。

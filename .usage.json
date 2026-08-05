@@ -419,14 +419,14 @@
     "archived_at": null,
     "created_at": "2026-08-05T04:53:41.805729+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-08-05T09:06:55.330642+00:00",
-    "last_used_at": "2026-08-05T09:06:25.139249+00:00",
-    "last_viewed_at": "2026-08-05T09:06:25.125501+00:00",
-    "patch_count": 3,
+    "last_patched_at": "2026-08-05T09:51:17.290166+00:00",
+    "last_used_at": "2026-08-05T09:51:00.152254+00:00",
+    "last_viewed_at": "2026-08-05T09:51:00.139871+00:00",
+    "patch_count": 5,
     "pinned": false,
     "state": "active",
-    "use_count": 3,
-    "view_count": 3
+    "use_count": 6,
+    "view_count": 6
   },
   "design-md": {
     "archived_at": null,
@@ -796,14 +796,14 @@
     "archived_at": null,
     "created_at": "2026-07-07T19:23:23.001894+00:00",
     "created_by": null,
-    "last_patched_at": "2026-07-25T01:31:39.753458+00:00",
-    "last_used_at": "2026-07-30T11:11:25.314047+00:00",
-    "last_viewed_at": "2026-07-30T11:11:25.300302+00:00",
-    "patch_count": 60,
+    "last_patched_at": "2026-08-05T10:04:05.577969+00:00",
+    "last_used_at": "2026-08-05T10:02:26.800514+00:00",
+    "last_viewed_at": "2026-08-05T10:02:26.784666+00:00",
+    "patch_count": 64,
     "pinned": false,
     "state": "active",
-    "use_count": 75,
-    "view_count": 75
+    "use_count": 78,
+    "view_count": 78
   },
   "handoff": {
     "archived_at": null,
@@ -849,26 +849,26 @@
     "created_at": "2026-06-17T14:47:40.963053+00:00",
     "created_by": null,
     "last_patched_at": "2026-07-25T01:31:29.429094+00:00",
-    "last_used_at": "2026-07-25T08:16:12.089233+00:00",
-    "last_viewed_at": "2026-07-25T08:16:12.062143+00:00",
+    "last_used_at": "2026-08-05T10:02:16.169875+00:00",
+    "last_viewed_at": "2026-08-05T10:02:16.155969+00:00",
     "patch_count": 3,
     "pinned": false,
     "state": "active",
-    "use_count": 11,
-    "view_count": 11
+    "use_count": 12,
+    "view_count": 12
   },
   "hermes-cron-management": {
     "archived_at": null,
     "created_at": "2026-07-10T12:39:38.045007+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-08-04T20:34:20.985644+00:00",
-    "last_used_at": "2026-08-04T20:42:20.182126+00:00",
-    "last_viewed_at": "2026-08-04T20:42:20.165957+00:00",
-    "patch_count": 84,
+    "last_patched_at": "2026-08-05T09:31:02.935774+00:00",
+    "last_used_at": "2026-08-05T09:30:41.096357+00:00",
+    "last_viewed_at": "2026-08-05T09:30:41.083614+00:00",
+    "patch_count": 85,
     "pinned": false,
     "state": "active",
-    "use_count": 126,
-    "view_count": 126
+    "use_count": 127,
+    "view_count": 127
   },
   "hermes-dashboard-troubleshooting": {
     "archived_at": null,
@@ -888,13 +888,13 @@
     "created_at": "2026-08-02T11:33:29.593356+00:00",
     "created_by": null,
     "last_patched_at": null,
-    "last_used_at": "2026-08-03T01:45:11.016684+00:00",
-    "last_viewed_at": "2026-08-03T01:45:10.992811+00:00",
+    "last_used_at": "2026-08-05T09:50:31.014661+00:00",
+    "last_viewed_at": "2026-08-05T09:50:31.000735+00:00",
     "patch_count": 0,
     "pinned": false,
     "state": "active",
-    "use_count": 2,
-    "view_count": 2
+    "use_count": 3,
+    "view_count": 3
   },
   "hermes-desktop-plugins": {
     "archived_at": null,
@@ -913,14 +913,14 @@
     "archived_at": null,
     "created_at": "2026-07-04T00:35:39.884512+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-08-03T11:30:40.961387+00:00",
-    "last_used_at": "2026-08-03T11:30:21.370970+00:00",
-    "last_viewed_at": "2026-08-03T11:30:21.357070+00:00",
-    "patch_count": 35,
+    "last_patched_at": "2026-08-05T09:18:57.636090+00:00",
+    "last_used_at": "2026-08-05T09:18:35.834941+00:00",
+    "last_viewed_at": "2026-08-05T09:18:35.821251+00:00",
+    "patch_count": 36,
     "pinned": false,
     "state": "active",
-    "use_count": 59,
-    "view_count": 59
+    "use_count": 61,
+    "view_count": 61
   },
   "hermes-global-config": {
     "archived_at": null,
@@ -1434,13 +1434,13 @@
     "created_at": "2026-07-30T14:54:38.556610+00:00",
     "created_by": "agent",
     "last_patched_at": "2026-08-05T05:17:57.243445+00:00",
-    "last_used_at": "2026-08-05T05:17:44.222559+00:00",
-    "last_viewed_at": "2026-08-05T05:17:44.209035+00:00",
+    "last_used_at": "2026-08-05T09:30:22.741341+00:00",
+    "last_viewed_at": "2026-08-05T09:30:22.727000+00:00",
     "patch_count": 87,
     "pinned": false,
     "state": "active",
-    "use_count": 70,
-    "view_count": 70
+    "use_count": 71,
+    "view_count": 71
   },
   "petdex": {
     "archived_at": null,
@@ -1719,14 +1719,14 @@
     "archived_at": null,
     "created_at": "2026-06-05T04:42:21.059808+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-08-03T09:04:37.146244+00:00",
-    "last_used_at": "2026-08-03T09:04:14.033376+00:00",
-    "last_viewed_at": "2026-08-03T09:04:14.020038+00:00",
-    "patch_count": 232,
+    "last_patched_at": "2026-08-05T09:31:25.121774+00:00",
+    "last_used_at": "2026-08-05T09:31:10.743748+00:00",
+    "last_viewed_at": "2026-08-05T09:31:10.730384+00:00",
+    "patch_count": 234,
     "pinned": false,
     "state": "active",
-    "use_count": 258,
-    "view_count": 258
+    "use_count": 261,
+    "view_count": 261
   },
   "taiwan-stock-finmind-pipeline": {
     "archived_at": "2026-07-09T13:55:42.635991+00:00",

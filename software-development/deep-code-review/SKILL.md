@@ -24,6 +24,7 @@ Use when the user asks to review existing project code for bugs: 「深度 code 
 - 結尾放「已驗證無問題（排除項）」與摘要（做了什麼 / 產出幾項 / 建議優先修哪幾個）。
 - 若使用者明說「已知 bug 不重報」（如 timeout 訊息），就跳過。
 - 修法要避免引入新問題（例如逃逸符號本身要再逃逸）。
+- **🔴 修復完成回報前，逐項對照原始清單 grep/diff 驗證 code，不憑記憶報「N/M 已修」**。2026-08-05 教訓：回報「18/19 已修、未修 #15」→ 使用者追問「還有一個未修是什麼」→ 對照原始報告才發現 #15（LLM conn finally）其實已修，真正漏的是 **#10 的「原子認領」半套**（只做「重啟時 running→queued」，漏 `UPDATE ... WHERE status='queued'` + rowcount）。單項 bug 常有多個子修復（如 #10 有兩半），報「已修」前每個子項都要有 code 證據。
 
 ## Workflow
 
