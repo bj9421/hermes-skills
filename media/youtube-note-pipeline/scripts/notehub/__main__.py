@@ -90,6 +90,72 @@ def main():
             print(f"  {stype}: {count}")
         return
 
+    # 🔴 2026-08-05 Phase 5：多來源合成模式（NotebookLM 式）
+    # python -m notehub --synthesize <url1> <url2> [<url3>...] [--podcast solo|dual] [--ppt] [--visual]
+    if "--synthesize" in args:
+        idx = args.index("--synthesize")
+        sources = [a for a in args[idx + 1:] if not a.startswith("--")]
+        if len(sources) < 2:
+            print("Usage: python -m notehub --synthesize <url1> <url2> [<url3>...] "
+                  "[--podcast solo|dual] [--ppt] [--visual] [--lang zh] [--voice-a 台女] [--voice-b 台男]",
+                  file=sys.stderr)
+            sys.exit(1)
+        synth_args = args[idx + 1:]
+        do_ppt = "--ppt" in synth_args
+        do_visual = "--visual" in synth_args
+        lang = "zh"
+        if "--lang" in synth_args:
+            li = synth_args.index("--lang")
+            lang = synth_args[li + 1] if li + 1 < len(synth_args) else "zh"
+        podcast_mode = None
+        if "--podcast" in synth_args:
+            pi = synth_args.index("--podcast")
+            podcast_mode = synth_args[pi + 1] if pi + 1 < len(synth_args) else "dual"
+        voice_a = None
+        if "--voice-a" in synth_args:
+            vi = synth_args.index("--voice-a")
+            voice_a = resolve_voice(synth_args[vi + 1] if vi + 1 < len(synth_args) else None)
+        voice_b = None
+        if "--voice-b" in synth_args:
+            vi = synth_args.index("--voice-b")
+            voice_b = resolve_voice(synth_args[vi + 1] if vi + 1 < len(synth_args) else None)
+
+        from notehub.core.synthesis import synthesize_sources
+        out_dir, report_path, title = synthesize_sources(sources, lang=lang)
+
+        # 階段二：依選項產出（口播 / PPT / 圖卡）
+        if podcast_mode or do_ppt or do_visual:
+            _scripts_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            if _scripts_dir not in sys.path:
+                sys.path.insert(0, _scripts_dir)
+            with open(report_path, encoding="utf-8") as f:
+                report_content = f.read()
+            if podcast_mode:
+                from podcast import produce_podcast
+                mp3 = produce_podcast(
+                    transcript=report_content,
+                    title=title,
+                    url=", ".join(sources),
+                    lang=lang,
+                    mode=podcast_mode,
+                    voice_a=voice_a or "zh-TW-HsiaoChenNeural",
+                    voice_b=voice_b or "zh-TW-YunJheNeural",
+                    out_dir=out_dir,
+                    video_id="",
+                )
+                if mp3:
+                    print(f"[OK] Podcast saved: {mp3}", file=sys.stderr)
+            if do_ppt:
+                from ppt_gen import generate_ppt
+                ppt_out = generate_ppt(report_content, title, lang=lang, out_dir=out_dir)
+                print(f"[OK] PPT saved: {ppt_out}", file=sys.stderr)
+            if do_visual:
+                from visual_gen import generate_visual
+                vis_out = generate_visual(report_content, title, lang=lang, out_dir=out_dir)
+                print(f"[OK] Visual saved: {vis_out}", file=sys.stderr)
+        print(f"\nOutput: {out_dir}")
+        return
+
     # Pipeline mode (default)
     source = args[0]
     pipeline_args = args[1:]
