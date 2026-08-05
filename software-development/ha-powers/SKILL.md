@@ -1,7 +1,7 @@
 ---
 name: ha-powers
 description: "ORCHESTRATOR: Full-stack development pipeline from ideation to merge. One profile, 0-2 transient subagents. Includes Progress Tracker (superpowers-style) with 7-phase granular checklists."
-version: 1.8.0
+version: 1.9.0
 author: Hermes Agent
 license: MIT
 platforms: [linux, macos, windows]
@@ -410,6 +410,22 @@ Goal: Final human-quality review before opening a PR.
 2. **Report findings** with severity (Critical / Important / Minor)
 3. **Fix issues** → re-review → approve
 
+### 🔀 Review vs Debug 分工（重要）
+
+> **Review（事前預防）與 Debug（事後治療）是時間線上的不同點，不是並行選項。**
+
+| Skill | 觸發時機 | 目的 | 輸出 |
+|-------|---------|------|------|
+| `requesting-code-review` / `deep-code-review` | 功能寫完、發 PR 前 | **預防** | bug 報告 + 嚴重度分級 |
+| `systematic-debugging` / `hermes-debug-protocol` | bug 已發生、有異常行為 | **治療** | 根因 + 修復證據 |
+
+**關鍵原則：**
+1. **Review = 還沒壞，檢查會不會壞**（輸出 bug 報告與建議）
+2. **Debug = 已經壞了，查為什麼**（輸出根因 + Before/After 證據）
+3. **上下游關係**：review 發現問題 → 修復 → 若修了還壞 → **才**進入 debug 8 步流程。不是並行、不是替代。
+4. **debug skills 三選一，不疊加**：`hermes-debug-protocol`（整合版）**或** `systematic-debugging` + `debug-agent`（拆件）。同時載三個是浪費 token。
+5. **例**：今天 bookmark-manager 走的就是這條 — Phase 5 派獨立 reviewer 審 5 檔案 → 19 項 bug 報告 → 修復 + 測試補強 → 100 tests 全綠；若修完仍壞才觸發 debug 流程。
+
 > **Gate output:** Reviewed code ready for PR.  
 > **Next:** Open PR via `github-pr-workflow`.
 
@@ -453,6 +469,15 @@ User says "build X"
 │
 ├─ Is it a clear bug with known root cause?
 │   └─ YES → Use systematic-debugging skill. Skip brainstorming + plans.
+│
+├─ 功能寫完，要檢查品質？（寫完後 / 發 PR 前）
+│   └─ YES → Phase 5 requesting-code-review（或 deep-code-review 深度審計既有 code）。
+│       Review = 事前預防（輸出 bug 報告）；Debug = 事後治療（輸出根因）。
+│       兩者上下游：review 發現問題 → 修 → 修了還壞 → 才進 systematic-debugging。
+│
+├─ 已有 bug / 異常行為？（已發生，不是「會不會壞」）
+│   └─ YES → systematic-debugging 8 步流程（先 Review 相關 code 再修）。
+│       debug skills 三選一：hermes-debug-protocol 或 systematic-debugging + debug-agent。
 │
 ├─ Is it a small change (1 file, clear scope)?
 │   └─ YES → Phase 0 (grill-me if needed) → code directly.
@@ -670,6 +695,7 @@ The `ha-powers` skill itself is **declarative orchestration** — it tells you w
 | 1.5.0 | 2026-07-10 | Reverted hardcoded paths — restored generic `<project>/docs/specs/` and `<project>/docs/plans/` to avoid environment-specific path issues |
 | 1.7.0 | 2026-07-25 | Refactored grill-me into grilling primitive + grill-me/grill-with-docs wrappers. Phase 0 now supports file output choice (ADR + CONTEXT.md). |
 | 1.8.0 | 2026-07-25 | Toolbox philosophy: added "Toolbox, Not Assembly Line" section, partial/minimal pipeline paths, updated Decision Tree with 4-tier sizing, softened closing statement. |
+| 1.9.0 | 2026-08-05 | Added "Review vs Debug 分工" section in Phase 5 + Decision Tree branches — clarifies review (prevention, pre-PR) vs debug (treatment, root cause) as upstream/downstream, not parallel; debug skills 3-choice-1. |
 | 1.6.0 | 2026-07-25 | Integrated mattpocock skills: Phase 0 (grill-me pre-alignment), codebase-design vocabulary in Phase 1, handoff for session continuity |
 | 1.6.1 | 2026-07-25 | Added git version control for skills directory; hermes-agent-skill-authoring v1.2.0 enforces mandatory pre-edit gate (todo → plan → confirm → commit) |
 
