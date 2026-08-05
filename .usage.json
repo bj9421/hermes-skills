@@ -173,13 +173,13 @@
     "created_at": "2026-07-09T18:37:31.164418+00:00",
     "created_by": null,
     "last_patched_at": "2026-08-04T11:29:20.012158+00:00",
-    "last_used_at": "2026-08-04T11:28:23.247969+00:00",
-    "last_viewed_at": "2026-08-04T11:28:23.231821+00:00",
+    "last_used_at": "2026-08-05T14:41:07.732340+00:00",
+    "last_viewed_at": "2026-08-05T14:41:07.718449+00:00",
     "patch_count": 29,
     "pinned": false,
     "state": "active",
-    "use_count": 75,
-    "view_count": 75
+    "use_count": 76,
+    "view_count": 76
   },
   "baoyu-infographic": {
     "archived_at": null,
@@ -394,13 +394,13 @@
     "created_at": "2026-07-22T00:56:59.271313+00:00",
     "created_by": null,
     "last_patched_at": "2026-08-02T15:58:08.930032+00:00",
-    "last_used_at": "2026-08-04T15:55:41.342874+00:00",
-    "last_viewed_at": "2026-08-04T15:55:41.331053+00:00",
+    "last_used_at": "2026-08-05T15:57:43.866473+00:00",
+    "last_viewed_at": "2026-08-05T15:57:43.852972+00:00",
     "patch_count": 1,
     "pinned": false,
     "state": "active",
-    "use_count": 8,
-    "view_count": 8
+    "use_count": 9,
+    "view_count": 9
   },
   "dashboard-web-debugging": {
     "archived_at": null,
@@ -888,13 +888,13 @@
     "created_at": "2026-08-02T11:33:29.593356+00:00",
     "created_by": null,
     "last_patched_at": null,
-    "last_used_at": "2026-08-05T09:50:31.014661+00:00",
-    "last_viewed_at": "2026-08-05T09:50:31.000735+00:00",
+    "last_used_at": "2026-08-05T14:23:29.961991+00:00",
+    "last_viewed_at": "2026-08-05T14:23:29.946763+00:00",
     "patch_count": 0,
     "pinned": false,
     "state": "active",
-    "use_count": 3,
-    "view_count": 3
+    "use_count": 4,
+    "view_count": 4
   },
   "hermes-desktop-plugins": {
     "archived_at": null,
@@ -1355,14 +1355,14 @@
     "archived_at": null,
     "created_at": "2026-07-16T12:44:25.471676+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-08-04T16:06:39.890128+00:00",
-    "last_used_at": "2026-08-04T16:05:50.282335+00:00",
-    "last_viewed_at": "2026-08-04T16:05:50.268894+00:00",
-    "patch_count": 27,
+    "last_patched_at": "2026-08-05T15:58:59.417527+00:00",
+    "last_used_at": "2026-08-05T15:58:17.770338+00:00",
+    "last_viewed_at": "2026-08-05T15:58:17.756402+00:00",
+    "patch_count": 30,
     "pinned": false,
     "state": "active",
-    "use_count": 27,
-    "view_count": 27
+    "use_count": 29,
+    "view_count": 29
   },
   "obsidian-vault-cleanup": {
     "archived_at": null,
@@ -1433,14 +1433,14 @@
     "archived_at": null,
     "created_at": "2026-07-30T14:54:38.556610+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-08-05T13:42:29.737863+00:00",
-    "last_used_at": "2026-08-05T13:41:50.464501+00:00",
-    "last_viewed_at": "2026-08-05T13:41:50.450603+00:00",
-    "patch_count": 105,
+    "last_patched_at": "2026-08-05T14:49:22.641806+00:00",
+    "last_used_at": "2026-08-05T14:48:48.036944+00:00",
+    "last_viewed_at": "2026-08-05T14:48:48.022684+00:00",
+    "patch_count": 114,
     "pinned": false,
     "state": "active",
-    "use_count": 82,
-    "view_count": 82
+    "use_count": 85,
+    "view_count": 85
   },
   "petdex": {
     "archived_at": null,
@@ -1953,14 +1953,14 @@
     "archived_at": null,
     "created_at": "2026-07-07T04:37:44.994692+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-08-05T13:41:42.958181+00:00",
-    "last_used_at": "2026-08-05T13:53:19.974302+00:00",
-    "last_viewed_at": "2026-08-05T13:53:19.959683+00:00",
-    "patch_count": 161,
+    "last_patched_at": "2026-08-05T14:30:31.381452+00:00",
+    "last_used_at": "2026-08-05T14:30:08.643138+00:00",
+    "last_viewed_at": "2026-08-05T14:30:08.629424+00:00",
+    "patch_count": 164,
     "pinned": false,
     "state": "active",
-    "use_count": 138,
-    "view_count": 138
+    "use_count": 142,
+    "view_count": 142
   },
   "yuanbao": {
     "archived_at": null,

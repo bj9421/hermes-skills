@@ -172,7 +172,7 @@ result = call_llm([{'role': 'user', 'content': '...'}])
 
 - `references/zen-free-tier-limits.md` — Zen 免費層共享額度研究（big-pickle 無額度優勢、IP 層限流、GitHub 證據鏈）
 - `references/llm-rate-limit-landscape.md` — 跨 process 限流地圖 + 全局檔案鎖方案
-- `references/multi-source-synthesis.md` — NotebookLM 式多來源合成可行性評估（2026-08-05）：80% 零件重用、缺 synthesis prompt、架構藍圖、限制、待決策問題 — 使用者要「多來源產一份內容」時先讀這份
+- `references/multi-source-synthesis.md` — NotebookLM 式多來源合成（2026-08-05）：決策已定（混合來源/兩階段/勾選入口）+ Phase 1 批次輸出選項已完成（佇列表格口播/PPT/圖卡 checkbox）+ Phase 2 合成架構藍圖 — 使用者要「多來源產一份內容」時先讀這份
 
 ## ⚠️ Pitfalls
 

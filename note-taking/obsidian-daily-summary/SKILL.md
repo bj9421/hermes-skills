@@ -38,7 +38,7 @@ The canonical setup: a Hermes-managed cron job that fires daily (23:55) to produ
 **Script logic (embedded in cron prompt):**
 1. Query `/opt/data/state.db` via Python/sqlite3 for today's sessions (filter by `date(started_at, 'unixepoch', 'localtime') = ?`).
 2. For each session, count messages and collect metadata: source, time range, title, session_id.
-3. For **each session**, call `session_search(session_id="{id}", window=3)` to read the first user message, key discussion topics, and the final assistant conclusion. For large sessions (200+ messages) where `session_search` truncates, use the direct SQL extraction recipes in `references/session-extraction-sql.md` (user-message flow + tail by ID) — faster and far fewer round-trips.
+3. For **each session**, call `session_search(session_id="{id}", window=3)` to read the first user message, key discussion topics, and the final assistant conclusion. For large sessions (200+ messages) where `session_search` truncates, use the direct SQL extraction recipes in `references/session-extraction-sql.md` (user-message flow + tail by ID) — faster and far fewer round-trips. Two recipes added 2026-08-05: **section 4a** cross-day session list (query `messages.timestamp` instead of `started_at` — the cron's started_at filter returns 0 for conversations spanning midnight) and **section 5** two-stage extraction for 2000+ message sessions (user-only deduped dump + keyword-filtered assistant conclusions, avoids 100K+ char truncation).
 4. Compose a markdown file with content-enriched format (see Output Format below).
 5. Write to the output path: `vault_path/Hermes/日誌/YYYY-MM-DD.md`.
 6. `chmod 777` the file so Syncthing-synced mobile users (uid 1000) can read it.
