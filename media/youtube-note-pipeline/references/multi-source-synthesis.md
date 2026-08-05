@@ -1,7 +1,7 @@
 # NotebookLM 式多來源合成 — 可行性評估與決策（2026-08-05）
 
 > 使用者需求：多個來源連結 → 產出一份詳細內容 → 後續可用口播 / PPT / 圖卡。
-> 狀態：**決策已定，Phase 1（批次輸出選項）已完成上線，Phase 2（合成）開發中**。
+> 狀態：**決策已定，Phase 1（批次輸出選項）+ Phase 2（合成）程式碼完成 🔨，端到端待實測**。
 
 ## 結論：可行性高（非從零開發）
 
@@ -13,7 +13,7 @@
 | 三種輸出 | 口播（podcast.py）、PPT（ppt_gen.py）、圖卡（visual_gen.py）| ✅ 直接重用 |
 | LLM fallback 鏈 | Zen → AGNES → Groq（`core/llm.py`）| ✅ 直接重用 |
 | 長文分塊 | `_chunk_text()` | ✅ 直接重用 |
-| **多來源合成** | `run_pipeline(source, ...)` 只吃單一 source | 🆕 唯一新寫 |
+| **多來源合成** | `run_pipeline(source, ...)` 只吃單一 source | 🆕 已新增 `core/synthesis.py` |
 
 ## ✅ 已定決策（2026-08-05 使用者確認）
 
@@ -32,7 +32,7 @@
 
 - 口播維持 ☑台女 ☑台男（同勾 = 雙人模式）；PPT / 圖卡各一個 checkbox
 - **每筆至少選一種輸出**才能送（前端 toast + 後端 excluded reason='未選輸出'）
-- 按鈕：「🚀 開始批次（逐一產生）」= 現有行為（每筆各自產出）；「🧬 開始合併」= 合成（Phase 2）
+- 按鈕：「🚀 開始批次（逐一產生）」= 現有行為（每筆各自產出）；「🧬 開始合併」= 合成（Phase 5 已啟用）
 - **關閉按鈕已移除**，統一右上 ✕
 
 Phase 1 實作（bookmark-manager）：
@@ -40,8 +40,12 @@ Phase 1 實作（bookmark-manager）：
 - `create_notehub_jobs()` 接受 ppt/visual
 - queue API：items 接受 `ppt`/`visual`，驗證至少選一種（全排除 → 400 + excluded）
 - `_process_job()`：job 有 ppt/visual → CLI 加 `--ppt` / `--visual`（對應 notehub `__main__.py` 的 flags）
-- 前端：表頭/row 加 PPT/圖卡 cell、submitNotehubQueue 收集 + 驗證、submitNotehubSynthesis（Phase 2 完成前是 stub「開發中」提示）
+- 前端：表頭/row 加 PPT/圖卡 cell、submitNotehubQueue 收集 + 驗證、submitNotehubSynthesis（Phase 5 已啟用）
 - 測試：tests/test_notehub_outputs.py 4 筆（ppt/visual 儲存、只 PPT 不口播、未選輸出排除、舊行為相容）
+
+### 🔴 mode='none' 語意（2026-08-05 Phase 5 新增）
+
+Phase 4 隱藏 bug：**只勾 PPT/圖卡（沒勾口播）時 mode 仍設 'solo' → worker 組 `--podcast solo` → 多產口播**。修法：queue/synthesize API 判定沒勾口播 → `mode='none'`（dual > solo > none），`_process_job` 兩分支處理 none（不加 --podcast）。
 
 ### 🔴 清佇列按鈕位置 bug（2026-08-05 修復，UI 設計教訓）
 
@@ -68,6 +72,27 @@ Phase 1 實作（bookmark-manager）：
    └── 整體結論
 4. 後續輸出（任選）：詳細報告 .md / 口播腳本→MP3 / PPT / 圖卡
 ```
+
+## 🧬 Phase 5 實作細節（2026-08-05 程式碼完成）
+
+**notehub 端（skills repo，commit skills）**：
+- `notehub/core/synthesis.py`：
+  - `synthesize_sources(sources, lang='zh', title_hint='')` → `(out_dir, report_path, title)`
+  - `_summarize_source(text, title)`：單來源 LLM 摘要（>20000 chars 分塊，每塊 2048 tokens）
+  - `_synthesize(combined, lang)`：SYNTHESIS_PROMPT 合成（>24000 chars 分塊，末塊補【整體結論】）
+  - 輸出：`obsidian-vault/notes/<safe_title> [synthesis-YYYYMMDD]/synthesis_report.md`（YAML frontmatter 含 sources 清單）+ SQLite index（source_type='synthesis'）
+- `__main__.py` `--synthesize` 分支：`python -m notehub --synthesize <url1> <url2> ... [--podcast solo|dual] [--ppt] [--visual] [--lang zh] [--voice-a 台女] [--voice-b 台男]` — 需 ≥2 來源；階段二輸出重用 `produce_podcast` / `generate_ppt` / `generate_visual`
+- ⚠️ **`generate_ppt(script, title, lang='zh', out_dir='.')` 參數順序陷阱**：第 3 位置參數是 lang 不是 out_dir — 呼叫要 `generate_ppt(report_content, title, lang=lang, out_dir=out_dir)`，傳位置參數會把 out_dir 當 lang（檔案寫錯位置）
+
+**bookmark-manager 端（commit「Phase 5 多來源合成」）**：
+- `notehub_jobs` 表加 `kind TEXT DEFAULT 'single'` / `source_urls TEXT DEFAULT ''`（JSON 陣列；migration 慣例同 ppt/visual）
+- `create_synthesis_job(conn, bookmark_ids, title, source_urls, mode, voice_a, voice_b, ppt, visual)` → 回 job_id
+- `POST /api/notehub/synthesize` body `{ids, voice_a, voice_b, ppt, visual}`：≥2 筆 + 至少一輸出 → 查書籤 URL → 標題 = 前兩筆 title + 「等 N 筆（合成）」→ 建 job → `_ensure_worker()`
+- worker `_process_job` kind='synthesis' 分支：`json.loads(source_urls)` → `['--synthesize'] + urls` + mode 對應 flags（dual/solo → --podcast；none → 不加）
+- 前端 `submitNotehubSynthesis()`：selectedIds ≥2 → 輸出選項**取第一筆勾選**（合成 = 一份內容）→ POST → toast → switchNhTab('queue') + pollNotehubJobs
+- 測試：`tests/test_synthesize_api.py` 5 筆 → **117 tests 全綠**
+
+**⏳ 待辦**：端到端實測（CLI 真合成 2-3 來源 → 報告 .md）需網路請求 + 使用者同意（approval gate 擋離線 terminal 網路指令）；手機端合併實測。
 
 ## ⚠️ 已知限制（設計時納入）
 

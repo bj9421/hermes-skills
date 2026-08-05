@@ -62,8 +62,17 @@ app.py (18行, 僅 blueprint 註冊 + startup)
 
 - **口播維持** ☑台女 ☑台男（同勾=雙人）；PPT / 圖卡各一個 checkbox（`.nh-ppt` / `.nh-visual`）
 - **每筆至少選一種輸出**才能送（前端 toast + 後端排除 `reason='未選輸出'`；全排除 → 400 + excluded）
-- **按鈕改**：「🚀 開始批次（逐一產生）」= 原開始送出行為；「🧬 開始合併」= 多來源合成（Phase 2，前端先 stub「開發中」提示）；**關閉按鈕已移除**（含完成工作頁），統一右上 ✕
+- **按鈕改**：「🚀 開始批次（逐一產生）」= 原開始送出行為；「🧬 開始合併」= 多來源合成（**2026-08-05 Phase 5 已啟用**，不再 stub）；**關閉按鈕已移除**（含完成工作頁），統一右上 ✕
 - 這是「多來源合成（NotebookLM 式）」的入口設計 — 決策與藍圖見 youtube-note-pipeline skill 的 `references/multi-source-synthesis.md`
+
+**🔴 mode='none' 語意（2026-08-05 Phase 5 新增，修 Phase 4 隱藏 bug）**：DB `notehub_jobs.mode` 原只有 solo/dual。Phase 4 的隱藏 bug：**只勾 PPT/圖卡（沒勾口播）時 mode 仍設 'solo' → worker 照樣組 `--podcast solo` → 多產出使用者沒要的口播**。修法：沒勾口播 → `mode='none'`（voice 欄位存預設值但 worker 不用）。queue API 與 synthesize API 的 mode 判定共用：`dual`（都勾）> `solo`（勾任一）> `none`（只勾 PPT/圖卡）。**`_process_job` 兩分支都要處理 none**：single 分支 `if job['mode'] != 'none': cmd += ['--podcast', job['mode']]`；synthesis 分支 mode='none' 時不加 --podcast。
+
+**🧬 多來源合成（Phase 5，2026-08-05 程式碼完成 🔨，端到端待實測）**：
+- notehub 端（skills repo）：`notehub/core/synthesis.py` — 逐來源 `detect_source().extract()` → 各來源先 `_summarize_source`（LLM 摘要，分塊）→ `_synthesize`（SYNTHESIS_PROMPT：共通主題/各來源觀點/差異/結論，繁體中文）→ 報告 .md 寫 `obsidian-vault/notes/<title> [synthesis-YYYYMMDD]/synthesis_report.md` + SQLite index。CLI：`python -m notehub --synthesize <url1> <url2> ... [--podcast solo|dual] [--ppt] [--visual]`（階段二輸出重用 podcast.py/ppt_gen.py/visual_gen.py — ⚠️ `generate_ppt(script, title, lang, out_dir)` 參數順序，傳 out_dir 要用 keyword `out_dir=` 否則會當 lang）
+- server 端：`POST /api/notehub/synthesize` body `{ids, voice_a, voice_b, ppt, visual}` → 驗證 ≥2 筆 + 至少一輸出 → `create_synthesis_job()`（DB `notehub_jobs` 加 `kind TEXT DEFAULT 'single'` / `source_urls TEXT DEFAULT ''` JSON，migration 慣例同 ppt/visual）→ worker `_process_job` kind='synthesis' 分支組 `--synthesize` + urls + 輸出 flags
+- 前端 `submitNotehubSynthesis()`：收集 selectedIds（≥2 筆）+ 輸出選項（**取第一筆的勾選**，合成 = 一份內容選項一致）→ POST → toast job id → switchNhTab('queue') + pollNotehubJobs
+- 測試：`tests/test_synthesize_api.py` 5 筆（job 建立/來源不足 400/未選輸出 400/只 PPT mode=none/dual）→ 117 tests 全綠
+- ⏳ **端到端實測卡在 approval gate**：CLI 真合成需要網路請求（抓來源 + 打 Zen），使用者不在線時 terminal 的網路指令被 gate 擋（timeout without user response）→ **離線時先做不需要網路的整合層任務（DB/API/前端/測試），CLI 實測留到使用者回來同意後再跑**
 
 **後端**：
 - `notehub_jobs` 表加 `ppt INTEGER DEFAULT 0` / `visual INTEGER DEFAULT 0`（schema.sql + db.py init_db PRAGMA migration）
@@ -74,13 +83,14 @@ app.py (18行, 僅 blueprint 註冊 + startup)
 
 **⚠️ patch 教訓**：插入新 JS 函數時用 `old_string` 只含 `async function submitNotehubQueue() {` 開頭行 → 函數宣告被整個吃掉（body 懸空）。修復 = 補回宣告行。**改 inline JS 後必跑 `check_nh_js.py`（node --check 全部 script 區塊）再上線**，能抓到這種結構性錯誤。
 
-### 語音邏輯（queue API 自動判定）
+### 語音邏輯（queue/synthesize API 自動判定）
 
 | 勾選 | mode | CLI 參數 |
 |------|------|----------|
 | 僅台女 | solo | `--voice-a 台女` |
 | 僅台男 | solo | `--voice-a 台男` |
 | 兩者都勾 | **dual** | `--voice-a 台女 --voice-b 台男` |
+| 都沒勾（只 PPT/圖卡）| **none**（2026-08-05 Phase 5）| 不加 `--podcast`（不產口播）|
 
 ### 非同步佇列設計
 
@@ -931,11 +941,11 @@ app.py 已從 766 行 / 53 函數 / cohesion 0.10 拆成上述模組結構（coh
 
 **實作範圍**（開工時照此）：① bookmarks/tags/notehub_jobs 加 user_id + migration（🔴 所有 query 加 WHERE user_id，漏一個 = IDOR 資料外洩）② bot 白名單擋陌生人（chat_id 不在允許清單 → 拒絕）③ 網頁 Flask-Login + werkzeug hash ④ 共用 server LLM key（家庭量小不會爆）
 
-**決策紀錄位置（使用者要求，2026-08-05 起）**：重大決策 → Obsidian `/opt/data/obsidian-vault/我的筆記/開發架構/專案決策紀錄/`（**資料夾結構**，每專案一檔：`bookmark-manager-family.md` / `taiwan-stock.md` / `hermes.md`，`_README.md` 是索引；🔥 最新在上）+ fact_store 同步（#587 為第一筆）。回報決策給使用者時附上檔案路徑。**新專案 → 建新檔 + 更新 _README 索引；不要用單一檔案混記多專案**（使用者明確糾正過）。**計劃/決策文件要寫「全套」**：使用者要求「新增功能計劃的全套寫進去 — 妳只寫 phase 1 phase 2 其他也要寫」— 記錄計劃時**所有階段都要涵蓋**（完成的 + 待做的 + 附帶工作），每階段含工作內容表格 + 考核點 + 結果狀態；只寫部分階段 = 使用者會要求補齊。
+**決策紀錄位置（使用者要求，2026-08-05 起）**：重大決策 → Obsidian `/opt/data/obsidian-vault/我的筆記/開發架構/專案決策紀錄/`（**資料夾結構**，每專案一檔：`bookmark-manager-family.md` / `taiwan-stock.md` / `hermes.md`，`_README.md` 是索引；🔥 最新在上）+ fact_store 同步（#587 為第一筆）。回報決策給使用者時附上檔案路徑。**新專案 → 建新檔 + 更新 _README 索引；不要用單一檔案混記多專案**（使用者明確糾正過）。**計劃/決策文件要寫「全套」**：使用者要求「新增功能計劃的全套寫進去 — 妳只寫 phase 1 phase 2 其他也要寫」— 記錄計劃時**所有階段都要涵蓋**（完成的 + 待做的 + 附帶工作），每階段含工作內容表格 + 考核點 + 結果狀態；只寫部分階段 = 使用者會要求補齊。**避免重複（2026-08-05 再糾正「7 不要寫 另一個檔案有」）**：若某主題已有獨立檔案（如家庭多人版 `bookmark-manager-family.md`），計劃檔內**不要重複寫內容**，用一行指標引用即可 — 使用者不喜歡同一資訊散在兩處。
 
 ## 📊 系統狀態（2026-08-05 晚）
-- **Commit**：057b345（IG 時長）；f424636（IG 標籤）；ad000c4（Bilibili 時長）；883309a（#10 原子認領補齊）；**清佇列按鈕 commit（🧽 clear scope='queued'，routes_notehub.py + index.html + tests/test_clear_queued.py，+3 tests）**；**4b42e38（Notehub 頁籤式版面改版）**；**頁尾版本號 commit（v4 · 頁籤版面，templates/index.html + static/style.css）**；**勾選持久化 commit（localStorage，templates/index.html +24）**；**佇列輸出選項 commit（PPT/圖卡 checkbox + 開始批次/開始合併 + 移除關閉，db.py + schema.sql + routes_notehub.py + templates + style.css + tests/test_notehub_outputs.py，+4 tests）**；code review 19/19 修復全 commit
-- **Tests**：**108 passed**（103 + 4 test_notehub_outputs + 1 test_clear_queued 擴充：queued+running 一起清 / running subprocess kill / 未選輸出排除 / 舊行為相容）
+- **Commit**：057b345（IG 時長）；f424636（IG 標籤）；ad000c4（Bilibili 時長）；883309a（#10 原子認領補齊）；**清佇列按鈕 commit（🧽 clear scope='queued'，routes_notehub.py + index.html + tests/test_clear_queued.py，+3 tests）**；**4b42e38（Notehub 頁籤式版面改版）**；**頁尾版本號 commit（v4 · 頁籤版面，templates/index.html + static/style.css）**；**勾選持久化 commit（localStorage，templates/index.html +24）**；**佇列輸出選項 commit（PPT/圖卡 checkbox + 開始批次/開始合併 + 移除關閉，db.py + schema.sql + routes_notehub.py + templates + style.css + tests/test_notehub_outputs.py，+4 tests）**；**Phase 6 commit（工作名稱修復方案 B：/api/bookmarks/titles + openNotehubSidebar 改 async，routes_bookmarks.py + templates + tests/test_bookmark_titles.py，+4 tests → 112 tests）**；code review 19/19 修復全 commit
+- **Tests**：**117 passed**（112 + 5 test_synthesize_api：job 建立 / 來源不足 400 / 未選輸出 400 / 只 PPT mode=none / dual；含 queued+running 一起清、running subprocess kill、titles map 回傳）
 - **Notehub 版面**：頁籤式（工作佇列/完成工作）已上線；驗證 13 項全過（`/opt/data/scripts/verify_nh_tabs.py`）；sw.js v4
 - **小紅書 notehub job 修復（2026-08-05，skills repo commit `961ff02`）**：`notehub/extractors/url.py` 新增 `_is_xhs_url()` + `_fetch_xhs()`（短鏈302→DoH查IP→curl --resolve→__INITIAL_STATE__，搬自 llm_enhance.fetch_xiaohongshu_meta）— 小紅書書籤送口播不再 SSL CERTIFICATE_VERIFY_FAILED。實測書籤 #101（xhslink.com/m/8qWhW4ScJIU）extract 成功（title/desc/tags）。詳見 youtube-note-pipeline pitfall 35
 - **Code Review**：19 bugs 全數修復 19/19（2 HIGH：FTS5 引號 crash、limit 全庫 dump；12 MEDIUM；5 LOW）→ `references/code-review-2026-08-05.md`
@@ -964,21 +974,22 @@ app.py 已從 766 行 / 53 函數 / cohesion 0.10 拆成上述模組結構（coh
 
 **驗證**：`/opt/data/scripts/verify_nh_persist.py` — HTML 7 項檢查 + node 模擬 Set 序列化/還原（勾 3 筆 → reload → 還原 3 筆）。`check_nh_js.py` 語法先過再上線。
 
-⚠️ **副作用**：持久化後跨頁勾選更常發生 → 送出 notehub 時跨頁卡片 DOM 不在目前頁 → 「書籤 #N」fallback 問題（見下節）更易踩到；解決方案 A/B 仍未選定。
+⚠️ **副作用**：持久化後跨頁勾選更常發生 → 送出 notehub 時跨頁卡片 DOM 不在目前頁 → 「書籤 #N」fallback 問題（見下節）— **已修（2026-08-05 方案 B 實作）**。
 
-### 🔴 前端坑：selectedIds 跨頁殘留 → notehub sidebar 標題 fallback「書籤 #N」（2026-08-05 根因確認，reload 部分已修、跨頁部分待修）
+### 🔴 前端坑：selectedIds 跨頁殘留 → notehub sidebar 標題 fallback「書籤 #N」（2026-08-05 已修復，方案 B）
 
 **現象**：書籤送入 notehub 時，部分工作名稱顯示「書籤 #104」「書籤 #109」（只有編號無標題），其他筆正常。
 
 **根因**（證據鏈，非猜測）：
 1. DB 中那些書籤**有正常 title**（用 `curl /api/bookmarks` 實測確認 — 不是資料問題）
-2. `index.html:373` openNotehubSidebar 從 DOM 取標題：`document.getElementById('card-${id}')` → `.card-title` textContent，取不到 fallback `書籤 #${id}`
-3. `selectedIds`（全域 Set，line 137）**翻頁時不清除** — 前一頁勾選的 id 殘留，但那些卡片已不在目前 DOM → getElementById 回 null → fallback
+2. openNotehubSidebar 從 DOM 取標題：`document.getElementById('card-${id}')` → `.card-title` textContent，取不到 fallback `書籤 #${id}`
+3. `selectedIds`（全域 Set）**翻頁時不清除** — 前一頁勾選的 id 殘留，但那些卡片已不在目前 DOM → getElementById 回 null → fallback
 
-**重現**：分頁 1 勾選 → 翻到分頁 2 再勾選 → 開 notehub 佇列 → 跨頁那幾筆顯示「書籤 #N」。
+**✅ 修復（2026-08-05 晚，使用者選方案 B — server API 查 title，保留跨頁勾選）**：
+- 後端新增 `GET /api/bookmarks/titles?ids=1,2,3` → `{ok, titles: {id: title}}`（routes_bookmarks.py；⚠️ **JSON 物件 key 一定是字串**，`d['titles']` 比對測試要用 `{'101': ...}` 而非 `{101: ...}` — Python int key 不會自動轉；前端 JS `titleMap[id]` 自動字串化所以沒問題）
+- 前端 `openNotehubSidebar` 改 **async**：render 前 `await fetch('/api/bookmarks/titles?ids=...')` 建 titleMap → `const title = titleMap[id] || '書籤 #' + id`（不再讀 DOM）
+- 查 title 失敗靜默 fallback（不阻擋送出）
+- 測試：`tests/test_bookmark_titles.py` 4 筆（map 回傳/部分缺漏/空/非數字容錯）→ **112 tests 全綠**
+- 方案 A（翻頁清除 selectedIds）被否決 — 會犧牲跨頁勾選持久化（Phase 3 使用者要的功能）
 
-**修復方向**（2026-08-05 提出，待使用者選定）：
-- **A（推薦）**：列表重載（syncList/翻頁）時 `clearSelection()` — 勾選只限當頁，避免 batch 操作（尤其 delete）誤作用於看不見的書籤。3 行。
-- **B**：openNotehubSidebar 對不在 DOM 的 id 用 server API 查 title — 保留跨頁勾選，但需加 API、較複雜。
-
-**教訓**：全域選取狀態 + 分頁 DOM 重載 = 隱形勾選殘留。任何「取卡片 DOM 顯示資訊」的邏輯都要先確認該 id 是否仍在目前頁面；DB 有 title 但 UI 顯示 fallback 時，先懷疑前端 DOM 取不到，不是資料問題。
+**教訓**：全域選取狀態 + 分頁 DOM 重載 = 隱形勾選殘留。任何「取卡片 DOM 顯示資訊」的邏輯都要先確認該 id 是否仍在目前頁面；DB 有 title 但 UI 顯示 fallback 時，先懷疑前端 DOM 取不到，不是資料問題。**修法偏好**：使用者要保留跨頁勾選 → 選「server API 補資料」而不是「限制前端狀態」。
