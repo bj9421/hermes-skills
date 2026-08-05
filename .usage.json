@@ -246,6 +246,19 @@
     "use_count": 24,
     "view_count": 24
   },
+  "bookmark-manager-notehub-troubleshooting": {
+    "archived_at": null,
+    "created_at": "2026-08-05T21:04:17.675356+00:00",
+    "created_by": null,
+    "last_patched_at": null,
+    "last_used_at": "2026-08-05T21:04:17.704771+00:00",
+    "last_viewed_at": "2026-08-05T21:04:17.675403+00:00",
+    "patch_count": 0,
+    "pinned": false,
+    "state": "active",
+    "use_count": 1,
+    "view_count": 1
+  },
   "brainstorming": {
     "archived_at": null,
     "created_at": "2026-07-07T20:19:37.618102+00:00",
@@ -414,6 +427,19 @@
     "state": "active",
     "use_count": 5,
     "view_count": 5
+  },
+  "debug-agent": {
+    "archived_at": null,
+    "created_at": "2026-08-05T21:04:17.624303+00:00",
+    "created_by": null,
+    "last_patched_at": null,
+    "last_used_at": "2026-08-05T21:04:17.661093+00:00",
+    "last_viewed_at": "2026-08-05T21:04:17.624372+00:00",
+    "patch_count": 0,
+    "pinned": false,
+    "state": "active",
+    "use_count": 1,
+    "view_count": 1
   },
   "deep-code-review": {
     "archived_at": null,
@@ -862,13 +888,13 @@
     "created_at": "2026-07-10T12:39:38.045007+00:00",
     "created_by": "agent",
     "last_patched_at": "2026-08-05T13:14:04.706506+00:00",
-    "last_used_at": "2026-08-05T13:13:42.890471+00:00",
-    "last_viewed_at": "2026-08-05T13:13:42.872809+00:00",
+    "last_used_at": "2026-08-05T21:04:17.553360+00:00",
+    "last_viewed_at": "2026-08-05T21:04:17.532105+00:00",
     "patch_count": 86,
     "pinned": false,
     "state": "active",
-    "use_count": 128,
-    "view_count": 128
+    "use_count": 129,
+    "view_count": 129
   },
   "hermes-dashboard-troubleshooting": {
     "archived_at": null,
@@ -1434,13 +1460,13 @@
     "created_at": "2026-07-30T14:54:38.556610+00:00",
     "created_by": "agent",
     "last_patched_at": "2026-08-05T19:01:19.756761+00:00",
-    "last_used_at": "2026-08-05T19:40:43.128702+00:00",
-    "last_viewed_at": "2026-08-05T19:40:43.100800+00:00",
+    "last_used_at": "2026-08-05T21:07:38.247860+00:00",
+    "last_viewed_at": "2026-08-05T21:07:38.219046+00:00",
     "patch_count": 121,
     "pinned": false,
     "state": "active",
-    "use_count": 91,
-    "view_count": 91
+    "use_count": 95,
+    "view_count": 95
   },
   "petdex": {
     "archived_at": null,
@@ -1707,13 +1733,13 @@
     "created_at": "2026-06-17T14:47:41.623363+00:00",
     "created_by": null,
     "last_patched_at": null,
-    "last_used_at": "2026-07-24T11:24:30.658794+00:00",
-    "last_viewed_at": "2026-07-24T11:24:30.644852+00:00",
+    "last_used_at": "2026-08-05T21:04:17.689668+00:00",
+    "last_viewed_at": "2026-08-05T21:04:17.648612+00:00",
     "patch_count": 0,
     "pinned": false,
     "state": "active",
-    "use_count": 5,
-    "view_count": 5
+    "use_count": 6,
+    "view_count": 6
   },
   "taiwan-stock-data-pipeline": {
     "archived_at": null,
@@ -1954,13 +1980,13 @@
     "created_at": "2026-07-07T04:37:44.994692+00:00",
     "created_by": "agent",
     "last_patched_at": "2026-08-05T19:03:00.846352+00:00",
-    "last_used_at": "2026-08-05T19:40:43.144331+00:00",
-    "last_viewed_at": "2026-08-05T19:40:43.116369+00:00",
+    "last_used_at": "2026-08-05T21:07:38.264915+00:00",
+    "last_viewed_at": "2026-08-05T21:07:38.233519+00:00",
     "patch_count": 169,
     "pinned": false,
     "state": "active",
-    "use_count": 150,
-    "view_count": 150
+    "use_count": 153,
+    "view_count": 153
   },
   "yuanbao": {
     "archived_at": null,
