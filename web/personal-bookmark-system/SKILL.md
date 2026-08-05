@@ -837,6 +837,7 @@ app.py 已從 766 行 / 53 函數 / cohesion 0.10 拆成上述模組結構（coh
 - `references/xiaohongshu-taiwan-block.md` — 小紅書台灣 DNS 封鎖調查 + 繞過方案（DoH + --resolve）+ xhslink 302 特性 + 容器 SSL 坑
 - `references/deployment-and-migration.md` — 記憶體實測（server 75MB / bot 26MB）、RPi3 1GB + SSD 遷移可行性、輕量替代方案比較（bemarked/Shiori）、遷移計劃文件位置（Obsidian 開發架構）
 - `references/mobile-app-packaging.md` — 手機 App 包裝評估：TWA 側載 $0 / 上架 $25+域名、GitHub APK 技術辨識（repo 根目錄特徵）、iOS PWA 限制（50MB / iOS 16.4 push / 手動安裝）、Bubblewrap 坑（assetlinks 指紋）
+- `references/competitor-comparison-2026-08.md` — 同類軟體完整比較（Linkwarden/Hoarder/Wallabag/Shiori/Linkding/Readeck/Raindrop）+ 後續功能建議（P0 bookmarklet + 全文存檔；P1 全文搜尋/collections/Wayback；P2 RSS/EPUB/高亮）— 規劃新功能前先查這份
 
 ### 🧠 書籤內容知識圖譜（2026-08-05）
 
@@ -868,10 +869,25 @@ app.py 已從 766 行 / 53 函數 / cohesion 0.10 拆成上述模組結構（coh
 - **Flask static-only 坑**：`/graphify-out/` 不在 Flask `static/` 下 → `http://dietpi4:5001/graphify-out/graph.html` 404（手機連不上就是這個）。要從 5001 存取需複製到 `static/`（`static/content-graph/graph.html` 200 ✅）或加 route
 - **容器內無 tailscale CLI**：Tailscale 在 host（RPi4），容器內 `tailscale` command not found；手機存取走 host 已映射 port。`dietpi4:5001` 瀏覽器打不開先查 host port 映射（見 docker-port-mapping-troubleshooting skill）
 
+## 🏠 家庭多人版設計決策（2026-08-05 定案，尚未開工）
+
+**決策**：選「各自獨立」— 每個家庭成員書籤完全隔離（user_id），網頁需帳密登入，LLM key 共用 server 的。工程估 **3-5 天**（完整多人版 1-2 週，砍掉「每 bot 一 process + 每人自帶 LLM key」兩塊）。
+
+**關鍵洞察：1 bot = 多 chat_id**（Telegram 天生多人）：
+- 同一個 bot token 任何人都能搜尋到並 Start 使用；不需要 BotFather 新 bot、不需要新 token
+- `getUpdates` 每筆 update 附帶 `chat_id` → 靠 chat_id 對應 users 表即可分流
+- **與「1 token = 1 bot」限制不衝突** — 那是指不能開兩個 process 同時 polling 同一 token，不是限制 bot 服務人數
+- 家庭成員各自手機 Start → 各自 chat_id → 各自書籤空間，零額外 process
+
+**實作範圍**（開工時照此）：① bookmarks/tags/notehub_jobs 加 user_id + migration（🔴 所有 query 加 WHERE user_id，漏一個 = IDOR 資料外洩）② bot 白名單擋陌生人（chat_id 不在允許清單 → 拒絕）③ 網頁 Flask-Login + werkzeug hash ④ 共用 server LLM key（家庭量小不會爆）
+
+**決策紀錄位置（使用者要求，2026-08-05 起）**：重大決策 → Obsidian `/opt/data/obsidian-vault/我的筆記/開發架構/專案決策紀錄.md`（🔥 最新在上，分類索引）+ fact_store 同步（#587 為第一筆）。回報決策給使用者時附上檔案路徑。
+
 ## 📊 系統狀態（2026-08-05 晚）
-- **Commit**：057b345（IG 時長）；f424636（IG 標籤）；ad000c4（Bilibili 時長）＋ **code review 18 修復未 commit**（`git status` 見 6 檔 M + tests，詳見 references/code-review-2026-08-05.md）
-- **Tests**：**97 passed**（79 + 18 regression：test_review_fixes.py + test_db_filters 更新）
-- **Code Review**：19 bugs 發現 / 18 修復（2 HIGH：FTS5 引號 crash、limit 全庫 dump；12 MEDIUM；2 LOW）→ `references/code-review-2026-08-05.md`
+- **Commit**：057b345（IG 時長）；f424636（IG 標籤）；ad000c4（Bilibili 時長）＋ **code review 19/19 修復已 commit + server 重啟**（PID 48501，HTTP 200）
+- **Tests**：**100 passed**（79 + 18 regression + 3 notehub claim：test_review_fixes.py / test_db_filters / test_notehub_claim.py）
+- **Code Review**：19 bugs 全數修復 19/19（2 HIGH：FTS5 引號 crash、limit 全庫 dump；12 MEDIUM；5 LOW）→ `references/code-review-2026-08-05.md`
+- **#10 原子認領（最後補齊）**：`claim_notehub_job()`（db.py）— `UPDATE notehub_jobs SET status='running' WHERE id=? AND status='queued'` + rowcount 檢查，防多 worker 重複處理；worker 認領失敗（已被拿走）→ 跳過等下次。先前只修「重啟時殘留 running 標回 queued」，漏了原子認領 — 對照原始 reviewer 報告才發現。
 - **內容圖譜**：471 nodes / 605 edges / 50 communities（bookmark-content-graph/，與程式碼圖 439 nodes 分開）
 - **Cron**：ERROR JOBS 0；盤查 job no_agent（cron_daily_check.sh 秒級）；graphify-weekly-build（f2396dd81530 每週日 03:00）
 
