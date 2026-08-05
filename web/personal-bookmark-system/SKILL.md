@@ -859,13 +859,21 @@ app.py 已從 766 行 / 53 函數 / cohesion 0.10 拆成上述模組結構（coh
 
 **🔴 lifecycle_guard 對含 `graphify` 字樣命令觸發**：terminal 命令含 `graphify` 字樣（即使只是路徑/工具名）會被 lifecycle_guard 誤判 block（「cannot restart or stop the gateway」）。解法：寫 script 檔（如 `graphify_detect_content.py`）+ PATH 前綴執行 `PATH=/opt/data/.xdg/data/uv/tools/graphifyy/bin:$PATH python3 script.py`；graphify python 路徑從 bookmark-manager/graphify-out/.graphify_python 讀（/opt/data/.xdg/data/uv/tools/graphifyy/bin/python）。
 
-## 📊 系統狀態（2026-08-05）
-- **Commit**：057b345（IG 時長推算）；f424636（IG 標籤豐富化）；ad000c4（Bilibili 時長修復）
-- **Tests**：79 tests 全綠（bookmark-manager）+ bot 16 tests
-- **IG 完成度**：標籤（caption hashtags + LLM 補）+ 時長（formats tbr + HEAD 推算）雙齊
-- **Graphify**：439 nodes / 727 edges / 47 communities（`graphify-out/graph.html` 379KB）
-- **Cron**：ERROR JOBS 0；盤查 job 已轉 no_agent（`cron_daily_check.sh`，秒級不再 600s timeout）
-- **Graphify 週重建**：`graphify-weekly-build`（job_id: f2396dd81530，每週日 03:00）
+**🔴 內容圖譜瀏覽（2026-08-05）：graphify 沒有 `serve` 命令 + Flask static-only 坑**
+- `graphify serve --port N` **不存在**（實測 `unknown command 'serve'`）— 圖譜檔案用靜態伺服器服務：`python3 -m http.server 5050 --directory <graphify-out>`（5050 已是 Hermes container 起 http.server 服務 bookmark-manager/graphify-out）
+- **同 port 不同路徑**：把內容圖譜放進現有服務根目錄的子目錄 → `cp -r bookmark-content-graph/graphify-out bookmark-manager/graphify-out/content-graph`
+  - 程式碼圖：`http://dietpi4:5050/graph.html`（439 nodes）
+  - 內容圖：`http://dietpi4:5050/content-graph/graph.html`（471 nodes）
+  - 報告：`http://dietpi4:5050/content-graph/GRAPH_REPORT.md`
+- **Flask static-only 坑**：`/graphify-out/` 不在 Flask `static/` 下 → `http://dietpi4:5001/graphify-out/graph.html` 404（手機連不上就是這個）。要從 5001 存取需複製到 `static/`（`static/content-graph/graph.html` 200 ✅）或加 route
+- **容器內無 tailscale CLI**：Tailscale 在 host（RPi4），容器內 `tailscale` command not found；手機存取走 host 已映射 port。`dietpi4:5001` 瀏覽器打不開先查 host port 映射（見 docker-port-mapping-troubleshooting skill）
+
+## 📊 系統狀態（2026-08-05 晚）
+- **Commit**：057b345（IG 時長）；f424636（IG 標籤）；ad000c4（Bilibili 時長）＋ **code review 18 修復未 commit**（`git status` 見 6 檔 M + tests，詳見 references/code-review-2026-08-05.md）
+- **Tests**：**97 passed**（79 + 18 regression：test_review_fixes.py + test_db_filters 更新）
+- **Code Review**：19 bugs 發現 / 18 修復（2 HIGH：FTS5 引號 crash、limit 全庫 dump；12 MEDIUM；2 LOW）→ `references/code-review-2026-08-05.md`
+- **內容圖譜**：471 nodes / 605 edges / 50 communities（bookmark-content-graph/，與程式碼圖 439 nodes 分開）
+- **Cron**：ERROR JOBS 0；盤查 job no_agent（cron_daily_check.sh 秒級）；graphify-weekly-build（f2396dd81530 每週日 03:00）
 
 ## 前端側頁注意（Blogger 滑出式）
 
