@@ -103,13 +103,25 @@ def log_access(response):
     return response
 ```
 
-## PWA 快取更新紀律（2026-08-02 實戰教訓）
+## PWA 快取更新紀律（2026-08-02 + 2026-08-05 實戰教訓）
 
 sw.js 用 network-first + cache fallback：**server 資料已修好、手機仍顯示舊內容 = PWA 快取，不是 server 掛掉**。
 
 診斷：`curl http://localhost:PORT/ | grep <新內容>` 對比使用者截圖 — server 新、手機舊 → 快取問題。
 
 修法：bump `sw.js` 的 `const CACHE = 'bookmark-manager-v1'` → `'bookmark-manager-v2'`，手機下次載入新 sw.js 自動清舊快取。任何 UI 內容/樣式改版都應 bump 版本，否則使用者會一直看到舊畫面並回報「掛掉了」。
+
+### 🔴 service worker「先舊後新」陷阱（2026-08-05）
+
+bump CACHE 版本後，手機**不會立刻顯示新版** — service worker 更新是兩段式：
+1. 第 1 次載入頁面：瀏覽器抓到新 sw.js 並**安裝**，但畫面仍由**舊 sw** 服務（回舊快取）
+2. 第 2 次載入頁面：新 sw 才**接管**（activate + clients.claim），顯示新版
+
+所以引導使用者「**重新整理頁面 2 次**」是標準動作；還不行才請使用者清除網站資料。bump 一次 CACHE 版本就夠（activate 內 `caches.keys().filter(k => k !== CACHE)` 會清掉所有舊版）。
+
+### ✅ 頁尾版本號 — 快取診斷標竿（2026-08-05）
+
+在頁尾放 `<footer class="app-footer" id="app-version">bookmark-manager <b>v4</b> · 版面描述</footer>`，版本號與 sw.js CACHE 同步。使用者回報「還是舊畫面」時，先問頁尾顯示什麼版本 → 立即判斷是快取沒更新還是 server 沒重啟，不用猜。CSS：小字、置中、`color: var(--muted)`、border-top，不搶版面。
 
 ---
 

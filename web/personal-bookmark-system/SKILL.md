@@ -33,6 +33,24 @@ app.py (18行, 僅 blueprint 註冊 + startup)
 次序號碼 | 工作名稱 | 口播選項（☑台女 ☐台男）
 ```
 
+### 頁籤式版面（2026-08-05 改版，commit `4b42e38`）
+
+**版面結構**（使用者指定設計）：
+- 標題欄：`🎙️ Notehub`（不再寫「工作佇列」）
+- 頁籤：**工作佇列** / **完成工作**（`.nh-tab` + `switchNhTab(tab)` 切換，active 底線高亮）
+- **工作佇列頁**（`#nh-tab-queue`）：`#nh-setup`（勾選送出表 + 🧽 清佇列）＋ `#nh-active-list`（排隊/處理中進度）
+- **完成工作頁**（`#nh-tab-done`）：🧹 清已完成 + 🗑️ 清失敗 ＋ `#nh-done-list`（done/failed 列表含檔案路徑）
+
+**JS 分流**（pollNotehubJobs）：`j.status` 為 done/failed → `#nh-done-list`（含 ✕ 清除鈕）；其餘 → `#nh-active-list`（無 ✕）。舊的單一 `#nh-progress-list` 已移除。`#nh-active-hint` 在有 active job 時顯示、無則隱藏。
+
+⚠️ **按鈕位置教訓（使用者 2026-08-05 糾正）**：清除按鈕第一次只加在 `#nh-progress`（送出後的進度畫面），使用者回報「按鈕沒在新增佇列頁面出現」— 使用者操作的**勾選畫面（nh-setup）**才是主要位置。**UI 元素要放在使用者操作的那個畫面**，不只放功能邏輯上合理的畫面；改完後用 curl 抓頁面 + python 驗證按鈕落在正確的 tab 區塊（`html.split('id="nh-tab-queue"')[1].split('id="nh-tab-done"')[0]` 檢查）。
+
+**驗證腳本**：`/opt/data/scripts/verify_nh_tabs.py` — 13 項 DOM 檢查（標題/頁籤/按鈕位置/列表分流/舊 id 清除/sw.js 版本），改版後必跑。另有 `check_nh_js.py`（node --check 驗證 index.html 內所有 inline script 語法 + script 開關標籤平衡）與 `verify_nh_footer.py`（確認頁尾版本號出現）。inline JS 改動後跑 check_nh_js.py 可避免語法錯誤上線。
+
+### ✅ 頁尾版本號（2026-08-05，commit 頁尾）
+
+`index.html` 頁尾加 `<footer class="app-footer" id="app-version">bookmark-manager <b>v4</b> · 頁籤版面</footer>` — 版本號與 sw.js `CACHE` 同步。用途：使用者回報「還是舊畫面」時，先問頁尾顯示什麼 → 立即判斷 PWA 快取 vs server 未重啟，不用猜。**未來任何 UI 改版：bump sw.js CACHE 版本 + 同步更新頁尾版本號**（兩處一起改）。CSS `.app-footer`：小字 11px、置中、border-top、`color: var(--muted)`。
+
 ### 語音邏輯（queue API 自動判定）
 
 | 勾選 | mode | CLI 參數 |
@@ -119,6 +137,11 @@ cmd = [NOTEHUB_PYTHON, '-m', 'notehub', job['url'], '--podcast', job['mode'], '-
    `curl -s -X POST http://127.0.0.1:5001/api/notehub/queue -H "Content-Type: application/json" -d '{"items":[{"id":<bookmark_id>,"voice_a":true}]}'`
    12 秒內 status 變 running → worker 正常
 4. ⚠️ container 內 `ss -tlnp` 看不到 listener（無權限）→ server 存活一律用 `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:5001/`（200 = 活）
+5. **🔴 queued 很久 = 前面有 running 長影片在排隊（2026-08-05 實測，非卡住）** — worker 是**單執行緒**依序處理（`_worker_loop` 一次拿 pending[0]）。前面 job 是長影片（YouTube 10+ 分鐘）時，後面的 job 會一直顯示 queued — **不是卡住**。診斷三件套：
+   - `ps aux | grep "python -m notehub"` → subprocess 活著 = 正在處理前面那筆（看 command 的 URL 是哪筆）
+   - DB 查 pending：`SELECT id, status, created_at FROM notehub_jobs WHERE status IN ('queued','running') ORDER BY id` → queued 的 id 大於 running 的 id = 正常 FIFO 排隊
+   - 想確認後續 job 處理結果 → 設背景監控等 running 完成（勿手動重排/重送，會插隊或重複產出）
+   - 實例：job #25（YouTube 長影片）running 時，重送的 job #26（小紅書）queued 等數分鐘才開始 — 正常行為。
 
 ### 清除功能（2026-07-31 新增）
 
@@ -126,9 +149,11 @@ cmd = [NOTEHUB_PYTHON, '-m', 'notehub', job['url'], '--podcast', job['mode'], '-
 
 API：
 - `DELETE /api/notehub/jobs/<id>` — 單筆 ✕（done/failed 才允許；**running/queued 回 400 拒絕**）
-- `POST /api/notehub/jobs/clear` body `{scope: 'done'|'failed'}` — 批次；running/queued 永不參與
+- `POST /api/notehub/jobs/clear` body `{scope: 'done'|'failed'|'queued'}` — 批次；**running 永不參與**（正在處理，砍了會變孤兒）
+  - **queued scope（2026-08-05 新增，🧽 清佇列按鈕）**：清未開始的排隊工作（送錯可取消）；僅刪紀錄無產出檔案（queued 無半成品）
+  - scope 白名單外 → 400
 
-UI：佇列頂部「🧹 清已完成」「🗑️ 清失敗」+ 每筆 ✕（done/failed 才顯示）。
+UI：佇列頂部「🧽 清佇列」「🧹 清已完成」「🗑️ 清失敗」+ 每筆 ✕（done/failed 才顯示）。
 
 🔴 **半成品刪除安全規則**（`_delete_job_artifacts`）：
 - **只刪 output 中明確標記 `Raw saved:` / `Script saved:` / `Podcast saved:` 路徑的檔案**
@@ -838,6 +863,7 @@ app.py 已從 766 行 / 53 函數 / cohesion 0.10 拆成上述模組結構（coh
 - `references/deployment-and-migration.md` — 記憶體實測（server 75MB / bot 26MB）、RPi3 1GB + SSD 遷移可行性、輕量替代方案比較（bemarked/Shiori）、遷移計劃文件位置（Obsidian 開發架構）
 - `references/mobile-app-packaging.md` — 手機 App 包裝評估：TWA 側載 $0 / 上架 $25+域名、GitHub APK 技術辨識（repo 根目錄特徵）、iOS PWA 限制（50MB / iOS 16.4 push / 手動安裝）、Bubblewrap 坑（assetlinks 指紋）
 - `references/competitor-comparison-2026-08.md` — 同類軟體完整比較（Linkwarden/Hoarder/Wallabag/Shiori/Linkding/Readeck/Raindrop）+ 後續功能建議（P0 bookmarklet + 全文存檔；P1 全文搜尋/collections/Wayback；P2 RSS/EPUB/高亮）— 規劃新功能前先查這份
+- `references/multi-user-family-plan.md` — 家庭多人版可行性評估 + 「各自獨立」決策細節：1 bot = N chat_id 技術原理、user_id 隔離核心、白名單、IDOR 風險、實作範圍三步驟
 
 ### 🧠 書籤內容知識圖譜（2026-08-05）
 
@@ -881,11 +907,13 @@ app.py 已從 766 行 / 53 函數 / cohesion 0.10 拆成上述模組結構（coh
 
 **實作範圍**（開工時照此）：① bookmarks/tags/notehub_jobs 加 user_id + migration（🔴 所有 query 加 WHERE user_id，漏一個 = IDOR 資料外洩）② bot 白名單擋陌生人（chat_id 不在允許清單 → 拒絕）③ 網頁 Flask-Login + werkzeug hash ④ 共用 server LLM key（家庭量小不會爆）
 
-**決策紀錄位置（使用者要求，2026-08-05 起）**：重大決策 → Obsidian `/opt/data/obsidian-vault/我的筆記/開發架構/專案決策紀錄.md`（🔥 最新在上，分類索引）+ fact_store 同步（#587 為第一筆）。回報決策給使用者時附上檔案路徑。
+**決策紀錄位置（使用者要求，2026-08-05 起）**：重大決策 → Obsidian `/opt/data/obsidian-vault/我的筆記/開發架構/專案決策紀錄/`（**資料夾結構**，每專案一檔：`bookmark-manager-family.md` / `taiwan-stock.md` / `hermes.md`，`_README.md` 是索引；🔥 最新在上）+ fact_store 同步（#587 為第一筆）。回報決策給使用者時附上檔案路徑。**新專案 → 建新檔 + 更新 _README 索引；不要用單一檔案混記多專案**（使用者明確糾正過）。
 
 ## 📊 系統狀態（2026-08-05 晚）
-- **Commit**：057b345（IG 時長）；f424636（IG 標籤）；ad000c4（Bilibili 時長）＋ **code review 19/19 修復已 commit + server 重啟**（PID 48501，HTTP 200）
-- **Tests**：**100 passed**（79 + 18 regression + 3 notehub claim：test_review_fixes.py / test_db_filters / test_notehub_claim.py）
+- **Commit**：057b345（IG 時長）；f424636（IG 標籤）；ad000c4（Bilibili 時長）；883309a（#10 原子認領補齊）；**清佇列按鈕 commit（🧽 clear scope='queued'，routes_notehub.py + index.html + tests/test_clear_queued.py，+3 tests）**；**4b42e38（Notehub 頁籤式版面改版）**；**頁尾版本號 commit（v4 · 頁籤版面，templates/index.html + static/style.css）**；**勾選持久化 commit（localStorage，templates/index.html +24）**；code review 19/19 修復全 commit
+- **Tests**：**103 passed**（100 + 3 clear-queued：test_clear_queued.py — 只刪 queued 不動其他 / 不刪檔案 / 錯誤 scope 400）
+- **Notehub 版面**：頁籤式（工作佇列/完成工作）已上線；驗證 13 項全過（`/opt/data/scripts/verify_nh_tabs.py`）；sw.js v4
+- **小紅書 notehub job 修復（2026-08-05，skills repo commit `961ff02`）**：`notehub/extractors/url.py` 新增 `_is_xhs_url()` + `_fetch_xhs()`（短鏈302→DoH查IP→curl --resolve→__INITIAL_STATE__，搬自 llm_enhance.fetch_xiaohongshu_meta）— 小紅書書籤送口播不再 SSL CERTIFICATE_VERIFY_FAILED。實測書籤 #101（xhslink.com/m/8qWhW4ScJIU）extract 成功（title/desc/tags）。詳見 youtube-note-pipeline pitfall 35
 - **Code Review**：19 bugs 全數修復 19/19（2 HIGH：FTS5 引號 crash、limit 全庫 dump；12 MEDIUM；5 LOW）→ `references/code-review-2026-08-05.md`
 - **#10 原子認領（最後補齊）**：`claim_notehub_job()`（db.py）— `UPDATE notehub_jobs SET status='running' WHERE id=? AND status='queued'` + rowcount 檢查，防多 worker 重複處理；worker 認領失敗（已被拿走）→ 跳過等下次。先前只修「重啟時殘留 running 標回 queued」，漏了原子認領 — 對照原始 reviewer 報告才發現。
 - **內容圖譜**：471 nodes / 605 edges / 50 communities（bookmark-content-graph/，與程式碼圖 439 nodes 分開）
@@ -897,3 +925,36 @@ app.py 已從 766 行 / 53 函數 / cohesion 0.10 拆成上述模組結構（coh
 - 遮罩 `.nh-overlay`：`opacity:0; pointer-events:none` → `.open` 才可點
 - JS 必須通過 `node --check` 驗證語法（上次 hamburger 崩潰根因是 PWA script 括號錯誤）
 - script 標籤數量檢查：`grep -c '<script'` 與 `'</script>'` 必須相等
+
+### ✅ 勾選狀態持久化 localStorage（2026-08-05，commit 勾選持久化）
+
+**需求**：使用者抱怨「工作佇列的頁籤內容 reload 會消失」（「不會長佇」）— 勾選的書籤 reload 後歸零。
+
+**根因**：`selectedIds` 是 JS 記憶體 Set，reload 頁面就清空 → 佇列勾選清單消失。
+
+**修法**（通用 HTMX + 分頁 App 可複製的 pattern）：
+1. `persistSelection()`：每次變更後 `localStorage.setItem(SEL_KEY, JSON.stringify([...selectedIds]))`
+2. `restoreSelection()`：讀取 `bm-selected-ids` → 重建 Set → 重勾 `.bookmark-cb`（`cb.dataset.id`）→ `updateBatchBar()`
+3. 觸發點兩個：`document.body.addEventListener('htmx:afterSwap', restoreSelection)`（HTMX 換頁/重繪後自動還原）+ 頁尾 script `restoreSelection()`（reload 後還原）
+4. `toggleSelection`/`selectAll`/`clearSelection` 結尾都呼叫 `persistSelection()`
+
+**驗證**：`/opt/data/scripts/verify_nh_persist.py` — HTML 7 項檢查 + node 模擬 Set 序列化/還原（勾 3 筆 → reload → 還原 3 筆）。`check_nh_js.py` 語法先過再上線。
+
+⚠️ **副作用**：持久化後跨頁勾選更常發生 → 送出 notehub 時跨頁卡片 DOM 不在目前頁 → 「書籤 #N」fallback 問題（見下節）更易踩到；解決方案 A/B 仍未選定。
+
+### 🔴 前端坑：selectedIds 跨頁殘留 → notehub sidebar 標題 fallback「書籤 #N」（2026-08-05 根因確認，reload 部分已修、跨頁部分待修）
+
+**現象**：書籤送入 notehub 時，部分工作名稱顯示「書籤 #104」「書籤 #109」（只有編號無標題），其他筆正常。
+
+**根因**（證據鏈，非猜測）：
+1. DB 中那些書籤**有正常 title**（用 `curl /api/bookmarks` 實測確認 — 不是資料問題）
+2. `index.html:373` openNotehubSidebar 從 DOM 取標題：`document.getElementById('card-${id}')` → `.card-title` textContent，取不到 fallback `書籤 #${id}`
+3. `selectedIds`（全域 Set，line 137）**翻頁時不清除** — 前一頁勾選的 id 殘留，但那些卡片已不在目前 DOM → getElementById 回 null → fallback
+
+**重現**：分頁 1 勾選 → 翻到分頁 2 再勾選 → 開 notehub 佇列 → 跨頁那幾筆顯示「書籤 #N」。
+
+**修復方向**（2026-08-05 提出，待使用者選定）：
+- **A（推薦）**：列表重載（syncList/翻頁）時 `clearSelection()` — 勾選只限當頁，避免 batch 操作（尤其 delete）誤作用於看不見的書籤。3 行。
+- **B**：openNotehubSidebar 對不在 DOM 的 id 用 server API 查 title — 保留跨頁勾選，但需加 API、較複雜。
+
+**教訓**：全域選取狀態 + 分頁 DOM 重載 = 隱形勾選殘留。任何「取卡片 DOM 顯示資訊」的邏輯都要先確認該 id 是否仍在目前頁面；DB 有 title 但 UI 顯示 fallback 時，先懷疑前端 DOM 取不到，不是資料問題。

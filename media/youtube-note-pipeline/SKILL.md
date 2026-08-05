@@ -172,6 +172,7 @@ result = call_llm([{'role': 'user', 'content': '...'}])
 
 - `references/zen-free-tier-limits.md` — Zen 免費層共享額度研究（big-pickle 無額度優勢、IP 層限流、GitHub 證據鏈）
 - `references/llm-rate-limit-landscape.md` — 跨 process 限流地圖 + 全局檔案鎖方案
+- `references/multi-source-synthesis.md` — NotebookLM 式多來源合成可行性評估（2026-08-05）：80% 零件重用、缺 synthesis prompt、架構藍圖、限制、待決策問題 — 使用者要「多來源產一份內容」時先讀這份
 
 ## ⚠️ Pitfalls
 
@@ -206,3 +207,11 @@ result = call_llm([{'role': 'user', 'content': '...'}])
 33. **Shorts 很短，逐字稿短是正常的** — 12 秒 Shorts 的完整台詞只有 ~49 字（列舉式），Whisper 轉寫正確但極短。**重做/除錯前先驗證影片時長**：`yt-dlp --print "%(duration)s 秒" <url>`。LLM 口播腳本會以真實台詞為基礎大幅擴寫 — **回報時誠實告知真實 vs 生成的比例**，不要讓使用者誤以為那 49 字是「內容不足」或把擴寫冒充原話。
 
 34. **notehub 輸出目錄可能變（notes/ vs 口播/）** — 完成檔可能在 `obsidian-vault/notes/` 或 `obsidian-vault/口播/`（依 notehub 版本/設定）。回答「檔案在哪」**別硬編碼目錄**，以 job output 的 `✅ Pipeline complete! Output:` 行或 UI paths 欄位為準（worker output 是唯一真相來源）。
+
+35. **🔴 小紅書 URL 直接抓會 SSL 失敗（2026-08-05 實測）** — `xhslink.com` 短鏈 / `xiaohongshu.com` 在台灣被 DNS 污染，notehub `URLExtractor` 用 urllib 直接抓 → `SSL: CERTIFICATE_VERIFY_FAILED self-signed certificate`，job 秒失敗（status=failed、finished 0 秒，錯誤樣本 job #24「英伟达开源AI视觉模型…」xhslink.com/m/8qWhW4ScJIU）。**已修**：`notehub/extractors/url.py` 新增 `_is_xhs_url()` + `_fetch_xhs()` 專用路徑（解法搬自 bookmark-manager `llm_enhance.py fetch_xiaohongshu_meta()`）：
+   - 短鏈 302 追蹤：`curl -s -o /dev/null -w '%{url_effective}' -A <iPhone UA> -k -L`
+   - DoH 查 **www 子域**真實 IP：`https://dns.google/resolve?name=www.xiaohongshu.com&type=A`（根域會拿到錯 IP）
+   - `curl --resolve 'www.xiaohongshu.com:443:<IP>'` 繞 DNS 污染抓頁面（手機 UA + `-k`）
+   - parse `window.__INITIAL_STATE__`（大括號平衡 + `undefined→null`）→ `noteData.data.noteData` 的 title/desc/tagList
+   - 產出文字格式：`標題：…\n<desc>\n標籤：…`，title 取第一行去「標題：」前綴
+   - **注意**：小紅書圖文筆記無逐字稿，口播 pipeline 以 title+desc+tags 為基礎擴寫屬預期；影片筆記目前未接 yt-dlp+Whisper，需另做。
