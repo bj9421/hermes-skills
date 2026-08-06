@@ -107,10 +107,15 @@ def _extract_key_points(script: str, title: str, lang: str = "zh") -> dict:
 - "quote"：金句頁：heading 就是一句有力金句（≤20 字），bullets 可留空或 1 條說明出處
 - "qa"：QA 頁：bullets = 3 個建議問題（問題形式，❓不寫），最後 1 條是 CTA 行動呼籲
 - "action"：行動/總結頁：bullets = 具體行動步驟或下一步建議
+- "comparison"：對比頁：bullets 分兩組（左邊 vs 右邊，用「→」分隔），如「舊方法 vs 新方法」
+- "timeline"：時間軸/流程頁：bullets = 步驟順序（每條一個時間點或步驟），可含「→」前綴
+- "split"：左右分頁：heading = 左區標題，bullets[0] = 右區文字（案例說明、詳細描述）
 
 規則：
-- points 產出 5-7 個重點，依敘事弧線排列：第 1 個是 hook，中間是 content/data/quote 混搭，最後 1 個是 action
+- points 產出 5-7 個重點，依敘事弧線排列：第 1 個是 hook，中間是 content/data/quote/comparison/timeline 混搭，最後 1 個是 action
 - 5-7 頁中至少包含：1 個 data、1 個 quote、1 個 action（qa 視內容需要）
+- 當內容涉及「兩個選項比較」時用 comparison（如 A vs B、舊版 vs 新版）
+- 當內容涉及「時間順序/流程/步驟」時用 timeline
 - 每個 heading 只代表一個核心訊息，彼此不重複
 - content/data 的 bullets 每條不超過 15 字，要具體有畫面（用數字、名稱、對比），避免流水帳與形容詞堆疊
 - quote 的 heading 是金句本身（可 12-20 字），不套用 ≤10 字規則
@@ -685,6 +690,12 @@ def generate_ppt(script: str, title: str, lang: str = "zh", out_dir: str = ".") 
             _add_qa_slide(prs, point, i)
         elif st == "action":
             _add_action_slide(prs, point, i)
+        elif st == "comparison":
+            _add_comparison_slide(prs, point, i)
+        elif st == "timeline":
+            _add_timeline_slide(prs, point, i)
+        elif st == "split":
+            _add_action_slide(prs, point, i)
         else:
             _add_content_slide(prs, point, i)
     _add_summary_slide(prs, data)
@@ -699,3 +710,161 @@ def generate_ppt(script: str, title: str, lang: str = "zh", out_dir: str = ".") 
     os.chmod(pptx_path, 0o777)
     print(f"[OK] PPT saved: {pptx_path} ({len(prs.slides)} slides)", file=sys.stderr)
     return pptx_path
+
+
+def _add_comparison_slide(prs: Presentation, point: dict, index: int):
+    """comparison 版型：左右對比（A vs B）。"""
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    bg = slide.background
+    bg.fill.solid()
+    bg.fill.fore_color.rgb = _DARK_BG
+
+    # Number badge
+    left, top, width, height = Inches(0.6), Inches(0.4), Inches(0.8), Inches(0.8)
+    txBox = slide.shapes.add_textbox(left, top, width, height)
+    tf = txBox.text_frame
+    p = tf.paragraphs[0]
+    p.text = f"{index:02d}"
+    p.font.size = Pt(28)
+    p.font.bold = True
+    p.font.color.rgb = _ACCENT
+
+    # Heading
+    left, top, width, height = Inches(0.6), Inches(1.3), Inches(8.8), Inches(1)
+    txBox = slide.shapes.add_textbox(left, top, width, height)
+    tf = txBox.text_frame
+    p = tf.paragraphs[0]
+    p.text = point.get("heading", "")
+    p.font.size = Pt(32)
+    p.font.bold = True
+    p.font.color.rgb = _TEXT_WHITE
+
+    # Accent line
+    left, top, width, height = Inches(0.6), Inches(2.3), Inches(2), Inches(0.04)
+    shape = slide.shapes.add_shape(1, left, top, width, height)
+    shape.fill.solid()
+    shape.fill.fore_color.rgb = _ACCENT
+    shape.line.fill.background()
+
+    # 左右分欄
+    bullets = point.get("bullets", [])
+    left_col, right_col = Inches(0.6), Inches(5.4)
+    width_col = Inches(4.2)
+    y0, height = Inches(2.7), Inches(2.5)
+
+    for i, bullet in enumerate(bullets[:4]):
+        if "→" in bullet:
+            left_text, _, right_text = bullet.partition("→")
+            # 左欄
+            txBox = slide.shapes.add_textbox(left_col, y0 + i * Inches(0.65), width_col, Inches(0.6))
+            tf = txBox.text_frame
+            p = tf.paragraphs[0]
+            p.text = f"❶ {left_text.strip()}"
+            p.font.size = Pt(18)
+            p.font.color.rgb = _TEXT_LIGHT
+            # 右欄
+            txBox = slide.shapes.add_textbox(right_col, y0 + i * Inches(0.65), width_col, Inches(0.6))
+            tf = txBox.text_frame
+            p = tf.paragraphs[0]
+            p.text = f"❷ {right_text.strip()}"
+            p.font.size = Pt(18)
+            p.font.color.rgb = _ACCENT
+        else:
+            # 沒有分隔 → 統一放左欄
+            txBox = slide.shapes.add_textbox(left_col, y0 + i * Inches(0.65), width_col * 2, Inches(0.6))
+            tf = txBox.text_frame
+            p = tf.paragraphs[0]
+            p.text = f"• {bullet}"
+            p.font.size = Pt(18)
+            p.font.color.rgb = _TEXT_LIGHT
+
+
+def _add_timeline_slide(prs: Presentation, point: dict, index: int):
+    """timeline 版型：時間軸/流程（箭頭連結）。"""
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    bg = slide.background
+    bg.fill.solid()
+    bg.fill.fore_color.rgb = _DARK_BG
+
+    # Number badge
+    left, top, width, height = Inches(0.6), Inches(0.4), Inches(0.8), Inches(0.8)
+    txBox = slide.shapes.add_textbox(left, top, width, height)
+    tf = txBox.text_frame
+    p = tf.paragraphs[0]
+    p.text = f"{index:02d}"
+    p.font.size = Pt(28)
+    p.font.bold = True
+    p.font.color.rgb = _ACCENT
+
+    # Heading
+    left, top, width, height = Inches(0.6), Inches(1.3), Inches(8.8), Inches(1)
+    txBox = slide.shapes.add_textbox(left, top, width, height)
+    tf = txBox.text_frame
+    p = tf.paragraphs[0]
+    p.text = point.get("heading", "")
+    p.font.size = Pt(32)
+    p.font.bold = True
+    p.font.color.rgb = _TEXT_WHITE
+
+    # Accent line
+    left, top, width, height = Inches(0.6), Inches(2.3), Inches(2), Inches(0.04)
+    shape = slide.shapes.add_shape(1, left, top, width, height)
+    shape.fill.solid()
+    shape.fill.fore_color.rgb = _ACCENT
+    shape.line.fill.background()
+
+    # 流程箭頭
+    bullets = point.get("bullets", [])
+    left, top, width, height = Inches(0.8), Inches(2.7), Inches(8.4), Inches(2.4)
+    txBox = slide.shapes.add_textbox(left, top, width, height)
+    tf = txBox.text_frame
+    tf.word_wrap = True
+    for i, bullet in enumerate(bullets):
+        p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+        arrow = "➜" if i > 0 else "①"
+        p.text = f"{arrow}  {bullet}"
+        p.font.size = Pt(20)
+        p.font.color.rgb = _TEXT_LIGHT
+        p.space_after = Pt(14)
+
+
+def _add_split_slide(prs: Presentation, point: dict, index: int):
+    """split 版型：左標題 + 右內容（案例/詳情）。"""
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    bg = slide.background
+    bg.fill.solid()
+    bg.fill.fore_color.rgb = _DARK_BG
+
+    # Number badge
+    left, top, width, height = Inches(0.6), Inches(0.4), Inches(0.8), Inches(0.8)
+    txBox = slide.shapes.add_textbox(left, top, width, height)
+    tf = txBox.text_frame
+    p = tf.paragraphs[0]
+    p.text = f"{index:02d}"
+    p.font.size = Pt(28)
+    p.font.bold = True
+    p.font.color.rgb = _ACCENT
+
+    # 左區大標題
+    left, top, width, height = Inches(0.6), Inches(1.4), Inches(3.8), Inches(3.5)
+    txBox = slide.shapes.add_textbox(left, top, width, height)
+    tf = txBox.text_frame
+    tf.word_wrap = True
+    p = tf.paragraphs[0]
+    p.text = point.get("heading", "")
+    p.font.size = Pt(28)
+    p.font.bold = True
+    p.font.color.rgb = _TEXT_WHITE
+
+    # 右區內容
+    bullets = point.get("bullets", [])
+    left, top, width, height = Inches(5.0), Inches(1.4), Inches(4.4), Inches(3.5)
+    txBox = slide.shapes.add_textbox(left, top, width, height)
+    tf = txBox.text_frame
+    tf.word_wrap = True
+    for i, bullet in enumerate(bullets):
+        p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+        p.text = f"• {bullet}"
+        p.font.size = Pt(20)
+        p.font.color.rgb = _TEXT_LIGHT
+        p.space_after = Pt(12)
