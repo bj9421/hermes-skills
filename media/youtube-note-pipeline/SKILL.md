@@ -69,6 +69,7 @@ with open('/opt/data/.env') as f:
 ## 📚 References
 
 - `references/multi-source-synthesis.md` — NotebookLM 式多來源合成（2026-08-05）：決策已定（混合來源/兩階段/勾選入口）
+- `references/ppt-prompt-resources.md` — PPT 提示詞資源庫（2026-08-06）：104 職場力大綱模組 / 2Slides 10 模板 / Meiko 生成器 + notehub ppt_gen.py 現況診斷與升級建議（使用者問「哪裡有 PPT 提示詞 / 提升簡報質量」時先看這份）
 
 ## ⚠️ Pitfalls
 
@@ -102,3 +103,13 @@ with open('/opt/data/.env') as f:
    **驗證指令**：`python3 -c "args=['--synthesize','url1','url2','--lang','zh']; ... print(sources)"` 應輸出 `['url1', 'url2']`。
 
    **端對端驗證**：跑 `python -m notehub --synthesize <url1> <url2> --lang zh` → 檢查 obsidian 報告 frontmatter 的 `sources:` 欄位（不含 `zh`）、報告標題無 `zh` 字眼、STDERR 無「來源處理失敗 zh」。
+
+37. **🔴 call_zen 一律不傳 max_tokens（2026-08-06 實測，PPT 提取整段失敗的根因）** — deepseek-v4-flash 是 **reasoning 模型**，輸出在 `reasoning_content`；設定 `max_tokens`（如 2000/1500）會被思考過程吃光 → `content` 空 → `call_zen` 回 None → 呼叫端 fallback「無法提取」（PPT 就變爛簡報）。**症狀**：`call_zen` 回 None 但 HTTP 沒報錯（200 但 content 空），單獨健康檢查有時成功有時 None（20 RPM 限流也會 None）。**修法**：`max_tokens=0`（或不帶參數，call_zen 預設 0 → payload 不帶 max_tokens）。ppt_gen.py（原 2000）與 visual_gen.py（原 1500）2026-08-06 已修正；podcast.py 原本正確。**以後任何 call_zen / call_llm 呼叫一律不傳 max_tokens**，除非該模型確定非 reasoning。
+
+38. **🔴 PPT 提取失敗的診斷順序（2026-08-06 實測）** — `_extract_key_points` 回 None 時依序查：① `call_zen` 是否回 None（限流 20 RPM → 等 3s 重試，或看 stderr `[RATE_LIMIT]`/`[WARN] Zen LLM HTTP`）② 是否誤傳 max_tokens（pitfall 37）③ LLM 回傳 JSON 格式瑕疵（已由 `_parse_json_loose` 容錯：找第一個 `{` → raw_decode → rfind `}` 截斷再試；`key_points` 結構會 normalize 成 `points`）。2026-08-06 階段 1 升級後，質量驗證：`/opt/data/tmp/test_ppt_prompt_v1.py`（7 頁/heading≤12/bullet≤20）+ `test_ppt_e2e.py`（8 slides 生成）。詳見 `references/ppt-prompt-resources.md`。
+
+39. **🔴 script 重用（2026-08-06，使用者洞察）** — 同影片重送不同輸出（如 #77 純口播成功後 #80 加 PPT）不該重跑完整 pipeline（下載→轉寫→LLM）。`_find_existing_script(source)` 按 YouTube video_id 找 `口播/*[id]*/script.md`，有 → 跳過 extract 直接吃 script.md 產出（23-26 秒 vs 10-20 分鐘）。**陷阱**：glob pattern `*[video_id]*` 的 `[]` 是字元集語法 → 必須 `glob.escape(f'[{video_id}]')`，否則誤匹配（NEVEREXIST999 也找到的 bug）。僅 YouTube 支援重用（非 YouTube 無下載脆弱性）。
+
+40. **🔴 generate_ppt/generate_visual 的 out_dir positional bug（2026-08-06 實測）** — 簽名是 `(script, title, lang, out_dir)`，pipeline 舊 code 傳 `generate_ppt(content, title, out_dir)` → 第三參數 `out_dir` 被當 `lang` → PPT/圖卡存到 **cwd**（server worker 目錄）而非輸出目錄！**必須用 keyword**：`generate_ppt(script, title, lang=lang, out_dir=out_dir)`。同修 visual_gen.py。
+
+41. **🔴 yt-dlp 下載暫態失敗會整支 job 掛（2026-08-06 實測）** — 同一影片 #77 成功 #80 失敗：`[WARN] yt-dlp audio download produced no file` → 三層 extract 策略全失敗 → job failed。修：`_download_audio` 加 retry×2（間隔 3/6 秒）。同場加映：ppt_gen/visual_gen 改用 `call_llm`（Zen→AGNES→Groq fallback）— 原本直接 call_zen，Zen timeout 就 fallback 成 3 slides 基本版簡報。
