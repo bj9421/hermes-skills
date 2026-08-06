@@ -176,6 +176,38 @@ _TEXT_WHITE = RGBColor(0xFF, 0xFF, 0xFF)
 _TEXT_LIGHT = RGBColor(0xCC, 0xCC, 0xCC)
 _CARD_BG = RGBColor(0x2D, 0x2D, 0x44)        # Slightly lighter navy
 
+# 🔴 2026-08-07：配色方案選擇
+COLOR_SCHEMES = {
+    "dark": {
+        "bg": RGBColor(0x1A, 0x1A, 0x2E),
+        "accent": RGBColor(0xE8, 0x4D, 0x3D),
+        "text_white": RGBColor(0xFF, 0xFF, 0xFF),
+        "text_light": RGBColor(0xCC, 0xCC, 0xCC),
+        "card_bg": RGBColor(0x2D, 0x2D, 0x44),
+    },
+    "blue": {
+        "bg": RGBColor(0x0F, 0x1C, 0x3F),
+        "accent": RGBColor(0x4D, 0x9B, 0xE8),
+        "text_white": RGBColor(0xFF, 0xFF, 0xFF),
+        "text_light": RGBColor(0xB8, 0xC5, 0xD6),
+        "card_bg": RGBColor(0x1A, 0x2A, 0x4A),
+    },
+    "green": {
+        "bg": RGBColor(0x0D, 0x2B, 0x1E),
+        "accent": RGBColor(0x4D, 0xC8, 0x78),
+        "text_white": RGBColor(0xFF, 0xFF, 0xFF),
+        "text_light": RGBColor(0xB8, 0xD6, 0xC5),
+        "card_bg": RGBColor(0x1A, 0x3C, 0x2E),
+    },
+    "light": {
+        "bg": RGBColor(0xF5, 0xF5, 0xF5),
+        "accent": RGBColor(0xE8, 0x4D, 0x3D),
+        "text_white": RGBColor(0x1A, 0x1A, 0x2E),
+        "text_light": RGBColor(0x66, 0x66, 0x66),
+        "card_bg": RGBColor(0xE8, 0xE8, 0xE8),
+    },
+}
+
 # 🔴 2026-08-06：繁中字型 — 優先思源黑體（Adobe/Google，SIL OFL 免費商用），備選 Noto Sans CJK TC
 _FONT_NAME = "Source Han Sans TC"
 
@@ -861,7 +893,7 @@ def _add_summary_slide(prs: Presentation, data: dict):
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
-def generate_ppt(script: str, title: str, lang: str = "zh", out_dir: str = ".") -> str | None:
+def generate_ppt(script: str, title: str, lang: str = "zh", out_dir: str = ".", scheme: str = "dark") -> str | None:
     """Generate a PowerPoint presentation from a podcast script.
     
     Args:
@@ -915,9 +947,33 @@ def generate_ppt(script: str, title: str, lang: str = "zh", out_dir: str = ".") 
             _add_content_slide(prs, point, i)
     _add_summary_slide(prs, data)
 
+    # Apply color scheme
+    scheme_colors = COLOR_SCHEMES.get(scheme, COLOR_SCHEMES["dark"])
+    # 更新 background
+    for slide in prs.slides:
+        slide.background.fill.solid()
+        slide.background.fill.fore_color.rgb = scheme_colors["bg"]
+    # 更新文字色
+    for slide in prs.slides:
+        for shape in slide.shapes:
+            if not shape.has_text_frame:
+                continue
+            for para in shape.text_frame.paragraphs:
+                for run in para.runs:
+                    try:
+                        c = run.font.color.rgb
+                        if c == RGBColor(0xFF, 0xFF, 0xFF):
+                            run.font.color.rgb = scheme_colors["text_white"]
+                        elif c == RGBColor(0xCC, 0xCC, 0xCC):
+                            run.font.color.rgb = scheme_colors["text_light"]
+                        elif c == RGBColor(0xE8, 0x4D, 0x3D):
+                            run.font.color.rgb = scheme_colors["accent"]
+                    except AttributeError:
+                        pass
+    
     # Save
     safe_title = title.replace("/", "_").replace("\\", "_")[:80]
-    # 🔴 2026-08-06：繁中字型（Noto Sans CJK TC + a:ea 屬性）
+    # 🔴 2026-08-06：繁中字型（Noto Sans CJK TC + a:ea 属性）
     _apply_cjk_font(prs)
     # 🔴 2026-08-06：更名保留 — 同名已存在 → _v2/_v3（不覆蓋舊檔）
     pptx_path = _unique_path(os.path.join(out_dir, f"{safe_title}.pptx"))
