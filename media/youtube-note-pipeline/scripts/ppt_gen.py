@@ -36,6 +36,39 @@ def _get_llm_client():
 
 
 # ---------------------------------------------------------------------------
+# JSON 容錯解析（2026-08-06 階段 1：LLM 輸出格式不穩，直接 json.loads 常失敗
+# → fallback「無法提取」→ 簡報品質爛。強化解析，成功率高很多。）
+# ---------------------------------------------------------------------------
+def _parse_json_loose(text: str) -> dict | None:
+    """容錯解析 LLM 輸出的 JSON：跳過前綴雜訊、找到第一個完整 JSON 物件。
+
+    策略：
+    1. strip + 找第一個 '{' 開始
+    2. raw_decode 嘗試完整解析（可跳過尾部雜訊）
+    3. 失敗 → 找最後一個 '}' 截斷再試（LLM 常在結尾附加說明文字）
+    """
+    if not text:
+        return None
+    import json as _json
+    t = text.strip()
+    start = t.find('{')
+    if start == -1:
+        return None
+    t = t[start:]
+    try:
+        obj, _ = _json.JSONDecoder().raw_decode(t)
+        return obj
+    except _json.JSONDecodeError:
+        end = t.rfind('}')
+        if end == -1:
+            return None
+        try:
+            return _json.loads(t[:end + 1])
+        except _json.JSONDecodeError:
+            return None
+
+
+# ---------------------------------------------------------------------------
 # Extract key points from script via LLM
 # ---------------------------------------------------------------------------
 def _extract_key_points(script: str, title: str, lang: str = "zh") -> dict:
@@ -58,28 +91,40 @@ def _extract_key_points(script: str, title: str, lang: str = "zh") -> dict:
 
     lang_hint = "使用繁體中文" if lang in ("zh", "zh-TW") else "Use English"
 
+    # 🔴 2026-08-06 質量升級（階段 1）：
+    # 採用 104 職場力「投影片大綱規劃模組」精神 + 2Slides 專業技巧 + one-idea-per-slide 原則。
+    # 保留既有 JSON 結構（title/subtitle/points/summary）→ 渲染端零改動，質量規則大幅提升。
     prompt = f"""從以下口播腳本中提取重點，產生簡報用的結構化資料。
 
 {lang_hint}
 
+【角色】你是簡報架構師（Presentation Architect），擅長把長篇內容濃縮成有故事線、每頁一個核心訊息的專業簡報。
+
+【內部思考流程】（只思考，不要輸出思考過程）
+1. 找出整份內容的敘事弧線：Hook（吸睛開場）→ 問題/好奇 → 關鍵論點/證據 → 案例/數據 → 行動/總結
+2. 每一頁只傳達「一個核心訊息」（one-idea-per-slide），不要塞多個概念
+3. 標題採用 tagline 形式：動詞開頭或問句，具體不空泛
+
 輸出嚴格 JSON 格式（不要加 markdown code fence）：
 {{
-  "title": "簡報標題（簡潔有力）",
-  "subtitle": "副標題或一句話摘要",
+  "title": "簡報標題（簡潔有力，10 字內最佳）",
+  "subtitle": "副標題或一句話摘要（點出核心價值）",
   "points": [
     {{
-      "heading": "重點標題",
+      "heading": "重點標題（tagline 式，動詞/問句，≤10 字）",
       "bullets": ["要點1", "要點2"]
     }}
   ],
-  "summary": "結論段落（2-3句話）"
+  "summary": "結論段落（2-3句話，含一個明確 takeaway 與行動建議）"
 }}
 
 規則：
-- points 產出 4-6 個重點，每個重點 2-3 個 bullets
-- bullets 每條不超過 30 字
-- summary 總結核心 takeaway
+- points 產出 5-7 個重點，依敘事弧線排列：第 1 個是 Hook（吸睛事實或問題），中間是論點與證據，最後 1 個是行動/總結
+- 每個 heading 只代表一個核心訊息，彼此不重複
+- bullets 每條不超過 15 字，要具體有畫面（用數字、名稱、對比），避免流水帳與形容詞堆疊
+- summary 總結核心 takeaway，並給一句行動建議（「你可以…」「下一步…」）
 - 不要臆測腳本沒提到的內容
+- 🔴 重要：所有內容文字禁止使用 ASCII 雙引號（"），一律用中文引號「」或直接不用，避免破壞 JSON
 
 口播腳本：
 {script[:6000]}
@@ -90,17 +135,28 @@ def _extract_key_points(script: str, title: str, lang: str = "zh") -> dict:
                 {"role": "system", "content": "你是結構化資料提取專家，只輸出 JSON。"},
                 {"role": "user", "content": prompt},
             ],
-            max_tokens=2000,
+            # 🔴 2026-08-06：max_tokens 設 0（不帶）— deepseek-v4-flash 是 reasoning
+            # 模型，設 max_tokens 會被思考過程吃光 → content 空 → 回 None（同 podcast.py 做法）
+            max_tokens=0,
             temperature=0.3,
         )
         if result:
-            # Clean up potential markdown code fence
-            result = result.strip()
-            if result.startswith("```"):
-                result = result.split("\n", 1)[1]
-            if result.endswith("```"):
-                result = result.rsplit("```", 1)[0]
-            return json.loads(result.strip())
+            # 🔴 2026-08-06 階段 1：改用容錯解析（raw_decode + rfind fallback），
+            #   取代原本只 strip code fence + json.loads（LLM 格式瑕疵就整段失敗）。
+            data = _parse_json_loose(result)
+            if data:
+                # 🔴 2026-08-06 階段 1：部分 model 回 key_points 結構（title/description）
+                #   → normalize 成渲染端吃的 points（heading/bullets）結構。
+                if 'points' not in data and isinstance(data.get('key_points'), list):
+                    data['points'] = []
+                    for kp in data['key_points']:
+                        bullets = []
+                        if kp.get('description'):
+                            bullets.append(kp['description'])
+                        if kp.get('details') and isinstance(kp['details'], list):
+                            bullets.extend(str(d) for d in kp['details'])
+                        data['points'].append({'heading': kp.get('title', ''), 'bullets': bullets})
+                return data
     except Exception as e:
         print(f"[WARN] Key point extraction failed: {e}", file=sys.stderr)
     return None

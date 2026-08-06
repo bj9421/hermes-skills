@@ -62,7 +62,8 @@ def _call_llm_with_retry(client, prompt: str, max_retries: int = 3, base_delay: 
                 {"role": "system", "content": "只輸出 JSON，不加任何額外文字。"},
                 {"role": "user", "content": prompt},
             ],
-            max_tokens=1500,
+            # 🔴 2026-08-06：max_tokens 設 0（不帶）— reasoning 模型設 max_tokens 會被思考吃光
+            max_tokens=0,
             temperature=0.3,
         )
         return result.strip() if result else None
