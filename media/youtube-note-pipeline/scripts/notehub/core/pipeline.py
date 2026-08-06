@@ -316,12 +316,9 @@ def run_pipeline(source: str, organize: bool = False,
             dir_title = translated
             print(f"[INFO] Translated title: {dir_title}", file=sys.stderr)
 
-    # 3. Create output directory
+    # 3. Create output directory — 2026-08-07 統一放在口播資料夾
     safe_dir_title = _sanitize_filename(dir_title)
-    if result.source_type in ("youtube", "bilibili", "instagram"):
-        out_dir = os.path.join(OBSIDIAN_BASE, PODCAST_SUBDIR, f"{safe_dir_title} [{source_id}]")
-    else:
-        out_dir = os.path.join(OBSIDIAN_BASE, "notes", f"{safe_dir_title} [{source_id}]")
+    out_dir = os.path.join(OBSIDIAN_BASE, PODCAST_SUBDIR, f"{safe_dir_title} [{source_id}]")
     os.makedirs(out_dir, exist_ok=True)
 
     # 4. Save raw transcript
