@@ -81,7 +81,7 @@ app.py (18行, 僅 blueprint 註冊 + startup)
 - `_process_job()`：job 有 ppt/visual → CLI 加 `--ppt` / `--visual`（對應 notehub `__main__.py` flags）
 - 測試：`tests/test_notehub_outputs.py` 4 筆（ppt/visual 儲存、只 PPT 不口播、未選輸出排除、舊行為相容）→ **107 tests 全綠**
 
-**⚠️ patch 教訓**：插入新 JS 函數時用 `old_string` 只含 `async function submitNotehubQueue() {` 開頭行 → 函數宣告被整個吃掉（body 懸空）。修復 = 補回宣告行。**改 inline JS 後必跑 `check_nh_js.py`（node --check 全部 script 區塊）再上線**，能抓到這種結構性錯誤。
+**⚠️ patch 教訓**：插入新 JS 函數時用 `old_string` 只含 `async function submitNotehubQueue() {` 開頭行 → 函數宣告被整個吃掉（body 懸空）。修復 = 補回宣告行。**改 inline JS 後必跑 `check_nh_js.py`（node --check 全部 script 區塊）再上線**，能抓到這種結構性錯誤。**另一個坑（2026-08-06 v12）**：大段 old_string/new_string 含跳脫引號（`\"`）時 patch 報 `Escape-drift detected` 拒絕執行 — **拆成多個小 patch**（函數開頭改目標元素、中段改分流、尾段改 append）即可繞過，順帶讓 diff 更容易讀。
 
 ### 語音邏輯（queue/synthesize API 自動判定）
 
@@ -102,7 +102,7 @@ app.py (18行, 僅 blueprint 註冊 + startup)
 
 ### 進度條 + 產出 checkbox（2026-07-31 新增）
 
-`GET /api/notehub/jobs` 每筆 job 回傳 `progress`（0-100）+ `artifacts`（{raw, script, mp3}）：
+`GET /api/notehub/jobs` 每筆 job 回傳 `progress`（0-100）+ `artifacts`（{raw, script, mp3, ppt, visual}）：
 
 ```python
 # routes_notehub.py
@@ -116,9 +116,12 @@ def _job_artifacts(job):
     #   Script saved|script.md → 整理過文字檔
     #   Podcast saved|_podcast.mp3 → 音檔
     # done 狀態兜底視為全產出
+    # 🔴 2026-08-06 v12：ppt/visual 反映「送出時是否勾選」— 直接讀 DB 欄位
+    #   （job['ppt']/job['visual']），不是 output marker（worker 目前沒有 PPT/圖卡 saved 標記）。
+    #   sqlite3.Row 沒有 .get()：用 `'ppt' in job.keys()` 判斷欄位存在再 []。
 ```
 
-前端渲染（`pollNotehubJobs`）：標題行 + `%` → 進度條（`.nh-bar.${status}`，done=綠/running=藍/failed=紅/queued=黃）→ 3 個 disabled checkbox（☑逐字稿 ☑整理過文字檔 ☐音檔）。
+前端渲染（`pollNotehubJobs`）：標題行 + `%` → 進度條（`.nh-bar.${status}`，done=綠/running=藍/failed=紅/queued=黃）→ **5 個 disabled checkbox**（☑逐字稿 ☑整理過文字檔 ☐音檔 ☐PPT ☐圖卡）— PPT/圖卡勾選 = 送出時有勾該輸出（2026-08-06 使用者看截圖後要求加在音檔旁）。
 
 ⚠️ **輸出標記行依賴**：前端 artifacts 判斷依賴 worker output 中的 notehub stderr 標記行（`Raw saved` / `Script saved` / `Podcast saved`）。**不要改動 notehub pipeline 的這些 print 格式**，否則佇列 UI 的 checkbox 會失效。worker 存 output 用 `(stderr or stdout)[-500:]`——注意截斷可能影響早期標記（Raw saved 在最前面），若 artifacts 判斷不準可提高截斷長度。
 
@@ -175,6 +178,43 @@ cmd = [NOTEHUB_PYTHON, '-m', 'notehub', job['url'], '--podcast', job['mode'], '-
    - DB 查 pending：`SELECT id, status, created_at FROM notehub_jobs WHERE status IN ('queued','running') ORDER BY id` → queued 的 id 大於 running 的 id = 正常 FIFO 排隊
    - 想確認後續 job 處理結果 → 設背景監控等 running 完成（勿手動重排/重送，會插隊或重複產出）
    - 實例：job #25（YouTube 長影片）running 時，重送的 job #26（小紅書）queued 等數分鐘才開始 — 正常行為。
+
+### 🔴 v12.1（2026-08-06）：「卡了 8 小時」錯覺 = started_at COALESCE bug + TTS 真卡住診斷
+
+**事件**：使用者 08:51 送出 2 job，16:59 回報「工作進度太慢 卡住了嗎」— UI 顯示 job running 10% 已「8 小時」。
+
+**根因一（8 小時錯覺）— `claim_notehub_job` 的 started_at COALESCE bug**：
+```sql
+-- 舊（錯）：server 重啟時 _ensure_worker 把 running 標回 queued 但沒清 started_at
+-- → 重新 claim 時 COALESCE 保留舊時間 → UI 顯示 08:55 開始，實際 16:51 才重跑
+started_at=COALESCE(started_at, datetime('now'))
+-- 新（正）：認領 = 開始處理，永遠更新
+started_at=datetime('now')
+```
+- db.py `claim_notehub_job` → `started_at=datetime('now')`；routes_notehub.py `_ensure_worker` reset → `SET status='queued', output='', started_at=NULL WHERE status='running'`
+- 教訓：**測試重啟 server 會打斷使用者的真實 job**（worker 單執行緒，running 的 subprocess 被 kill）→ 重啟前先確認 DB 沒有使用者 job 在跑（`GET /api/notehub/jobs` pending>0 就要等或先告知）；重跑是預期行為但**時間戳必須誠實**。
+
+**根因二（真的卡住）— edge-tts TTS 階段 websocket 停擺**（subprocess 輸出被 communicate 抓著看不到，診斷要靠 /proc）：
+1. `ps -eo pid,etime,cmd | grep "python -m notehub"` → subprocess PID + 跑了多久
+2. `cat /proc/<pid>/wchan` → `do_epoll_wait` = 等網路事件（不是運算中）
+3. `ls -la /proc/<pid>/fd | grep tmp` → 看到 `/tmp/podcast_tts_*/seg_00NN.mp3` = 正在 TTS 分段合成（**TTS 寫 /tmp 不在 notehub scripts 目錄**，查目錄活動會誤判卡住）
+4. **間隔 5 秒段數沒增加 = 卡住**：`for d in /tmp/podcast_tts_*/; do echo "$d: $(ls $d/*.mp3 | wc -l) 段"; done`
+5. 修復：`kill <subprocess_pid>` → worker 自動標 failed → 使用者重送
+
+**🔴 UI 顯示缺陷（「卡住了嗎」的元兇）**：`_job_progress` 對 running job 依 output marker 算（raw→33/script→66/mp3→95），但 output 只在 subprocess 完成後才寫 DB → **running 期間永遠顯示 10%** → 使用者無法分辨「正常處理中」vs「卡住」。**已實作 v13 改善（見下節）**：前端用 started_at 算「已處理 X 分鐘」+ 進度條滑動動畫。
+
+### 🔴 v13（2026-08-06，commit「處理中時間顯示」）：running 不再像卡住
+
+使用者同意後實作（「1 2 同意」= 重送 #72 + 加時間顯示）：
+
+- **JS（pollNotehubJobs）**：`j.status === 'running' && j.started_at` → `new Date(j.started_at.replace(' ', 'T') + 'Z')`（**started_at 是 UTC**，`datetime('now')` 存 UTC，要 +'Z' 才正確轉 local）→ `Math.max(1, Math.round((Date.now() - started.getTime())/60000))` → 狀態 badge 顯示「🔄 處理中 · 已處理 X 分鐘」
+- **CSS（style.css）**：`.nh-bar.running .nh-bar-fill` 覆蓋 inline width（`width: 30% !important`）+ `linear-gradient(90deg,...)` + `background-size: 200%` + `@keyframes nh-bar-slide`（1.4s infinite）→ 滑動流光視覺「有在動」
+- **驗證**：插 running 測試 job（`started_at = datetime('now','-12 minutes')`）→ Playwright 斷言「已處理 12 分鐘」+ `getComputedStyle(el).animationName === 'nh-bar-slide'` → pageerror=0。測試 job 用完即刪
+- 版本 v13：footer / sw.js CACHE / server 重啟三處同步
+
+**⚠️ waitress template 快取實證（v13 驗證踩到）**：改完 `templates/index.html` + `style.css` 後**沒重啟 server** 就 curl/Playwright — CSS 靜態檔立即生效（`.nh-bar-slide` animation ✅）但 **HTML template 在 Flask/Jinja 記憶體快取 → footer 還是 v12**。診斷：`curl / | grep -o 'bookmark-manager <b>v[0-9]*</b>'` 看 server 真回什麼；檔案已 v13 但 curl v12 = template 快取，重啟才生效。**決策：若 server 有使用者真實 job 在跑，寧可等 job 完成再重啟**（waitress 重啟會 kill 子進程 → 使用者 job 重跑）。等待 pattern：background process 迴圈查 DB status（`SELECT status FROM notehub_jobs WHERE id=N`，非 running/queued 即 break）+ notify_on_complete=true → 完成通知後才重啟。
+
+**🔴 測試重啟 server 會打斷使用者的真實 job（v12.1 血淚，本次 session 打斷 2 次）**：測試改前端需要重啟 server 套新 HTML，但 waitress 重啟 = kill 所有 notehub subprocess = **使用者正在跑的 job 被標 failed/重跑**。紀律：**重啟前先 `GET /api/notehub/jobs` 確認 pending=0**；有 running 就等（背景監控）或先告知使用者。使用者 08:51 送的 job 被測試重啟打斷多次 → 16:59 回報「卡住了嗎」— 這是我們造成的延誤，不是系統問題。
 
 ### 清除功能（2026-07-31 新增）
 
@@ -943,9 +983,10 @@ app.py 已從 766 行 / 53 函數 / cohesion 0.10 拆成上述模組結構（coh
 
 **決策紀錄位置（使用者要求，2026-08-05 起）**：重大決策 → Obsidian `/opt/data/obsidian-vault/我的筆記/開發架構/專案決策紀錄/`（**資料夾結構**，每專案一檔：`bookmark-manager-family.md` / `taiwan-stock.md` / `hermes.md`，`_README.md` 是索引；🔥 最新在上）+ fact_store 同步（#587 為第一筆）。回報決策給使用者時附上檔案路徑。**新專案 → 建新檔 + 更新 _README 索引；不要用單一檔案混記多專案**（使用者明確糾正過）。**計劃/決策文件要寫「全套」**：使用者要求「新增功能計劃的全套寫進去 — 妳只寫 phase 1 phase 2 其他也要寫」— 記錄計劃時**所有階段都要涵蓋**（完成的 + 待做的 + 附帶工作），每階段含工作內容表格 + 考核點 + 結果狀態；只寫部分階段 = 使用者會要求補齊。**避免重複（2026-08-05 再糾正「7 不要寫 另一個檔案有」）**：若某主題已有獨立檔案（如家庭多人版 `bookmark-manager-family.md`），計劃檔內**不要重複寫內容**，用一行指標引用即可 — 使用者不喜歡同一資訊散在兩處。
 
-## 📊 系統狀態（2026-08-05 晚）
+## 📊 系統狀態（2026-08-06 晚）
 - **Commit**：057b345（IG 時長）；f424636（IG 標籤）；ad000c4（Bilibili 時長）；883309a（#10 原子認領補齊）；**清佇列按鈕 commit（🧽 clear scope='queued'，routes_notehub.py + index.html + tests/test_clear_queued.py，+3 tests）**；**4b42e38（Notehub 頁籤式版面改版）**；**頁尾版本號 commit（v4 · 頁籤版面，templates/index.html + static/style.css）**；**勾選持久化 commit（localStorage，templates/index.html +24）**；**佇列輸出選項 commit（PPT/圖卡 checkbox + 開始批次/開始合併 + 移除關閉，db.py + schema.sql + routes_notehub.py + templates + style.css + tests/test_notehub_outputs.py，+4 tests）**；**Phase 6 commit（工作名稱修復方案 B：/api/bookmarks/titles + openNotehubSidebar 改 async，routes_bookmarks.py + templates + tests/test_bookmark_titles.py，+4 tests → 112 tests）**；code review 19/19 修復全 commit
-- **Tests**：**117 passed**（112 + 5 test_synthesize_api：job 建立 / 來源不足 400 / 未選輸出 400 / 只 PPT mode=none / dual；含 queued+running 一起清、running subprocess kill、titles map 回傳）
+- **2026-08-06 深夜終局（v10→v13）**：v10（全部 job 顯示佇列頁籤）→ v11（三態模型：SETUP_MODE flag 判配置階段）→ **v12（commit `4d8f130`：頁籤「工作佇列/工作進度」重定義 + 送出後自動切 progress + PPT/圖卡 checkbox）** → **v12.1（started_at COALESCE bug 修正）** → **v13（處理中顯示「已處理 X 分鐘」+ 滑動動畫）**；117 tests 全綠
+- **Tests**：**117 passed**（v10→v13 前端改動不影響 pytest；前端行為靠 `tests/browser_reload_test.js` Playwright 五態回歸）
 - **2026-08-06 工作流修正**：commit `2cf1196`（batchNotehub 定義 + ☰ 只顯示佇列 + cancelNotehubSetup）+ `4f2faf9`（清佇列按鈕移入 nh-actions + SETUP_MODE_KEY 配置模式持久化）+ `9f6820b`（sw.js cache v6）+ footer v6；**晚間 v8（commit `fcfb7f6` + `c12b768` + `e391bff`）：刪除取消按鈕（清佇列=清 job+清勾選一鍵搞定，`clearQueueAndSelection()`）、reload 持久化簡化（只要有勾選即恢復配置表格，不再依賴 SETUP_MODE_KEY）、sw.js cache v8 + footer v8**；117 tests 全綠
 - **2026-08-06 深夜真正修好 reload 佇列消失**：commit `28d5401`（app.py Cache-Control no-store — 必要但非根因）+ **`eb46f96`（真根因：restoreSelection 等 DOM 就緒再 openNotehubSidebar，避免 htmx afterSwap 在側邊欄解析前觸發 → getElementById null → innerHTML 崩潰）**；Playwright 真實瀏覽器驗證 reload 5 次全過 + 清佇列後 reload 不恢復；117 tests 全綠。Playwright 安裝：`PLAYWRIGHT_BROWSERS_PATH=/opt/data/tmp/pw-browsers npx playwright install chromium`，executablePath = `/opt/data/tmp/pw-browsers/chromium_headless_shell-1234/chrome-linux/headless_shell`
 - **Notehub 版面**：頁籤式（工作佇列/完成工作）已上線；驗證 13 項全過（`/opt/data/scripts/verify_nh_tabs.py`）；sw.js v4
@@ -1117,6 +1158,68 @@ if (!window.__bmSetupRestored && selectedIds.size > 0) {
 **🔴 血淚教訓：不要把「UI 自動化」當成「持久化」的解法。** 使用者要的持久化是「勾選狀態記得」，不是「reload 自動彈視窗」。任何「reload 後自動做某個可見動作」（彈窗、開側欄、跳轉）都要質疑：使用者 reload 後期望看到什麼？被動恢復（checkbox 勾著）vs 主動彈出（視窗自己開）是兩回事。
 
 **🔴 回歸測試也可能固化錯誤行為**：舊版 browser_reload_test.js 斷言 `sidebarOpen > 0 && rowCount === 2`（reload 後側邊欄自動開 + 2 行）— 那是把「錯誤行為」當成「預期行為」寫進測試！v9 改斷言 `checked === 2 && sidebarOpen === 0`（勾選保留、側邊欄不彈）。**寫回歸測試前先確認斷言符合使用者定義的工作流，不是符合目前 code 的行為。**
+
+### 🔴🔴🔴🔴 v10：佇列「消失」的真根因 — 判斷依據用錯（2026-08-06 深夜，使用者「書籤正式加入工作佇列時 reload 頁面後又不見了 無法持久的bug 也是修很多次了」）
+
+**⚠️ v9 的「不自動開側邊欄」是對的，但佇列「消失」問題沒解完** — 使用者正式送出 job 後 reload，佇列內容又看不見。**這次修很多次的根本原因：判斷「要不要顯示佇列」的依據一直用錯。**
+
+**時間線（同一天 3 次修正，每次都在不同層次打轉）**：
+1. **v8 錯**：localStorage 勾選 → 自動開配置表格（把「勾選」當依據 → 勾選≠job，被糾正）
+2. **v9 錯**：整個移除自動開（矯枉過正 → 真 job 送出後 reload 也不顯示，被糾正）
+3. **v10 正解（方案 B，使用者選定）**：reload 後**不自動開**側邊欄（保留 v9），但**「工作佇列」頁籤顯示全部 job**（queued/running/done/failed 都顯示，標狀態 badge ⏳🔄✅❌ `.nh-status` 四色 CSS 早已存在），完成工作頁籤保留 done/failed 供清理（`div.cloneNode(true)` 複製）
+
+**Playwright 重現證據**：job 一直在 DB（`GET /api/notehub/jobs` 回傳正常），但 done/failed job 被分流到「完成工作」頁籤 → 「工作佇列」頁籤空 → 使用者以為消失。**不是 job 不見，是 UI 分流造成「佇列頁籤空了」的錯覺。**
+
+**🔴 核心教訓（三層）**：
+1. **持久化的正確依據 = DB 真 job，不是 localStorage 勾選，也不是 UI 自動化**。reload 後要不要顯示佇列，問「DB 有沒有 job」，不是「localStorage 有沒有勾選」。
+2. **「reload 後自動彈 UI」與「reload 後資料可見」是兩回事** — 使用者不要自動彈窗，但要資料持久可見。方案 B 精準對應：不彈窗（v9 保留）+ 佇列頁籤顯示全部（v10 新增）。
+3. **「狀態分流」可能造成「資料消失」的錯覺** — 把 done/failed 移到另一個頁籤，使用者只看佇列頁籤就以為不見了。全覽頁籤（顯示全部 + 標狀態）是最穩的設計。
+
+**實作細節**：`pollNotehubJobs()` 的 forEach 內：所有 job `activeList.appendChild(div)`；isDone 再加 `doneList.appendChild(div.cloneNode(true))`（clone 會複製 innerHTML 的 onclick 屬性，無 id 衝突 — reviewer 確認）。hint 文字改「📋 全部工作（排隊 / 處理中 / 完成 / 失敗，每 5 秒自動更新）」。
+
+### 🔴🔴🔴🔴🔴 v11：真正語義 = 三態模型（2026-08-06 深夜第三次指正「在工作佇列有書籤排隊 還未開始 批次或合併作業時 按reload 後整個工作佇列會清空」）
+
+**⚠️ v10 還是沒對到！** 使用者第三次指正才真正聽懂：場景是「**按了送 notehub、配置表格開著、書籤在佇列排隊、但還沒按開始批次/合併**」→ reload → 配置表格清空。v10 修的是「job 進 DB 後」的顯示，但使用者要的是「**配置階段**」的持久化 — 完全是不同狀態！
+
+**🔴 核心：Notehub 側邊欄有 3 個截然不同的狀態，判斷依據各不同**：
+
+| 狀態 | 判斷依據 | reload 行為 |
+|------|---------|------------|
+| 1. 純勾選（沒按送） | localStorage 勾選 | **不彈**（v9 原則，勾選≠進佇列） |
+| 2. 按送 notehub、配置表格開著、未開始 | **SETUP_MODE flag**（按過送 = 使用者意圖） | **恢復配置表格**（v11 核心） |
+| 3. 開始批次/合併 job 進 DB | **DB 真 job** | 佇列頁籤顯示全部 job（v10） |
+
+**v11 實作（commit 1bb5c46）**：
+- 恢復 `SETUP_MODE_KEY` + `setSetupMode()`/`isSetupMode()`（v9 清理時誤刪 — 其實是正解，之前用錯判斷依據）
+- `openNotehubSidebar(true)`（按送 notehub）→ `setSetupMode(true)`
+- `restoreSelection()`：`if (isSetupMode() && selectedIds.size > 0 && !window.__bmSetupRestored)` → 等 DOM 就緒 → `openNotehubSidebar(true)`
+- 送出成功（submitNotehubQueue/synthesis）/ 清佇列 / 取消 → `setSetupMode(false)` 清 flag
+- **🔴 `__bmSetupRestored` 防重複必加**：`restoreSelection` 綁 `htmx:afterSwap`（每次 swap 觸發），沒有 flag 時重複排程 async `openNotehubSidebar` → 並行 fetch → tbody 重複 append → **rows 翻倍**（實測抓到 rows=4，加 flag 後回 2）
+
+**🔴🔴 終極教訓（同一天 5 次修正的總結）**：
+1. **「持久化」有三種完全不同的載體**：localStorage 勾選（UI 狀態）、意圖 flag（使用者動作）、DB job（真實資料）— 搞混就是 v8→v11 四次翻車的根源
+2. **先聽懂使用者描述的具體場景（哪個畫面、按了什麼、到哪一步），再決定判斷依據** — 使用者三次指正：「勾選自動彈」（v8 錯）→「送完 job reload 消失」（v9/v10 錯）→「配置表格開著未開始 reload 清空」（v11 才對）— 每次都差一點點，直到第三次才把「配置階段」單獨抽出來
+3. **驗證腳本要照使用者描述的步驟寫**：狀態 1 純勾選 / 狀態 2 按送 notehub 未開始 / 狀態 3 清佇列 — 三態各測，不是只測一種
+
+### 🔴🔴🔴🔴🔴🔴 v12（2026-08-06 終局，commit 4d8f130）：頁籤語意重定義 + 達成共識才動手
+
+**使用者第四次澄清後，用 clarify 達成共識才動手**（「1 正確 2 正確 3 先改動上方頁籤…了解嗎」→ 我複述 + 確認「A 全部顯示」→ 才開始改）。這是 v8→v12 五次翻車後第一次「先對齊再寫 code」— 一次到位。
+
+**頁籤語意重定義**：
+- `工作佇列`（`#nh-tab-queue`）＝ **配置階段**：勾選書籤 + 輸出選項 + 🚀開始批次/🧬開始合併/🧽清佇列（`#nh-setup`）+ 空提示 `#nh-queue-hint`（無配置時顯示「勾選書籤後按送 notehub…」）
+- `完成工作` → **`工作進度`**（`#nh-tab-progress` + `#nh-progress-list`）＝ **執行階段**：**全部 job**（排隊⏳/處理中🔄/完成✅/失敗❌ 標狀態 + 進度條 + 檔案路徑 + ✕清除）
+- `pollNotehubJobs` 全部 job → `#nh-progress-list`（v10 的「全部顯示」邏輯搬到這頁）；移除 `#nh-active-list`/`#nh-active-hint`
+- `submitNotehubQueue`/`submitNotehubSynthesis` 成功 → `switchNhTab('progress')` **自動切到工作進度看進度**
+- ☰ 打開 → 預設切 `progress`（執行階段）；reload 後配置表格恢復（v11 flag）不變
+- 頁籤切換：`switchNhTab('progress')`（tab id done→progress，注意所有 `switchNhTab('done')`/`#nh-tab-done`/`#nh-done-list` 引用都要一起改）
+- **工作進度卡片新增 PPT/圖卡 checkbox（v12 追加，使用者看截圖後要求）**：`_job_artifacts` 回傳加 `ppt`/`visual`（讀 DB `job['ppt']`/`job['visual']` 送出設定，非 output marker；worker 目前無 PPT/圖卡 saved 標記），前端 `chk` 3 個 → 5 個（逐字稿/整理過文字檔/音檔/PPT/圖卡）。驗證：插含 PPT+圖卡與純口播兩支測試 job → Playwright 斷言 checked=2 / checked=0
+
+**🔴 終極工作流教訓（使用者原話「改動寫碼前要達成共識才能動手 一直改一直修都沒有共識」）**：
+- **同一 bug 修 3+ 次後，每次動手前必須先複述理解 + 用 clarify 列方案選項（choices 放選項、A/B/C 各附一句行為描述，不要寫在 question 裡）讓使用者確認，確認後才寫 code**。v8→v12 五次翻車根源 = 自己判斷 → 自己改 → 丟給使用者驗證，從未先對齊
+- **「持久化」三種載體不可混**：localStorage 勾選（UI 狀態）≠ 意圖 flag（按過送 notehub）≠ DB job（真實資料）。判斷「reload 後要不要顯示什麼」先問：**使用者到哪一步了？**（勾選→配置→已送出，三階段各不同）
+- **回歸測試 = 使用者工作流契約**：測試斷言必須照「使用者描述的步驟」寫（先聽懂場景再寫測試）。v8 的錯誤是測試把「自動彈出」固化成預期；v12 的 `tests/browser_reload_test.js` 改為五態（純勾選不彈 / 配置恢復 / 送出自動切 progress / ☰ 預設 progress / 清勾選不彈）
+
+**版本同步**：footer v12 / sw.js `bookmark-manager-v12` / server 重啟後 `curl / | grep -o 'bookmark-manager <b>v[0-9]*</b>'` 三處一致。
 
 **✅ Playwright 真實瀏覽器驗證（RPi4/Docker 安裝配方）**：
 ```bash
