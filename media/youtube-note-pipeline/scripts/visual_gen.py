@@ -136,10 +136,10 @@ def _load_font(size: int, bold: bool = False):
     > Noto Sans SC（簡體風格）> Iansui > WenQuanYi。
     """
     font_paths = [
-        # Noto Sans CJK TC（Google 官方繁中，最道地台灣字形）
-        "/opt/data/fonts/NotoSansTC-Bold.otf" if bold else "/opt/data/fonts/NotoSansTC-Regular.otf",
-        # 思源黑體 Source Han Sans TC（Adobe 官方繁中）
+        # 思源黑體 Source Han Sans TC（Adobe/Google 官方繁中，SIL OFL 免費商用）
         "/opt/data/fonts/SourceHanSansTC-Bold.otf" if bold else "/opt/data/fonts/SourceHanSansTC-Regular.otf",
+        # Noto Sans CJK TC（Google 官方繁中）
+        "/opt/data/fonts/NotoSansTC-Bold.otf" if bold else "/opt/data/fonts/NotoSansTC-Regular.otf",
         # Noto Sans SC (simplified + traditional Chinese, best coverage)
         "/opt/data/fonts/NotoSansSC-Bold.ttf" if bold else "/opt/data/fonts/NotoSansSC-Regular.ttf",
         # 芫荽 iansui (Taiwanese traditional Chinese, Klee One derived)

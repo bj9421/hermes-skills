@@ -171,9 +171,8 @@ _TEXT_WHITE = RGBColor(0xFF, 0xFF, 0xFF)
 _TEXT_LIGHT = RGBColor(0xCC, 0xCC, 0xCC)
 _CARD_BG = RGBColor(0x2D, 0x2D, 0x44)        # Slightly lighter navy
 
-# 🔴 2026-08-06：繁中字型 — Noto Sans CJK TC（Google 官方繁中；內部 family name 是
-# "Noto Sans CJK TC" 不是 "Noto Sans TC"）。備選思源黑體 Source Han Sans TC。
-_FONT_NAME = "Noto Sans CJK TC"
+# 🔴 2026-08-06：繁中字型 — 優先思源黑體（Adobe/Google，SIL OFL 免費商用），備選 Noto Sans CJK TC
+_FONT_NAME = "Source Han Sans TC"
 
 
 def _apply_cjk_font(prs: Presentation, name: str = _FONT_NAME):
