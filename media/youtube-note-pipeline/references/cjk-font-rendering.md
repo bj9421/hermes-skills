@@ -66,6 +66,19 @@ emoji_font = ImageFont.truetype(_EMOJI_FONT, 48)
 draw.text((cx + 24, cy + 18), icon, font=emoji_font, fill=_TEXT_W)
 ```
 
+## PPTX (python-pptx) 中文字型（2026-08-06 調查）
+
+- **坑**：`run.font.name = 'Noto Sans SC'` **只設 Latin 字型，中文字型不生效** — 必須額外設 East Asian 屬性：
+  ```python
+  from pptx.oxml.ns import qn
+  rPr = run._r.get_or_add_rPr()
+  ea = rPr.makeelement(qn('a:ea'), {'typeface': 'Noto Sans SC'})
+  rPr.append(ea)
+  ```
+- 現況 ppt_gen.py 完全沒設 font.name → 中文字型 fallback 看開啟端（不可控）。
+- **emoji 不需指定**：PPT run 指定 Noto Sans SC 後，emoji 字元由檢視端自動 fallback（Pi 已裝 NotoEmoji/NotoColorEmoji；手機/Win 有內建）。只有 Pillow 合成才需明確指定（本檔案前半段）。
+- 決策：ppt_gen.py 設 Noto Sans SC（含 a:ea）。細節見 `ppt-prompt-resources.md` 的「中文字型設定」。
+
 ## Resolution and Scaling
 
 Canvas: 1920×1080 (Full HD). Minimum font size: 36px. All text bold.

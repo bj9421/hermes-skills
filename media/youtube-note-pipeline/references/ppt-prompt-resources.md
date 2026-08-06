@@ -49,7 +49,28 @@
 - 通用 prompt 優化文（pxz.ai/aiworks）是圖像生成向，不適合投影片 — 要搜「簡報 大綱 模組」而非「提示詞」
 - 搜尋順序用 anysearch batch_search 多查詢並行（中英各 2-3 個）再挑高價值頁面
 
-## 階段 1 實作（2026-08-06 ✅）
+## 階段 2+3 實作（2026-08-06 ✅）
+
+**階段 2（輸出結構 + 版型規則）+ 階段 3（渲染升級）** 一起完成（prompt 升級 + 5 新版型 + dispatch）：
+
+1. **Prompt 升級**（`_extract_key_points`）：加 `slide_type` 欄位 + 版型規則說明
+   - 7 種版型：`hook`（開場/第 1 頁，大標題置中）、`content`（一般內文）、`data`（數字卡）、`quote`（金句）、`qa`（3 問題+CTA）、`action`（行動步驟）、`hook`（保留給第 1 頁）
+   - 規則：5-7 頁至少含 1 個 data + 1 個 quote + 1 個 action；qa 視內容需要
+   - 輸出結構加 `slide_type` 欄位；舊結構 normalize 缺省 `content`
+
+2. **渲染升級**（5 新版型函數）：
+   - `_add_hook_slide`：大標題置中（40pt 粗體）+ 補充小字 + accent line（無 badge，開場吸睛）
+   - `_add_quote_slide`：金色「「」裝飾 + 金句置中（36pt 粗體）+ 出處（16pt 小字）
+   - `_add_data_slide`：編號 + 標題 + 數字卡（動態寬度：n=2 時 4.1"，n≥3 時均分 8.8" 寬度）+ 數字大字（34pt 暖紅）+ 說明小字（16pt）
+   - `_add_qa_slide`：編號 + 標題 + 3 問題（❓前綴）+ CTA（→ 前綴，暖紅粗體）
+   - `_add_action_slide`：編號 + 標題 + 步驟（→前綴，22pt 大字）
+
+3. **dispatch**：`generate_ppt` 依 `point['slide_type']` 選對應版型函數，未知 → content fallback
+
+4. **修既有 bug**：content 版型 bullets 容器太高（4→2.6 inch）→ 超界
+   **驗證**：幾何超界 0 + LLM 端到端（Cherry Studio V2 腳本 → 7 頁，版型分佈 hook:1 + content:3 + data:1 + quote:1 + action:1 ✅ 無缺版型）+ 118 tests 全過
+
+## 階段 2+3 實作驗證（2026-08-06）
 
 `ppt_gen.py` + `visual_gen.py` 三項升級（端到端驗證 8 slides 成功）：
 
@@ -63,3 +84,32 @@
 
 - 階段 2：輸出結構加 `story_line` / `slide_types`（hook/problem/data/quote/action）— 渲染要對應
 - 階段 3：ppt_gen.py 支援金句頁/數據頁/QA 頁版型 + 視覺風格指令（104 模組的頁面類型規則）
+
+## anysearch PPT skill 研究（2026-08-06，22 個 repo 篩出 2 個重點）
+
+用 anysearch batch_search（4 queries）+ extract 實測：
+
+1. **🥇 siril9/presentation-skill**（MIT，36⭐）— **直接可參考**（同 python-pptx 技術棧）
+   - source-first：outline.json → .pptx；**16 種內容版型**（split/cards-3/timeline/stats/kpi-hero/comparison-2col/matrix/chart/table…）
+   - 13 個風格家族（各配調色盤/字體/密度）、8 種構圖文法（Answer Pyramid/Evidence Plate…）
+   - **QA 三層**：幾何溢出檢查 + 渲染 JPG 視覺檢查（prompt 偏向找問題）+ 佔位符 grep
+   - 核心哲學「別讓簡報變成 bullet-list-after-bullet-list」= notehub ppt_gen.py 現況痛點
+   - 階段 3 建議：借其版型多樣化文法寫進 prompt + 渲染（列表/對比/數據/時間軸分版型）
+
+2. **op7418/guizang-ppt-skill**（AGPL，23.3k⭐，歸藏）— 只能借設計原則
+   - ⚠️ 產出 HTML deck 非 .pptx；AGPL 授權（改 code 注意）
+   - 電子雜誌風 + 瑞士國際主義雙視覺系統、22 種瑞士鎖定版式、主題色只選不自訂
+   - `checklist.md` P0-P3 質量檢查分級、`validate-swiss-deck.mjs` 版式校驗器
+   - 設計原則：克制優於炫技/結構優於裝飾/圖片第一公民/主題色限制
+
+其他 20 個（低優先）：mckinsey-pptx（麥肯錫風格）、ultimate-ppt-master-skill、ppt-agent-skills、2slides 官方 skill、thesis-defense-pptx-skill、academic-pptx-skill 等。搜尋語法：`grep -oE 'github.com/[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+' <anysearch結果檔> | sort -u` 快速過濾 repo 清單。
+
+## 中文字型設定（2026-08-06 ✅ 已完成）
+
+- **現況（已修）**：ppt_gen.py **原本完全沒設 font.name**（只設 size/bold/color）→ 中文字型不可控。已設 Noto Sans CJK TC。
+- **🔴 SC 是簡體**：Noto Sans SC = Simplified Chinese。繁中內容要道地台灣字形 → **Noto Sans CJK TC**（Google 官方繁中；**內部 family name 是 "Noto Sans CJK TC" 不是 "Noto Sans TC"**）+ **Source Han Sans TC 思源黑體**（Adobe 官方）。兩套各 Regular+Bold 已下載到 `/opt/data/fonts/`（~16MB/檔，github raw：notofonts/noto-cjk 的 Sans/OTF/TraditionalChinese/ + adobe-fonts/source-han-sans 的 release/OTF/TraditionalChinese/）。
+- **🔴 fontconfig 安裝路徑陷阱**：`/usr/share/fonts` **無權限**（Permission denied）；`$XDG_DATA_HOME=/opt/data/.xdg/data` → 字型要放 **`/opt/data/.xdg/data/fonts/`** 才會被 fc-list/fc-match 掃到（`/opt/data/.local/share/fonts` 不會）。裝完 `fc-cache -f`。
+- **🔴 python-pptx 坑（已修）**：`run.font.name = 'Noto Sans CJK TC'` **只設 Latin 字型，中文字型不生效** — 必須額外設 East Asian 屬性。實作：`_apply_cjk_font(prs)` 遍歷全部 slide 文字 run，設 `rPr.find(qn('a:ea'))` + `typeface`（latin 也用 `run.font.name = name`），在 `prs.save()` 前呼叫。驗證：解壓 PPTX 檢查 `a:ea typeface="Noto Sans CJK TC"`（33 runs 全中）。
+- **emoji 不需指定**：PPT 文字 run 指定 CJK 字型後，emoji 字元（▸、📊）由檢視端自動 fallback（Pi 已裝 Noto Emoji，手機/Win 有內建）。只有 PIL 圖卡合成（visual_gen.py）才需明確指定 NotoEmoji（PIL 無 fallback）。
+- **visual_gen.py `_load_font` 優先序**：Noto Sans CJK TC → Source Han Sans TC → Noto Sans SC → Iansui → WenQuanYi。
+- 已清 `_get_llm_client()` NVIDIA 死碼（改 call_llm 後函數殘留）。

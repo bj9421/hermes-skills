@@ -262,6 +262,19 @@ if (openDetails.size > 0) {
 
 **教訓**：輸出檔案路徑顯示 = output marker 驅動（`_SAVED_MARKERS` 是清除+顯示的**單一來源**）；「已產出」與「已勾選」是兩個概念 — artifacts 判斷「產出」用 output marker，job 欄位只記錄「勾選」。
 
+### 🔴 v16（2026-08-06，commit 進度不倒退 + 更名保留）：重送視覺 + 多版本
+
+**1. 進度不倒退（使用者確認設計 100%→95%→96%→100%）**：done job 重送加 PPT/圖卡時，`_job_progress` 不崩回 0%（視覺 100%→0%→95% 很怪）。以**已產出**為基礎：`arts['mp3']` 有（口播完成）→ queued 也顯示 **95%**；增量製作 PPT 中（ppt 勾選未產出）→ **96%**；增量圖卡中 → **97%**；全新 job 仍 0% 起跳。驗證：`test_job_progress_no_regression`（8 場景）+ Playwright（TEST-增量-PPT 卡 96% + 進度條寬度 96% + vision 無破版）。
+
+**2. PPT/圖卡更名保留（使用者要求「都改成更名保留」）**：重送同名檔**不覆蓋**。ppt_gen.py/visual_gen.py 各加 `_unique_path(base)` — 路徑已存在 → `標題_v2.pptx` / `標題_summary_v2.png`（遞增 _v3/_v4…，舊檔保留）。⚠️ 生成走 LLM（90s/次），端到端測試 4 次生成要 5-10 分鐘 → **用背景執行 + notify_on_complete**（前景 300s 會 timeout）。CLI 第二次生成（script 重用）約 1-2 分鐘出 `_v2.pptx`。
+
+**3. 🔴 多版本 marker 配套（routes_notehub.py，實測抓到 bug）**：更名保留後 output 同種類可能多個 marker（.pptx + _v2.pptx）：
+- `_job_paths` 原本 `pat.search()` 只抓**第一個** → 多版本時 UI 顯示舊版。改 `findall()` 取**最後一個**（worker 追加輸出新版本在最後）= UI 顯示最新產出
+- `_delete_job_artifacts` 改 `finditer()` 刪**全部版本**（不只第一個）
+- 驗證：118 tests + Playwright 手機模式（Cherry 卡 📊 PPT 路徑顯示 `分享_v2.pptx` + vision 確認無破版）
+
+**4. UI 驗證入口（Playwright 手機模式）**：工作進度在 **☰ hamburger → sidebar**（`.nh-progress-item`），**不是主頁**！檔案路徑在 `details.nh-path-toggle` 內 — **要點 `summary` 展開**（點 details 本身無效）才看得到路徑內容。驗證 _v2 路徑 = 展開後 `.nh-path` 含 `_v2.pptx`。完整範本：`/opt/data/tmp/verify_v17_v2_path.js`。
+
 ### 清除功能（2026-07-31 新增）
 
 **設計定案（使用者討論）：失敗→清紀錄+刪半成品；完成→只清紀錄。**
