@@ -23,6 +23,9 @@ related_skills: [verified-capabilities, taiwan-stock-data-pipeline, instagram-re
 
 ## 🔧 LLM Fallback Chain（2026-08-01 更新）
 
+### 🔴 呼叫原則（2026-08-06 實測）
+**notehub 內新寫任何 LLM 呼叫一律用 `call_llm()`（含 Zen→AGNES→Groq fallback 鏈），不要直接 `call_zen()`**。`call_zen` 無 fallback — Zen timeout 時呼叫端直接拿 None → PPT 變 3 slides 基本版、整段提取失敗。ppt_gen.py / visual_gen.py 原本直接 call_zen（2026-08-06 已改 call_llm）；podcast.py 正確。例外：需要 raw 回應的場景才用 call_zen。配合 pitfall 37：max_tokens 一律傳 0 或不帶。
+
 ### notehub pipeline（口播腳本）
 ```
 1. OpenCode Zen (deepseek-v4-flash-free) — 20 RPM
@@ -69,7 +72,7 @@ with open('/opt/data/.env') as f:
 ## 📚 References
 
 - `references/multi-source-synthesis.md` — NotebookLM 式多來源合成（2026-08-05）：決策已定（混合來源/兩階段/勾選入口）
-- `references/ppt-prompt-resources.md` — PPT 提示詞資源庫（2026-08-06）：104 職場力大綱模組 / 2Slides 10 模板 / Meiko 生成器 + notehub ppt_gen.py 現況診斷與升級建議（使用者問「哪裡有 PPT 提示詞 / 提升簡報質量」時先看這份）
+- `references/ppt-prompt-resources.md` — PPT 提示詞資源庫（2026-08-06）：104 職場力大綱模組 / 2Slides 10 模板 / Meiko 生成器 + notehub ppt_gen.py 升級紀錄。**階段 1（Prompt 升級：故事線/tagline/one-idea-per-slide + JSON 容錯解析）已實作**；階段 2（slide_types 結構）/ 階段 3（金句/數據/QA 頁版型）待做。使用者問「哪裡有 PPT 提示詞 / 提升簡報質量」時先看這份
 
 ## ⚠️ Pitfalls
 
@@ -113,3 +116,5 @@ with open('/opt/data/.env') as f:
 40. **🔴 generate_ppt/generate_visual 的 out_dir positional bug（2026-08-06 實測）** — 簽名是 `(script, title, lang, out_dir)`，pipeline 舊 code 傳 `generate_ppt(content, title, out_dir)` → 第三參數 `out_dir` 被當 `lang` → PPT/圖卡存到 **cwd**（server worker 目錄）而非輸出目錄！**必須用 keyword**：`generate_ppt(script, title, lang=lang, out_dir=out_dir)`。同修 visual_gen.py。
 
 41. **🔴 yt-dlp 下載暫態失敗會整支 job 掛（2026-08-06 實測）** — 同一影片 #77 成功 #80 失敗：`[WARN] yt-dlp audio download produced no file` → 三層 extract 策略全失敗 → job failed。修：`_download_audio` 加 retry×2（間隔 3/6 秒）。同場加映：ppt_gen/visual_gen 改用 `call_llm`（Zen→AGNES→Groq fallback）— 原本直接 call_zen，Zen timeout 就 fallback 成 3 slides 基本版簡報。
+
+42. **🔴 重送合併原卡不開新卡（2026-08-06 方案 1，使用者要求）** — 同 bookmark 重送（如加 PPT）不該開新卡。`queue_jobs` 檢查同 bookmark 非 failed job → 合併：`ppt/visual` OR 原值 + mode 升級（none→solo/dual）+ done 設回 queued 讓 worker 增量重跑。**關鍵設計**：① `_job_artifacts` 的 ppt/visual 用**產出標記**（output 有 `PPT saved`/`Visual summary saved`）不是 DB 勾選欄位 → checkbox 反映實際產出（「PPT 完成後 checkbox 打勾」）② `_process_job` 增量執行：`arts` 判斷已產出（`arts['mp3']` 有就不跑 podcast、`arts['ppt']` 有就不跑 PPT），全部都有 → `need_run=False` 直接 done 不動 ③ `_worker_loop` output 用「`--- 追加輸出 ---`」合併保留舊 markers（否則 raw/script/mp3 的 checkbox 全掉）④ `_SAVED_MARKERS` 的 ppt pattern 用 lazy match `(.+?\.pptx)` — **路徑含空格**（如「Cherry Studio V2 來了…」）`\S+\.pptx` 會在空格斷掉抓不到。驗證：重送 {id:110,ppt:true} → job_ids=[77] 合併、job 數不增、117 tests 全過。
