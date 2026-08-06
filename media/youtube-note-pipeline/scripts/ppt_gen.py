@@ -14,28 +14,6 @@ from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 
 # ---------------------------------------------------------------------------
-# LLM Client (reuses NVIDIA API)
-# ---------------------------------------------------------------------------
-def _get_llm_client():
-    api_key = os.environ.get("NVIDIA_API_KEY", "")
-    if not api_key:
-        env_path = "/opt/data/.env"
-        if os.path.exists(env_path):
-            with open(env_path) as f:
-                for line in f:
-                    line = line.strip()
-                    if line.startswith("NVIDIA_API_KEY="):
-                        api_key = line.split("=", 1)[1].strip().strip('"').strip("'")
-                        break
-    if not api_key:
-        return None
-    from openai import OpenAI
-    base_url = os.environ.get("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
-    model = os.environ.get("NVIDIA_ORGANIZE_MODEL", "deepseek-ai/deepseek-v4-flash")
-    return OpenAI(base_url=base_url, api_key=api_key), model
-
-
-# ---------------------------------------------------------------------------
 # JSON 容錯解析（2026-08-06 階段 1：LLM 輸出格式不穩，直接 json.loads 常失敗
 # → fallback「無法提取」→ 簡報品質爛。強化解析，成功率高很多。）
 # ---------------------------------------------------------------------------
@@ -172,6 +150,32 @@ _ACCENT = RGBColor(0xE8, 0x4D, 0x3D)         # Warm red
 _TEXT_WHITE = RGBColor(0xFF, 0xFF, 0xFF)
 _TEXT_LIGHT = RGBColor(0xCC, 0xCC, 0xCC)
 _CARD_BG = RGBColor(0x2D, 0x2D, 0x44)        # Slightly lighter navy
+
+# 🔴 2026-08-06：繁中字型 — Noto Sans CJK TC（Google 官方繁中；內部 family name 是
+# "Noto Sans CJK TC" 不是 "Noto Sans TC"）。備選思源黑體 Source Han Sans TC。
+_FONT_NAME = "Noto Sans CJK TC"
+
+
+def _apply_cjk_font(prs: Presentation, name: str = _FONT_NAME):
+    """遍歷全部 slide 文字 run，設定 latin + East Asian 字型。
+
+    ⚠️ python-pptx 的 run.font.name 只設 latin typeface，中文需要額外設 a:ea
+    （East Asian）屬性才生效 — 否則 PowerPoint 用系統預設中文字型（不可控）。
+    """
+    from pptx.oxml.ns import qn
+    for slide in prs.slides:
+        for shape in slide.shapes:
+            if not shape.has_text_frame:
+                continue
+            for para in shape.text_frame.paragraphs:
+                for run in para.runs:
+                    run.font.name = name  # latin
+                    rPr = run._r.get_or_add_rPr()
+                    ea = rPr.find(qn('a:ea'))
+                    if ea is None:
+                        ea = rPr.makeelement(qn('a:ea'), {})
+                        rPr.append(ea)
+                    ea.set('typeface', name)
 
 
 # ---------------------------------------------------------------------------
@@ -359,6 +363,8 @@ def generate_ppt(script: str, title: str, lang: str = "zh", out_dir: str = ".") 
 
     # Save
     safe_title = title.replace("/", "_").replace("\\", "_")[:80]
+    # 🔴 2026-08-06：繁中字型（Noto Sans CJK TC + a:ea 屬性）
+    _apply_cjk_font(prs)
     pptx_path = os.path.join(out_dir, f"{safe_title}.pptx")
     prs.save(pptx_path)
     os.chmod(pptx_path, 0o777)
