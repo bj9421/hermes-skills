@@ -947,6 +947,7 @@ app.py 已從 766 行 / 53 函數 / cohesion 0.10 拆成上述模組結構（coh
 - **Commit**：057b345（IG 時長）；f424636（IG 標籤）；ad000c4（Bilibili 時長）；883309a（#10 原子認領補齊）；**清佇列按鈕 commit（🧽 clear scope='queued'，routes_notehub.py + index.html + tests/test_clear_queued.py，+3 tests）**；**4b42e38（Notehub 頁籤式版面改版）**；**頁尾版本號 commit（v4 · 頁籤版面，templates/index.html + static/style.css）**；**勾選持久化 commit（localStorage，templates/index.html +24）**；**佇列輸出選項 commit（PPT/圖卡 checkbox + 開始批次/開始合併 + 移除關閉，db.py + schema.sql + routes_notehub.py + templates + style.css + tests/test_notehub_outputs.py，+4 tests）**；**Phase 6 commit（工作名稱修復方案 B：/api/bookmarks/titles + openNotehubSidebar 改 async，routes_bookmarks.py + templates + tests/test_bookmark_titles.py，+4 tests → 112 tests）**；code review 19/19 修復全 commit
 - **Tests**：**117 passed**（112 + 5 test_synthesize_api：job 建立 / 來源不足 400 / 未選輸出 400 / 只 PPT mode=none / dual；含 queued+running 一起清、running subprocess kill、titles map 回傳）
 - **2026-08-06 工作流修正**：commit `2cf1196`（batchNotehub 定義 + ☰ 只顯示佇列 + cancelNotehubSetup）+ `4f2faf9`（清佇列按鈕移入 nh-actions + SETUP_MODE_KEY 配置模式持久化）+ `9f6820b`（sw.js cache v6）+ footer v6；**晚間 v8（commit `fcfb7f6` + `c12b768` + `e391bff`）：刪除取消按鈕（清佇列=清 job+清勾選一鍵搞定，`clearQueueAndSelection()`）、reload 持久化簡化（只要有勾選即恢復配置表格，不再依賴 SETUP_MODE_KEY）、sw.js cache v8 + footer v8**；117 tests 全綠
+- **2026-08-06 深夜真正修好 reload 佇列消失**：commit `28d5401`（app.py Cache-Control no-store — 必要但非根因）+ **`eb46f96`（真根因：restoreSelection 等 DOM 就緒再 openNotehubSidebar，避免 htmx afterSwap 在側邊欄解析前觸發 → getElementById null → innerHTML 崩潰）**；Playwright 真實瀏覽器驗證 reload 5 次全過 + 清佇列後 reload 不恢復；117 tests 全綠。Playwright 安裝：`PLAYWRIGHT_BROWSERS_PATH=/opt/data/tmp/pw-browsers npx playwright install chromium`，executablePath = `/opt/data/tmp/pw-browsers/chromium_headless_shell-1234/chrome-linux/headless_shell`
 - **Notehub 版面**：頁籤式（工作佇列/完成工作）已上線；驗證 13 項全過（`/opt/data/scripts/verify_nh_tabs.py`）；sw.js v4
 - **小紅書 notehub job 修復（2026-08-05，skills repo commit `961ff02`）**：`notehub/extractors/url.py` 新增 `_is_xhs_url()` + `_fetch_xhs()`（短鏈302→DoH查IP→curl --resolve→__INITIAL_STATE__，搬自 llm_enhance.fetch_xiaohongshu_meta）— 小紅書書籤送口播不再 SSL CERTIFICATE_VERIFY_FAILED。實測書籤 #101（xhslink.com/m/8qWhW4ScJIU）extract 成功（title/desc/tags）。詳見 youtube-note-pipeline pitfall 35
 - **Code Review**：19 bugs 全數修復 19/19（2 HIGH：FTS5 引號 crash、limit 全庫 dump；12 MEDIUM；5 LOW）→ `references/code-review-2026-08-05.md`
@@ -1070,3 +1071,71 @@ response.headers['Expires'] = '0'
 4. `openNotehubSidebar` 是 async（內部 await fetch titles）→ setTimeout 300ms 後再檢查 DOM（`#nh-setup` style.display、`#nh-queue-body tr` 數、`#nh-overlay.open`）
 
 範本：`/opt/data/tmp/test_reload9.js` — 勾選 [41,42] → reload → 期望 `setupVisible: "block", rowCount: 2, overlayOpen: true`；沒勾選 → 全 false。跑：`cd /opt/data/tmp && node test_reload9.js`（需 `npm install jsdom`）。
+
+### 🔴🔴 真・終極根因：jsdom 通過 ≠ 真實瀏覽器通過 — htmx afterSwap DOM 未就緒崩潰（2026-08-06 深夜，使用者「妳回看這 reload 佇列會消失從凌晨修改到現在幾次了 一直沒修好 也沒去測試」）
+
+**⚠️ 更正上方的 Cache-Control 結論：那是假曙光。** no-store header 有必要（防手機快取舊版）但**不是**「每次 reload 佇列消失」的根因 — 加完使用者手機還是消失。真正根因是 JS 崩潰，只有真實瀏覽器測得出來：
+
+**jsdom 的致命盲點**：jsdom **不執行外部 `<script src="htmx.min.js">`** → `htmx:afterSwap` 事件永遠不觸發 → restoreSelection 只在頁尾手動執行一次（那時 DOM 已完整）→ **jsdom 測不出 reload 競態**。jsdom 通過 rowCount=2 只是假象。**教訓：涉及 HTMX/非同步載入/DOM 順序的前端 bug，jsdom 通過 = 尚未驗證，必須用真實瀏覽器。**
+
+**真根因（Playwright 抓到 pageerror）**：
+```
+reload → htmx hx-trigger="load" 載入書籤列表 → 觸發 htmx:afterSwap
+→ restoreSelection() → selectedIds.size > 0 → openNotehubSidebar(true)
+→ document.getElementById('nh-setup') ← NULL！
+   （側邊欄 <aside id="nh-sidebar"> 在 body 底部 line 747，瀏覽器 streaming parse 還沒解析到它）
+→ tbody.innerHTML = '' 崩潰：TypeError: Cannot set properties of null (setting 'innerHTML')
+→ 配置表格沒渲染、側邊欄沒開 → 佇列「消失」
+```
+第一次點「送 notehub」正常（頁面已完全載入）；只有 reload 瞬間 htmx load swap 比 body 底部解析還早 → null。
+
+**修法（restoreSelection 等 DOM 就緒再開側邊欄，commit `eb46f96`）**：
+```js
+if (!window.__bmSetupRestored && selectedIds.size > 0) {
+    if (document.getElementById('nh-setup')) {
+        window.__bmSetupRestored = true;
+        openNotehubSidebar(true);
+    } else {
+        // 側邊欄還沒解析到 → 等 DOM 就緒再恢復（flag 先佔位防 htmx swap 重複觸發）
+        window.__bmSetupRestored = true;
+        const retry = () => { if (document.getElementById('nh-setup')) openNotehubSidebar(true); };
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', retry, { once: true });
+        else setTimeout(retry, 50);
+    }
+}
+```
+
+### 🔴🔴🔴 v9 重大修正：reload 自動彈配置表格 = 違反工作流（2026-08-06 晚，使用者「勾選的書籤 不需按送notehub 按reload 就自動跑到工作佇列 這流程不正常吧」）
+
+**⚠️ eb46f96 的修法是錯的方向！** 它把「只要 localStorage 有勾選 → reload 後自動恢復配置表格」變成正式行為 — 但這**違反使用者 2026-08-06 明確定義的工作流：「勾選本身絕對不能讓書籤出現在工作佇列」**。reload 後側邊欄自動彈出、勾選書籤被渲染進 `#nh-queue-body`（工作佇列頁籤）→ 使用者以為「自動跑到工作佇列」。
+
+**正確行為（commit `09b8bd0`，v9）**：
+- reload 只恢復**勾選狀態**（checkbox 重勾 + batch bar）✅
+- **不自動彈出側邊欄/配置表格** — 要看佇列按 ☰（showSetup=false，只顯示 DB 真實 job 進度）；要送按「送 notehub」（showSetup=true 才顯示配置表格）
+- restoreSelection 的 auto-open 區塊**整個刪除**
+
+**🔴 血淚教訓：不要把「UI 自動化」當成「持久化」的解法。** 使用者要的持久化是「勾選狀態記得」，不是「reload 自動彈視窗」。任何「reload 後自動做某個可見動作」（彈窗、開側欄、跳轉）都要質疑：使用者 reload 後期望看到什麼？被動恢復（checkbox 勾著）vs 主動彈出（視窗自己開）是兩回事。
+
+**🔴 回歸測試也可能固化錯誤行為**：舊版 browser_reload_test.js 斷言 `sidebarOpen > 0 && rowCount === 2`（reload 後側邊欄自動開 + 2 行）— 那是把「錯誤行為」當成「預期行為」寫進測試！v9 改斷言 `checked === 2 && sidebarOpen === 0`（勾選保留、側邊欄不彈）。**寫回歸測試前先確認斷言符合使用者定義的工作流，不是符合目前 code 的行為。**
+
+**✅ Playwright 真實瀏覽器驗證（RPi4/Docker 安裝配方）**：
+```bash
+cd /opt/data/tmp && npm init -y && npm install playwright
+# ⚠️ 預設 PLAYWRIGHT_BROWSERS_PATH=/opt/hermes/... 無寫入權限 → 指到可寫目錄
+PLAYWRIGHT_BROWSERS_PATH=/opt/data/tmp/pw-browsers npx playwright install chromium
+# executablePath 不是 chrome-headless-shell！正確：
+#   /opt/data/tmp/pw-browsers/chromium_headless_shell-1234/chrome-linux/headless_shell
+```
+測試腳本：`/opt/data/tmp/test_real_browser.js`（勾 2 筆 → 送 notehub → reload → 斷言 `#nh-overlay.open` + `#nh-queue-body tr`=2）+ `/opt/data/tmp/test_stress.js`（連續 reload 5 次 + 清佇列後 reload 應不恢復）。跑：`cd /opt/data/tmp && PLAYWRIGHT_BROWSERS_PATH=/opt/data/tmp/pw-browsers node test_real_browser.js`。
+
+✅ **持久化回歸測試（2026-08-06 已 commit 進 repo，取代 /tmp 臨時腳本）**：`tests/browser_reload_test.js`（87 行，Node + Playwright）。前端 UI 改動後**必跑**：
+```bash
+cd /opt/data/projects/bookmark-manager && NODE_PATH=/opt/data/tmp/node_modules PLAYWRIGHT_BROWSERS_PATH=/opt/data/tmp/pw-browsers node tests/browser_reload_test.js
+```
+涵蓋：勾 2 筆 → 送 notehub → reload → 斷言側邊欄開啟 + rows=2 + 0 pageerror。這是「不讓使用者當白老鼠」的守門員 — jsdom 通過不算數，真實瀏覽器才算。
+
+**抓到 pageerror 的關鍵手法**：`page.on('pageerror', err => console.log(err.stack))` 直接定位崩潰函數；還不夠就 `addInitScript` 攔截 `document.getElementById`（回傳 null 時印出 id + stack）鎖定是哪個元素。**比猜快一百倍。**
+
+**⚠️ 改 template 後必須重啟 server 再測**（waitress 無 reloader + Jinja template 快取）— 不然 curl/Playwright 都在測舊 HTML，誤判「修了沒用」。重啟後 `curl localhost:5001/ | grep -c '側邊欄還沒解析到'` 確認新 code 上線再跑 Playwright。
+
+**教訓（使用者原話「一直沒修好 也沒去測試 來回浪費時間 token」）**：前端 bug 驗證層級 = 真實瀏覽器 ≥ 先看完整 DOM 結構（側邊欄在 body 何處、script 在何處、htmx load 時機）。**改完 code 自己跑 Playwright 證實再回報，不要讓使用者當白老鼠。** 同類 bug 的診斷順序：① 攔截 pageerror/console ② 攔截 getElementById 找 null ③ 看 DOM 載入順序（aside 在 body 底部 = htmx load swap 可能早於它）。

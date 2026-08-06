@@ -112,6 +112,29 @@ new Date(ts).toLocaleString('zh-TW', {
 
 ## Debugging Workflow
 
+### Step 0: jsdom ≠ 真實瀏覽器（HTMX/reload 競態必用 Playwright）
+
+jsdom **不執行外部 `<script src="...">`**（如 htmx.min.js）→ `htmx:afterSwap` 等事件永遠不觸發 → reload 競態測不出。**jsdom 通過 ≠ 已驗證**，尤其頁面含 HTMX / 第三方 script 時。
+
+涉及 **reload / 非同步載入 / DOM 元素順序 / Service Worker** 的 bug，用 Playwright headless Chromium 當重現工具：
+
+```bash
+# RPi4/Docker 安裝配方（PLAYWRIGHT_BROWSERS_PATH 必須指到可寫目錄）
+cd /opt/data/tmp && npm init -y && npm install playwright
+PLAYWRIGHT_BROWSERS_PATH=/opt/data/tmp/pw-browsers npx playwright install chromium
+# executablePath 不是 chrome-headless-shell！正確：
+#   /opt/data/tmp/pw-browsers/chromium_headless_shell-1234/chrome-linux/headless_shell
+```
+
+診斷三招（比猜快一百倍）：
+1. `page.on('pageerror', err => console.log(err.stack))` — 直接定位崩潰函數 + 行號
+2. 攔截 `document.getElementById`（addInitScript，回傳 null 時印出 id + stack）— 鎖定哪個元素在何時不存在
+3. 看 DOM 載入順序：htmx `hx-trigger="load"` 的 swap 可能早於 body 底部元素被 streaming parse → `getElementById` 回 null → `.innerHTML` 崩潰 → UI 元素「消失」
+
+**常見競態修法**：存取 DOM 前檢查元素存在，不存在則等 `DOMContentLoaded` 再 retry（一次性 flag 防重複觸發）。
+
+**工作流鐵律**：修完 code 自己跑真實瀏覽器實測、看到通過證據再回報 — 不讓使用者當白老鼠。同一個 bug 修 2 次以上沒好 → 停，提高驗證層級，不要在同一個猜測循環打轉。
+
 ### Step 1: Check Backend API First
 
 ```bash
