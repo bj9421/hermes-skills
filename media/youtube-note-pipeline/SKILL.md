@@ -19,7 +19,7 @@ related_skills: [verified-capabilities, taiwan-stock-data-pipeline, instagram-re
 | Transcribe | `notehub/core/transcribe.py` | Whisper 三層 fallback |
 | Podcast | `podcast.py` | 口播腳本生成 + TTS |
 | Extractors | `notehub/extractors/` | YouTube/IG/Bilibili |
-| Synthesis | `notehub/core/synthesis.py` | 多來源合成（2026-08-06 Phase 5）|
+| Synthesis | `notehub/core/synthesis.py` | 多來源合成（2026-08-07 改用完整逐字稿）|
 
 ## 🔧 LLM Fallback Chain（2026-08-01 更新）
 
@@ -145,3 +145,6 @@ with open('/opt/data/.env') as f:
 50. **🔴 PPT emoji 自動美化（2026-08-07 ✅）** — 根據標題/bullets/summary 關鍵詞自動添加相關 emoji（100+ 映射表）。`_add_emoji()` 函數：① 檢查是否已有 emoji 避免重複；② 搜尋 `_EMOJI_KEYWORD_MAP`（AI→🤖、數據→📊、成長→🚀…）；③ 格式 `🎯  標題`（emoji 後雙空格）。生成流程：`_extract_key_points()` → `_add_emoji_to_data()` → 渲染。**驗證**：AI 視覺模型實測 → 標題/內文/bullets/結尾皆帶 emoji + 幾何超界 0 + 118 tests 全過。
 
 51. **🔴 PPT 新版型（2026-08-07 ✅）** — 新增 3 種版型：`comparison`（左右對比，用 → 分隔兩組）、`timeline`（時間軸/流程，箭頭連結）、`split`（左標題 + 右內容）。dispatch 依 `slide_type` 選版型，LLM 會自動依內容選擇合適版型。
+52. **🔴 TTS 失敗：短 chunk 過濾（2026-08-07 實測）** — `_split_long_text()` 在切割長文本時，當 chunk 接近 max_chars（200）限制，剩下的 sentence 可能只有「。」或「.」等單一字元（標點符號-only）。edge_tts 無法處理這些空內容，回報 "No audio was received"。**已修**：`podcast.py` `_split_long_text` 新增過濾 `chunks = [c for c in chunks if len(c.strip()) >= 5]`。驗證：Job #84 修復後 arts=2, paths=2（原來 arts=3, paths=2 不符）。
+53. **🔴 script.md 無標點無分段（2026-08-07 實測）** — LLM prompt `_SOLO_PROMPT`/`_DUAL_PROMPT` 缺少「標點符號」和「分段」明確要求，導致生成的腳本是一整段連續文字（正常 script 28 個空行段落 vs 問題 script 只有 3 個）。TTS 朗讀無自然停頓，聽起來不自然。**已修**：prompt 新增 `9. 🔴 必須使用完整的標點符號（句號。逗號，頓號、問號？感嘆號！）` 和 `10. 🔴 自然分段，每段 3-5 句，段之間空一行` 和 `11. 🔴 如果輸入是結構化 markdown（標題、條列），請轉換成流暢的口播腳本，不要直接複製原始格式`。下次重新提交 job 會自動套用新 prompt。
+54. **🔴 合成流程改用完整逐字稿（2026-08-07 實測）** — 原本 `_summarize_source()` 把每個來源濃縮成摘要，再合成報告，導致資訊遺失。**已修**：移除 `_summarize_source`，直接使用完整逐字稿（max_tokens 從 4096 提升至 8192），保留完整資訊。

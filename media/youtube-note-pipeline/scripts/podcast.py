@@ -64,8 +64,11 @@ _SOLO_PROMPT = """你是一個專業的播客腳本編寫者。請將以下逐�
 6. 語言：{lang_instruction}
 7. 不要加逐字稿中的時間標記 [MM:SS]
 8. 長度：自然完整，不硬性截斷
+9. 🔴 必須使用完整的標點符號（句號。逗號，頓號、問號？感嘆號！）
+10. 🔴 自然分段，每段 3-5 句，段之間空一行
+11. 🔴 如果輸入是結構化 markdown（標題、條列），請轉換成流暢的口播腳本，不要直接複製原始格式
 
-直接輸出腳本文字，不要加標題或格式標記。每個段落之間空一行。
+直接輸出腳本文字。
 
 逐字稿：
 """
@@ -90,8 +93,11 @@ _DUAL_PROMPT = """你是一個專業的播客腳本編寫者。請將以下逐�
 3. 語言：{lang_instruction}
 4. 不要加逐字稿中的時間標記 [MM:SS]
 5. 長度：自然完整，不硬性截斷
+6. 🔴 必須使用完整的標點符號（句號。逗號，頓號、問號？感嘆號！）
+7. 🔴 自然分段，每段 3-5 句，段之間空一行
+8. 🔴 如果輸入是結構化 markdown（標題、條列），請轉換成流暢的對話腳本，不要直接複製原始格式
 
-直接輸出腳本，每行一個角色的台詞。段落之間空一行。
+直接輸出腳本。
 
 逐字稿：
 """
@@ -293,6 +299,12 @@ def _split_long_text(text: str, max_chars: int = 200) -> list[str]:
             current += sentence
     if current.strip():
         chunks.append(current.strip())
+
+    # 🔴 2026-08-07 FIX: 過濾掉過短的 chunk（只含標點符號的無效片段）
+    #   原因：re.split 在長文本切割時，當 current 接近 max_chars 時，
+    #   剩下的 sentence 可能只有「。」或「.」等單一字元，edge_tts 會報錯
+    #   "No audio was received"。過濾掉這些無效 chunk 避免 TTS 失敗。
+    chunks = [c for c in chunks if len(c.strip()) >= 5]
 
     return chunks if chunks else [text]
 

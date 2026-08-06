@@ -251,13 +251,13 @@
     "created_at": "2026-08-05T21:04:17.675356+00:00",
     "created_by": null,
     "last_patched_at": null,
-    "last_used_at": "2026-08-06T18:29:24.579679+00:00",
-    "last_viewed_at": "2026-08-06T18:29:24.565643+00:00",
+    "last_used_at": "2026-08-06T20:28:15.831258+00:00",
+    "last_viewed_at": "2026-08-06T20:28:15.816926+00:00",
     "patch_count": 0,
     "pinned": false,
     "state": "active",
-    "use_count": 6,
-    "view_count": 6
+    "use_count": 7,
+    "view_count": 7
   },
   "brainstorming": {
     "archived_at": null,
@@ -1472,14 +1472,14 @@
     "archived_at": null,
     "created_at": "2026-07-30T14:54:38.556610+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-08-06T12:59:56.772862+00:00",
-    "last_used_at": "2026-08-06T14:35:26.953048+00:00",
-    "last_viewed_at": "2026-08-06T14:35:26.925630+00:00",
-    "patch_count": 149,
+    "last_patched_at": "2026-08-06T20:41:23.561591+00:00",
+    "last_used_at": "2026-08-06T20:41:22.096786+00:00",
+    "last_viewed_at": "2026-08-06T20:41:22.082885+00:00",
+    "patch_count": 150,
     "pinned": false,
     "state": "active",
-    "use_count": 114,
-    "view_count": 114
+    "use_count": 117,
+    "view_count": 117
   },
   "petdex": {
     "archived_at": null,
@@ -1992,14 +1992,14 @@
     "archived_at": null,
     "created_at": "2026-07-07T04:37:44.994692+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-08-06T14:36:47.011675+00:00",
-    "last_used_at": "2026-08-06T14:36:46.943751+00:00",
-    "last_viewed_at": "2026-08-06T14:36:46.927872+00:00",
-    "patch_count": 193,
+    "last_patched_at": "2026-08-06T21:02:27.273003+00:00",
+    "last_used_at": "2026-08-06T21:02:17.610583+00:00",
+    "last_viewed_at": "2026-08-06T21:02:17.594791+00:00",
+    "patch_count": 196,
     "pinned": false,
     "state": "active",
-    "use_count": 179,
-    "view_count": 179
+    "use_count": 182,
+    "view_count": 182
   },
   "yuanbao": {
     "archived_at": null,
