@@ -74,6 +74,19 @@ with open('/opt/data/.env') as f:
 - `references/multi-source-synthesis.md` — NotebookLM 式多來源合成（2026-08-05）：決策已定（混合來源/兩階段/勾選入口）
 - `references/ppt-prompt-resources.md` — PPT 提示詞資源庫（2026-08-06）：104 職場力大綱模組 / 2Slides 10 模板 / Meiko 生成器 + notehub ppt_gen.py 升級紀錄。**階段 1（Prompt 升級：故事線/tagline/one-idea-per-slide + JSON 容錯解析）已實作**；階段 2（slide_types 結構）/ 階段 3（金句/數據/QA 頁版型）待做。使用者問「哪裡有 PPT 提示詞 / 提升簡報質量」時先看這份
 
+## ✅ UI 自我驗證 SOP（2026-08-06 使用者要求）
+
+**使用者原話：「妳要自己截圖確認，不要沒確認又丟給我。」** 任何 notehub/UI 改動完成後，**必須自己跑完整驗證**才回報，不能只跑 unit tests 就丟給使用者：
+
+1. Playwright 手機模式：`browser.newContext({ ...devices['iPhone 13'], viewport: { width: 390, height: 844 } })`（**不能只設 viewport** — 缺 deviceScaleFactor 截圖會糊）
+2. 開 `http://localhost:5001` → 點 `button.hamburger-btn`（☰）→ 自動切「工作進度」頁籤 → 等 job 載入（waitForTimeout 1.5-2s）
+3. DOM 斷言：卡片數、checkbox 數/勾選數（容器是 **`.nh-checks`**，不是 `.nh-artifacts`）、📁 檔案路徑數、展開後檔案種類（含 .pptx/.png）
+4. `page.screenshot()` 存檔 → **vision_analyze 自己看截圖**確認視覺（勾選狀態/破版/截斷）
+5. 全部通過才回報，附上截圖 MEDIA 路徑
+
+插測試 job：sqlite3 直插 DB（title 用 `TEST-` 前綴），驗證完 `DELETE WHERE title LIKE 'TEST-%'` 清理。
+模板：`templates/verify_notehub_ui.js`（複製改 job 標題/斷言值）。
+
 ## ⚠️ Pitfalls
 
 20. **notehub 口播 pipeline 的 LLM 一律不用 NVIDIA** — 範圍限定本 pipeline，NVIDIA 只負責 Whisper 轉寫

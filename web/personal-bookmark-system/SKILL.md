@@ -116,8 +116,10 @@ def _job_artifacts(job):
     #   Script saved|script.md → 整理過文字檔
     #   Podcast saved|_podcast.mp3 → 音檔
     # done 狀態兜底視為全產出
-    # 🔴 2026-08-06 v12：ppt/visual 反映「送出時是否勾選」— 直接讀 DB 欄位
-    #   （job['ppt']/job['visual']），不是 output marker（worker 目前沒有 PPT/圖卡 saved 標記）。
+    # 🔴 2026-08-06 v15/方案 1（合併卡片）：ppt/visual 改用「產出標記」—
+    #   output 有 `PPT saved`/`Visual summary saved` = 已產出（v12 曾讀 DB 欄位
+    #   job['ppt']/job['visual'] 但那是「勾選」不是「產出」；且純 PPT job 完成後
+    #   checkbox 不會打勾。v15 修正：checkbox 反映實際產出）
     #   sqlite3.Row 沒有 .get()：用 `'ppt' in job.keys()` 判斷欄位存在再 []。
 ```
 
@@ -212,9 +214,53 @@ started_at=datetime('now')
 - **驗證**：插 running 測試 job（`started_at = datetime('now','-12 minutes')`）→ Playwright 斷言「已處理 12 分鐘」+ `getComputedStyle(el).animationName === 'nh-bar-slide'` → pageerror=0。測試 job 用完即刪
 - 版本 v13：footer / sw.js CACHE / server 重啟三處同步
 
+### 🔴 v14（2026-08-06，commit「檔案路徑展開保留」）：輪詢重繪吃掉 details open 狀態
+
+**使用者回報**：「檔案路徑展開 會過幾秒就收回 太快了 應該是手動再按後才收回」
+
+**根因**：`pollNotehubJobs` 每 5 秒 `progressList.innerHTML = ''` 清空重建 → `<details>` 元素被銷毀 → `open` attribute 遺失 → 使用者展開的路徑幾秒後被下一次輪詢收回。
+
+**修法（通用 pattern：重繪前收集 DOM 狀態、重繪後恢復）**：
+```js
+// 重繪前：收集使用者展開的 details（用 data-job-id 當 key）
+const openDetails = new Set();
+progressList.querySelectorAll('.nh-progress-item[data-job-id] details.nh-path-toggle[open]').forEach(d => {
+    openDetails.add(d.closest('.nh-progress-item').dataset.jobId);
+});
+progressList.innerHTML = '';  // 重繪
+// 每張卡片：div.dataset.jobId = j.id;
+// 重繪後：恢復展開
+if (openDetails.size > 0) {
+    progressList.querySelectorAll('.nh-progress-item[data-job-id] details.nh-path-toggle').forEach(d => {
+        if (openDetails.has(d.closest('.nh-progress-item').dataset.jobId)) d.setAttribute('open', '');
+    });
+}
+```
+
+**驗證（Playwright 教訓）**：測 `<details>` 展開**要點 `summary` 不是 `<details>` 本身**（`details.first().locator('summary').click()`）— 點 details 元素 click 無效 open 不會 toggle。驗證腳本：展開 → 等 6.5 秒（跨過 5 秒輪詢）→ 斷言仍 `hasAttribute('open')` → 手動收回 → 斷言關閉。v14：footer / sw.js / server 三處同步。
+
 **⚠️ waitress template 快取實證（v13 驗證踩到）**：改完 `templates/index.html` + `style.css` 後**沒重啟 server** 就 curl/Playwright — CSS 靜態檔立即生效（`.nh-bar-slide` animation ✅）但 **HTML template 在 Flask/Jinja 記憶體快取 → footer 還是 v12**。診斷：`curl / | grep -o 'bookmark-manager <b>v[0-9]*</b>'` 看 server 真回什麼；檔案已 v13 但 curl v12 = template 快取，重啟才生效。**決策：若 server 有使用者真實 job 在跑，寧可等 job 完成再重啟**（waitress 重啟會 kill 子進程 → 使用者 job 重跑）。等待 pattern：background process 迴圈查 DB status（`SELECT status FROM notehub_jobs WHERE id=N`，非 running/queued 即 break）+ notify_on_complete=true → 完成通知後才重啟。
 
 **🔴 測試重啟 server 會打斷使用者的真實 job（v12.1 血淚，本次 session 打斷 2 次）**：測試改前端需要重啟 server 套新 HTML，但 waitress 重啟 = kill 所有 notehub subprocess = **使用者正在跑的 job 被標 failed/重跑**。紀律：**重啟前先 `GET /api/notehub/jobs` 確認 pending=0**；有 running 就等（背景監控）或先告知使用者。使用者 08:51 送的 job 被測試重啟打斷多次 → 16:59 回報「卡住了嗎」— 這是我們造成的延誤，不是系統問題。
+
+### 🔴 v15 / 方案 1（2026-08-06，commit `12cb90a`）：重送合併原卡不開新卡 + 檔案路徑含 PPT/圖卡
+
+**使用者兩個要求**（截圖回報 + clarify 選方案 1）：
+1. 「完成後下方沒有檔案路徑」— 純 PPT job（#81）完成後卡片下方沒有 📁 檔案路徑可展開
+2. 「還是要疊加到原來的進度卡片內」（選 1）+ 「ppt完成後ppt checkbox 再打勾」— 重送同 bookmark 不開新卡，輸出疊加進原卡
+
+**改動**（routes_notehub.py + index.html + tests/test_api_smoke.py）：
+1. `_SAVED_MARKERS` 加 `ppt`/`visual` pattern：`'ppt': re.compile(r'PPT saved:\s*(.+?\.pptx)')`（⚠️ **lazy match** — 路徑含空格如「Cherry Studio V2 來了…」，`\S+\.pptx` 會在空格斷掉抓不到）、`'visual': re.compile(r'Visual summary saved:\s*(.+)')`
+2. 前端 pathEntries 加 `['📊','ppt']` / `['🖼️','visual']` → 卡片 📁 檔案路徑 (N) 含 PPT/圖卡
+3. **`_job_artifacts` 的 ppt/visual 改「產出標記」**（output 有 `PPT saved`/`Visual summary saved`），不再讀 DB 勾選欄位 → checkbox 反映**實際產出**。⚠️ 這**推翻 v12 的「讀 DB 欄位」設計**（見下方 v12 段落）
+4. **`queue_jobs` 合併**：同 bookmark 非 failed job → `ppt/visual` OR 原值 + mode 升級（none→solo/dual）+ done 設回 queued 讓 worker 增量重跑 → **不新增 job**（實測重送 `{id:110,ppt:true}` → `job_ids:[77]`，job 數不增）
+5. **`_process_job` 增量執行**：`arts` 判斷已產出（mp3 有→不跑 podcast、ppt 有→不跑 PPT），全部都有 → `need_run=False` 直接 done 不動；⚠️ `need_run` 只看 `--podcast/--ppt/--visual`，**不能含 `--synthesize`**（那是 synthesis 的 base 命令，含了永遠 need_run）
+6. **`_worker_loop` output 合併**：`old_out + '\n--- 追加輸出 ---\n' + output` 保留舊 markers（否則 raw/script/mp3 的 checkbox 全掉）
+7. **migration**：既有重複卡（#81 純 PPT）合併進原卡（#77）— 提取 PPT saved 行 append 進原卡 output + ppt=1 + 刪新卡記錄（**檔案不動** — script 重用本就寫同目錄）
+
+**驗證**：117 tests 全過（`test_job_paths_extraction` 更新：assert 含 ppt/visual keys + 空格路徑案例）；API 實測 #77 artifacts 全 True + 檔案路徑 4 個（📝📄🎧📊）。
+
+**教訓**：輸出檔案路徑顯示 = output marker 驅動（`_SAVED_MARKERS` 是清除+顯示的**單一來源**）；「已產出」與「已勾選」是兩個概念 — artifacts 判斷「產出」用 output marker，job 欄位只記錄「勾選」。
 
 ### 清除功能（2026-07-31 新增）
 
@@ -986,6 +1032,7 @@ app.py 已從 766 行 / 53 函數 / cohesion 0.10 拆成上述模組結構（coh
 ## 📊 系統狀態（2026-08-06 晚）
 - **Commit**：057b345（IG 時長）；f424636（IG 標籤）；ad000c4（Bilibili 時長）；883309a（#10 原子認領補齊）；**清佇列按鈕 commit（🧽 clear scope='queued'，routes_notehub.py + index.html + tests/test_clear_queued.py，+3 tests）**；**4b42e38（Notehub 頁籤式版面改版）**；**頁尾版本號 commit（v4 · 頁籤版面，templates/index.html + static/style.css）**；**勾選持久化 commit（localStorage，templates/index.html +24）**；**佇列輸出選項 commit（PPT/圖卡 checkbox + 開始批次/開始合併 + 移除關閉，db.py + schema.sql + routes_notehub.py + templates + style.css + tests/test_notehub_outputs.py，+4 tests）**；**Phase 6 commit（工作名稱修復方案 B：/api/bookmarks/titles + openNotehubSidebar 改 async，routes_bookmarks.py + templates + tests/test_bookmark_titles.py，+4 tests → 112 tests）**；code review 19/19 修復全 commit
 - **2026-08-06 深夜終局（v10→v13）**：v10（全部 job 顯示佇列頁籤）→ v11（三態模型：SETUP_MODE flag 判配置階段）→ **v12（commit `4d8f130`：頁籤「工作佇列/工作進度」重定義 + 送出後自動切 progress + PPT/圖卡 checkbox）** → **v12.1（started_at COALESCE bug 修正）** → **v13（處理中顯示「已處理 X 分鐘」+ 滑動動畫）**；117 tests 全綠
+- **2026-08-06 v14（commit 檔案路徑展開保留）**：輪詢重繪吃掉 `<details>` open 狀態 → 重繪前收集 openDetails + 重繪後恢復；**v15/方案 1（commit `12cb90a`）**：重送合併原卡不開新卡 + 增量執行 + artifacts 改 output marker + 檔案路徑含 PPT/圖卡（詳見上方 v15 段落）；117 tests 全綠
 - **Tests**：**117 passed**（v10→v13 前端改動不影響 pytest；前端行為靠 `tests/browser_reload_test.js` Playwright 五態回歸）
 - **2026-08-06 工作流修正**：commit `2cf1196`（batchNotehub 定義 + ☰ 只顯示佇列 + cancelNotehubSetup）+ `4f2faf9`（清佇列按鈕移入 nh-actions + SETUP_MODE_KEY 配置模式持久化）+ `9f6820b`（sw.js cache v6）+ footer v6；**晚間 v8（commit `fcfb7f6` + `c12b768` + `e391bff`）：刪除取消按鈕（清佇列=清 job+清勾選一鍵搞定，`clearQueueAndSelection()`）、reload 持久化簡化（只要有勾選即恢復配置表格，不再依賴 SETUP_MODE_KEY）、sw.js cache v8 + footer v8**；117 tests 全綠
 - **2026-08-06 深夜真正修好 reload 佇列消失**：commit `28d5401`（app.py Cache-Control no-store — 必要但非根因）+ **`eb46f96`（真根因：restoreSelection 等 DOM 就緒再 openNotehubSidebar，避免 htmx afterSwap 在側邊欄解析前觸發 → getElementById null → innerHTML 崩潰）**；Playwright 真實瀏覽器驗證 reload 5 次全過 + 清佇列後 reload 不恢復；117 tests 全綠。Playwright 安裝：`PLAYWRIGHT_BROWSERS_PATH=/opt/data/tmp/pw-browsers npx playwright install chromium`，executablePath = `/opt/data/tmp/pw-browsers/chromium_headless_shell-1234/chrome-linux/headless_shell`
@@ -1212,7 +1259,7 @@ if (!window.__bmSetupRestored && selectedIds.size > 0) {
 - `submitNotehubQueue`/`submitNotehubSynthesis` 成功 → `switchNhTab('progress')` **自動切到工作進度看進度**
 - ☰ 打開 → 預設切 `progress`（執行階段）；reload 後配置表格恢復（v11 flag）不變
 - 頁籤切換：`switchNhTab('progress')`（tab id done→progress，注意所有 `switchNhTab('done')`/`#nh-tab-done`/`#nh-done-list` 引用都要一起改）
-- **工作進度卡片新增 PPT/圖卡 checkbox（v12 追加，使用者看截圖後要求）**：`_job_artifacts` 回傳加 `ppt`/`visual`（讀 DB `job['ppt']`/`job['visual']` 送出設定，非 output marker；worker 目前無 PPT/圖卡 saved 標記），前端 `chk` 3 個 → 5 個（逐字稿/整理過文字檔/音檔/PPT/圖卡）。驗證：插含 PPT+圖卡與純口播兩支測試 job → Playwright 斷言 checked=2 / checked=0
+- **工作進度卡片新增 PPT/圖卡 checkbox（v12 追加，使用者看截圖後要求）**：`_job_artifacts` 回傳加 `ppt`/`visual`（v12 初版讀 DB `job['ppt']`/`job['visual']` 送出設定；**⚠️ v15/方案 1 已改為 output marker** — 見下方 v15 段落），前端 `chk` 3 個 → 5 個（逐字稿/整理過文字檔/音檔/PPT/圖卡）。驗證：插含 PPT+圖卡與純口播兩支測試 job → Playwright 斷言 checked=2 / checked=0
 
 **🔴 終極工作流教訓（使用者原話「改動寫碼前要達成共識才能動手 一直改一直修都沒有共識」）**：
 - **同一 bug 修 3+ 次後，每次動手前必須先複述理解 + 用 clarify 列方案選項（choices 放選項、A/B/C 各附一句行為描述，不要寫在 question 裡）讓使用者確認，確認後才寫 code**。v8→v12 五次翻車根源 = 自己判斷 → 自己改 → 丟給使用者驗證，從未先對齊
