@@ -46,18 +46,19 @@ _FALLBACK_MODELS = [
 def _call_llm_with_retry(client, prompt: str, max_retries: int = 3, base_delay: float = 5.0) -> str | None:
     """Call LLM（⚠️ 2026-07-31 使用者指示：LLM 整理文檔一律用 Zen，不用 NVIDIA）。
 
-    原為 NVIDIA client + fallback models；改為直接 call_zen()（免費穩定）。
+    原為 NVIDIA client + fallback models；2026-08-06 改為 call_llm()（Zen→AGNES→Groq
+    fallback 鏈 — Zen timeout 不再整段失敗）。
     client 參數保留相容但不再使用。
     """
     try:
-        from notehub.core.llm import call_zen
+        from notehub.core.llm import call_llm
     except ImportError:
-        call_zen = None
-    if not call_zen:
-        print("[WARN] call_zen unavailable", file=sys.stderr)
+        call_llm = None
+    if not call_llm:
+        print("[WARN] call_llm unavailable", file=sys.stderr)
         return None
     try:
-        result = call_zen(
+        result = call_llm(
             [
                 {"role": "system", "content": "只輸出 JSON，不加任何額外文字。"},
                 {"role": "user", "content": prompt},

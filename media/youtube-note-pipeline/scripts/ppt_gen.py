@@ -82,11 +82,13 @@ def _extract_key_points(script: str, title: str, lang: str = "zh") -> dict:
     """
     # ⚠️ 2026-07-31 使用者指示：LLM 整理文檔一律用 Zen，不用 NVIDIA（NVIDIA 僅供 Whisper）
     try:
-        from notehub.core.llm import call_zen
+        # 🔴 2026-08-06：改用 call_llm（Zen→AGNES→Groq fallback 鏈）。
+        # 原本 call_zen 無 fallback — Zen timeout 時直接變 3 slides 基本版。
+        from notehub.core.llm import call_llm
     except ImportError:
-        call_zen = None
-    if not call_zen:
-        print("[WARN] call_zen unavailable — cannot extract key points", file=sys.stderr)
+        call_llm = None
+    if not call_llm:
+        print("[WARN] call_llm unavailable — cannot extract key points", file=sys.stderr)
         return None
 
     lang_hint = "使用繁體中文" if lang in ("zh", "zh-TW") else "Use English"
@@ -130,7 +132,7 @@ def _extract_key_points(script: str, title: str, lang: str = "zh") -> dict:
 {script[:6000]}
 """
     try:
-        result = call_zen(
+        result = call_llm(
             [
                 {"role": "system", "content": "你是結構化資料提取專家，只輸出 JSON。"},
                 {"role": "user", "content": prompt},

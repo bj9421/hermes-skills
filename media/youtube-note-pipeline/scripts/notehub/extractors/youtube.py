@@ -10,6 +10,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from .base import BaseExtractor, ExtractResult
@@ -88,21 +89,32 @@ def _vtt_to_text(vtt_path: str) -> str:
     return "\n\n".join(lines)
 
 
-def _download_audio(yt_dlp_path: str, url: str, temp_dir: str) -> str | None:
-    """Download audio (m4a) via yt-dlp for Whisper transcription."""
+def _download_audio(yt_dlp_path: str, url: str, temp_dir: str, max_retries: int = 2) -> str | None:
+    """Download audio (m4a) via yt-dlp for Whisper transcription.
+
+    🔴 2026-08-06：加 retry — 同一影片 77 成功 80 失敗的案例：yt-dlp 暫態
+    下載失敗（produced no file）→ 三層策略全失敗 → job failed。暫態失敗
+    重試（間隔 3/6 秒）通常成功。
+    """
     cmd = [
         yt_dlp_path, "-x", "--audio-format", "m4a",
         "--output", os.path.join(temp_dir, "%(id)s.%(ext)s"),
         url,
     ]
-    try:
-        subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-    except Exception as e:
-        print(f"[WARN] yt-dlp audio download failed: {e}", file=sys.stderr)
-        return None
-    audio_files = list(Path(temp_dir).glob("*.m4a")) + list(Path(temp_dir).glob("*.opus"))
-    if audio_files:
-        return str(audio_files[0])
+    for attempt in range(max_retries + 1):
+        if attempt > 0:
+            print(f"[WARN] yt-dlp audio download retry {attempt}/{max_retries}...", file=sys.stderr)
+            time.sleep(3 * attempt)
+        try:
+            subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        except Exception as e:
+            if attempt == max_retries:
+                print(f"[WARN] yt-dlp audio download failed: {e}", file=sys.stderr)
+                return None
+            continue
+        audio_files = list(Path(temp_dir).glob("*.m4a")) + list(Path(temp_dir).glob("*.opus"))
+        if audio_files:
+            return str(audio_files[0])
     print("[WARN] yt-dlp audio download produced no file", file=sys.stderr)
     return None
 

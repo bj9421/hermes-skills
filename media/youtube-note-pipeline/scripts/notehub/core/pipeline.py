@@ -7,10 +7,12 @@ Usage:
     python -m notehub "./notes.txt" --podcast solo
 """
 
+import glob
 import os
 import re
 import sys
 from datetime import date
+from pathlib import Path
 
 from ..extractors.detector import detect_source
 from .llm import call_llm, get_client
@@ -32,6 +34,50 @@ ORGANIZE_PROMPT = """你是一個專業的內容整理助手。請將以下內�
 
 內容：
 """
+
+# --- Script reuse helpers (2026-08-06) ---
+def _load_script_content(path: str) -> tuple[str | None, str]:
+    """讀 script.md，剝離 frontmatter 與開頭標題裝飾，回傳 (title, 口播正文)。"""
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
+    title = None
+    if text.startswith("---"):
+        parts = text.split("---", 2)
+        if len(parts) == 3:
+            m = re.search(r"^source:\s*(.+)$", parts[1], re.M)
+            if m:
+                title = m.group(1).strip()
+            text = parts[2]
+    lines = text.strip().splitlines()
+    while lines and (lines[0].startswith("#") or lines[0].startswith(">") or not lines[0].strip()):
+        lines.pop(0)
+    return title, "\n".join(lines).strip()
+
+
+def _find_existing_script(source: str) -> tuple[str | None, str, Path] | None:
+    """找同 source 是否已有產出的口播腳本（重送不同輸出時重用，省下載/轉寫/LLM）。
+
+    目前只處理 YouTube（實際痛點：yt-dlp 暫態失敗會整支 job 掛掉）。
+    回傳 (title, script_content, out_dir) 或 None。
+    """
+    m = re.search(
+        r"(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/embed/|youtube\.com/shorts/)([a-zA-Z0-9_-]{11})",
+        source,
+    )
+    if not m:
+        return None
+    video_id = m.group(1)
+    # ⚠️ [video_id] 的 [] 是 glob 字元集語法 → 必須 escape，否則會誤匹配
+    pattern = f"*{glob.escape(f'[{video_id}]')}*"
+    matches = sorted(Path(OBSIDIAN_BASE, PODCAST_SUBDIR).glob(pattern + "/script.md"))
+    if not matches:
+        return None
+    script_path = matches[0]
+    title, content = _load_script_content(str(script_path))
+    if not content:
+        return None
+    return title, content, script_path.parent
+
 
 # --- Helpers ---
 def _sanitize_filename(s: str) -> str:
@@ -147,6 +193,78 @@ def _organize_content(text: str, title: str = "") -> str | None:
     return "\n\n---\n\n".join(parts)
 
 
+def _generate_outputs(source: str, title: str, content_for_gen: str, out_dir: str,
+                      podcast: str | None, ppt: bool, visual: bool,
+                      lang: str, voice_a: str | None, voice_b: str | None):
+    """步驟 7-9：產出（口播/PPT/圖卡）+ 繁中轉換 + chmod。正常流程與 script 重用共用。"""
+    script_path = None
+    podcast_out_dir = None
+    ppt_out = None
+    vis_out = None
+
+    # Podcast — directly use podcast.py's produce_podcast (shared, no wrapper)
+    if podcast:
+        try:
+            _scripts_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            if _scripts_dir not in sys.path:
+                sys.path.insert(0, _scripts_dir)
+            from podcast import produce_podcast
+            mp3_path = produce_podcast(
+                transcript=content_for_gen,
+                title=title,
+                url=source,
+                lang=lang,
+                mode=podcast,
+                voice_a=voice_a or "zh-TW-HsiaoChenNeural",
+                voice_b=voice_b or "zh-TW-YunJheNeural",
+                out_dir=out_dir,
+                video_id=None,
+            )
+            if mp3_path:
+                podcast_out_dir = os.path.dirname(mp3_path)
+                script_path = os.path.join(podcast_out_dir, "script.md")
+                print(f"[INFO] Podcast generated: {mp3_path}", file=sys.stderr)
+            else:
+                print("[ERROR] Podcast generation returned None", file=sys.stderr)
+        except Exception as e:
+            print(f"[ERROR] Podcast failed: {e}", file=sys.stderr)
+            import traceback
+            traceback.print_exc(file=sys.stderr)
+
+    # PPT
+    if ppt:
+        try:
+            from ..generators.ppt import generate_ppt
+            # ⚠️ 2026-08-06：必須用 keyword — generate_ppt(script, title, lang, out_dir)
+            # 舊 code 傳 positional 第三參數 → out_dir 被當 lang → PPT 存到 cwd！
+            ppt_out = generate_ppt(content_for_gen, title, lang=lang, out_dir=out_dir)
+            print(f"[INFO] PPT generated: {ppt_out}", file=sys.stderr)
+        except Exception as e:
+            print(f"[ERROR] PPT failed: {e}", file=sys.stderr)
+
+    # Visual
+    if visual:
+        try:
+            from ..generators.visual import generate_visual
+            # ⚠️ 同 PPT：必須用 keyword（generate_visual(script, title, lang, out_dir)）
+            vis_out = generate_visual(content_for_gen, title, lang=lang, out_dir=out_dir)
+            print(f"[INFO] Visual generated: {vis_out}", file=sys.stderr)
+        except Exception as e:
+            print(f"[ERROR] Visual failed: {e}", file=sys.stderr)
+
+    # 8. Convert to Traditional Chinese for zh/zh-TW outputs
+    if lang and lang.startswith("zh"):
+        _convert_to_traditional(out_dir)
+
+    # 9. chmod all outputs
+    import subprocess
+    for p in [out_dir, podcast_out_dir, ppt_out, vis_out]:
+        if p and os.path.exists(p):
+            subprocess.run(["chmod", "-R", "777", p], capture_output=True)
+
+    return ppt_out, vis_out
+
+
 def run_pipeline(source: str, organize: bool = False,
                  podcast: str = None, ppt: bool = False, visual: bool = False,
                  lang: str = "auto", voice_a: str = None, voice_b: str = None):
@@ -163,6 +281,22 @@ def run_pipeline(source: str, organize: bool = False,
         voice_b: TTS voice for host B
     """
     today = date.today().strftime("%Y-%m-%d")
+
+    # 0. 🔴 2026-08-06 script 重用：同影片已有 script.md → 跳過下載/轉寫/LLM，
+    #    直接吃現成口播腳本產出（PPT/圖卡/口播）。避免 yt-dlp 暫態失敗整支 job 掛掉
+    #    並省下大量時間與 API 額度。
+    existing = _find_existing_script(source)
+    if existing:
+        reuse_title, script_content, reuse_dir = existing
+        title = reuse_title or "Untitled"
+        out_dir = str(reuse_dir)
+        print(f"[INFO] ⚡ 重用既有口播腳本: {os.path.basename(out_dir)} — 跳過下載/轉寫/LLM", file=sys.stderr)
+        print(f"[INFO] Script reused: {title} ({len(script_content)} chars)", file=sys.stderr)
+        _generate_outputs(source, title, script_content, out_dir,
+                          podcast=podcast, ppt=ppt, visual=visual,
+                          lang=lang, voice_a=voice_a, voice_b=voice_b)
+        print(f"\n✅ Pipeline complete! Output: {out_dir}", file=sys.stderr)
+        return out_dir
 
     # 1. Detect source type and extract
     extractor = detect_source(source)
@@ -226,69 +360,11 @@ def run_pipeline(source: str, organize: bool = False,
     except Exception as e:
         print(f"[WARN] SQLite indexing failed: {e}", file=sys.stderr)
 
-    # 7. Generate outputs
+    # 7. Generate outputs（共用函數：podcast/ppt/visual + 繁中 + chmod）
     content_for_gen = organized or result.text
-    script_path = None
-    podcast_out_dir = None
-    ppt_out = None
-    vis_out = None
-
-    # Podcast — directly use podcast.py's produce_podcast (shared, no wrapper)
-    if podcast:
-        try:
-            _scripts_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            if _scripts_dir not in sys.path:
-                sys.path.insert(0, _scripts_dir)
-            from podcast import produce_podcast
-            mp3_path = produce_podcast(
-                transcript=content_for_gen,
-                title=title,
-                url=source,
-                lang=lang,
-                mode=podcast,
-                voice_a=voice_a or "zh-TW-HsiaoChenNeural",
-                voice_b=voice_b or "zh-TW-YunJheNeural",
-                out_dir=out_dir,
-                video_id=source_id,
-            )
-            if mp3_path:
-                podcast_out_dir = os.path.dirname(mp3_path)
-                script_path = os.path.join(podcast_out_dir, "script.md")
-                print(f"[INFO] Podcast generated: {mp3_path}", file=sys.stderr)
-            else:
-                print("[ERROR] Podcast generation returned None", file=sys.stderr)
-        except Exception as e:
-            print(f"[ERROR] Podcast failed: {e}", file=sys.stderr)
-            import traceback
-            traceback.print_exc(file=sys.stderr)
-
-    # PPT
-    if ppt:
-        try:
-            from ..generators.ppt import generate_ppt
-            ppt_out = generate_ppt(content_for_gen, title, out_dir)
-            print(f"[INFO] PPT generated: {ppt_out}", file=sys.stderr)
-        except Exception as e:
-            print(f"[ERROR] PPT failed: {e}", file=sys.stderr)
-
-    # Visual
-    if visual:
-        try:
-            from ..generators.visual import generate_visual
-            vis_out = generate_visual(content_for_gen, title, out_dir)
-            print(f"[INFO] Visual generated: {vis_out}", file=sys.stderr)
-        except Exception as e:
-            print(f"[ERROR] Visual failed: {e}", file=sys.stderr)
-
-    # 8. Convert to Traditional Chinese for zh/zh-TW outputs
-    if lang and lang.startswith("zh"):
-        _convert_to_traditional(out_dir)
-
-    # 9. chmod all outputs
-    import subprocess
-    for p in [out_dir, podcast_out_dir, ppt_out, vis_out]:
-        if p and os.path.exists(p):
-            subprocess.run(["chmod", "-R", "777", p], capture_output=True)
+    _generate_outputs(source, title, content_for_gen, out_dir,
+                      podcast=podcast, ppt=ppt, visual=visual,
+                      lang=lang, voice_a=voice_a, voice_b=voice_b)
 
     print(f"\n✅ Pipeline complete! Output: {out_dir}", file=sys.stderr)
     return out_dir
