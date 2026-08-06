@@ -202,6 +202,219 @@ def _apply_cjk_font(prs: Presentation, name: str = _FONT_NAME):
                     ea.set('typeface', name)
 
 
+
+# ---------------------------------------------------------------------------
+# Emoji Enhancement (2026-08-07)
+# ---------------------------------------------------------------------------
+_EMOJI_FONT = "Noto Color Emoji"
+_EMOJI_KEYWORD_MAP = {
+    "ai": "🤖", "artificial intelligence": "🤖", "机器学习": "🤖", "深度学习": "🤖",
+    "data": "📊", "数据": "📊", "statistics": "📊", "analytics": "📊",
+    "idea": "💡", "创新": "💡", "insight": "💡", "关键": "💡",
+    "rocket": "🚀", "增长": "🚀", "效率": "🚀", "提升": "🚀",
+    "check": "✅", "成功": "✅", "验证": "✅", "正确": "✅",
+    "question": "❓", "疑问": "❓", "问题": "❓",
+    "lightning": "⚡", "快速": "⚡", "速度": "⚡", "性能": "⚡",
+    "fire": "🔥", "热门": "🔥", "趋势": "🔥", "火爆": "🔥",
+    "star": "🌟", "明星": "🌟", "最佳": "🌟", "顶级": "🌟",
+    "chat": "💬", "对话": "💬", "讨论": "💬", "交流": "💬",
+    "target": "🎯", "目标": "🎯", "核心": "🎯", "焦点": "🎯",
+    "chart": "📈", "上升": "📈", "下降": "📉",
+    "gears": "⚙️", "系统": "⚙️", "技术": "⚙️", "架构": "⚙️",
+    "book": "📚", "学习": "📚", "知识": "📚", "教程": "📚",
+    "video": "🎬", "视频": "🎬", "教程": "🎬",
+    "phone": "📱", "移动": "📱", "应用": "📱",
+    "cloud": "☁️", "云": "☁️", "计算": "☁️",
+    "database": "🗄️", "存储": "🗄️", "数据库": "🗄️",
+    "security": "🔒", "安全": "🔒", "保护": "🔒",
+    "eye": "👁️", "视觉": "👁️", "图像": "👁️",
+    "brain": "🧠", "智能": "🧠", "思考": "🧠",
+    "robot": "🤖", "自动化": "🤖",
+    "warning": "⚠️", "注意": "⚠️", "警告": "⚠️",
+    "time": "⏰", "时间": "⏰", "流程": "⏰",
+    "compare": "⚖️", "对比": "⚖️", "比较": "⚖️",
+    "link": "🔗", "链接": "🔗", "连接": "🔗",
+    "money": "💰", "成本": "💰", "价格": "💰",
+    "people": "👥", "用户": "👥", "团队": "👥",
+    "settings": "🔧", "设置": "🔧", "配置": "🔧",
+    "gift": "🎁", "免费": "🎁", "优惠": "🎁",
+    "bell": "🔔", "通知": "🔔", "提醒": "🔔",
+    "envelope": "📧", "邮件": "📧", "发送": "📧",
+    "camera": "📷", "图片": "📷", "照片": "📷",
+    "microphone": "🎤", "音频": "🎤", "声音": "🎤",
+    "tv": "📺", "电视": "📺", "播放": "📺",
+    "computer": "💻", "电脑": "💻", "桌面": "💻",
+    "game": "🎮", "游戏": "🎮", "娱乐": "🎮",
+    "music": "🎵", "音乐": "🎵", "音频": "🎵",
+    "film": "🎞️", "电影": "🎞️", "影片": "🎞️",
+    "newspaper": "📰", "新闻": "📰", "报道": "📰",
+    "calendar": "📅", "日期": "📅", "时间": "📅",
+    "location": "📍", "位置": "📍", "地图": "📍",
+    "home": "🏠", "首页": "🏠", "主页": "🏠",
+    "shopping": "🛒", "购物": "🛒", "购买": "🛒",
+    "heart": "❤️", "喜欢": "❤️", "收藏": "❤️",
+    "thumbsup": "👍", "推荐": "👍", "点赞": "👍",
+    "thumbsdown": "👎", "反对": "👎",
+    "wave": "👋", "欢迎": "👋", "你好": "👋",
+    "peace": "✌️", "胜利": "✌️",
+    "vulcan": "🖖", "科学": "🖖",
+    "raised_hand": "✋", "停止": "✋",
+    "ok_hand": "👌", "完美": "👌",
+    "point_up": "☝️", "重点": "☝️",
+    "point_down": "👇", "下方": "👇",
+    "crossed_fingers": "🤞", "幸运": "🤞",
+    "love": "💕", "爱": "💕",
+    "anger": "💢", "愤怒": "💢",
+    "bomb": "💣", "爆炸": "💣",
+    "sweat": "💦", "出汗": "💦",
+    " dizzy": "😵", "晕": "😵",
+    "smile": "😄", "快乐": "😄",
+    "sob": "😭", "感动": "😭",
+    "sunglasses": "😎", "酷": "😎",
+    "nerd": "🤓", "极客": "🤓",
+    "smirk": "😏", "微笑": "😏",
+    "thinking": "🤔", "思考": "🤔",
+    "nauseated": "🤢", "恶心": "🤢",
+    "sneezing": "🤧", "感冒": "🤧",
+    "hot_face": "🥵", "热": "🥵",
+    "cold_face": "🥶", "冷": "🥶",
+    "angry": "😠", "生气": "😠",
+    "rage": "😡", "愤怒": "😡",
+    "cry": "😢", "哭泣": "😢",
+    "disappointed": "😞", "失望": "😞",
+    "worried": "😟", "担心": "😟",
+    "yum": "😋", "好吃": "😋",
+    "relieved": "😌", "放松": "😌",
+    "innocent": "😇", "天真": "😇",
+    "heart_eyes": "😍", "喜爱": "😍",
+    "kissing": "😘", "亲吻": "😘",
+    "wink": "😉", "眨眼": "😉",
+    "relaxed": "😌", "放松": "😌",
+    "laughing": "😆", "大笑": "😆",
+    "sweat_smile": "😅", "汗": "😅",
+    "cool": "😎", "酷": "😎",
+    "smiley": "😃", "开心": "😃",
+    "grin": "😁", "咧嘴": "😁",
+    "hugging": "🤗", "拥抱": "🤗",
+    "hushed": "🤫", "安静": "🤫",
+    "sleeping": "😴", "睡觉": "😴",
+    "astonished": "😲", "惊讶": "😲",
+    "flushed": "😳", "脸红": "😳",
+    "pleading": "🥺", "请求": "🥺",
+    "nauseated": "🤢", "恶心": "🤢",
+    "sick": "🤒", "生病": "🤒",
+    "cowboy": "🤠", "牛仔": "🤠",
+    "confused": "😕", "困惑": "😕",
+    "satisfied": "�满足",
+    "rainbow": "🌈", "彩虹": "🌈",
+    "sparkles": "✨", "闪光": "✨",
+    "boom": "💥", "爆炸": "💥",
+    "collision": "💥", "碰撞": "💥",
+    "analyst": "🕵️", "侦探": "🕵️",
+    "princess": "👸", "公主": "👸",
+    "guardsman": "💂", "守卫": "💂",
+    "dancer": "💃", "舞者": "💃",
+    "police": "👮", "警察": "👮",
+    "construction": "👷", "建筑": "👷",
+    "bride": "👰", "新娘": "👰",
+    "angel": "👼", "天使": "👼",
+    "Santa": "🎅", "圣诞老人": "🎅",
+    "fairy": "🧚", "仙女": "🧚",
+    "vampire": "🧛", "吸血鬼": "🧛",
+    "mermaid": "🧜", "美人鱼": "🧜",
+    "elf": "🧝", "精灵": "🧝",
+    "genie": "🧞", "精灵": "🧞",
+    "zombie": "🧟", "僵尸": "🧟",
+    "massage": "💆", "按摩": "💆",
+    "haircut": "💇", "理发": "💇",
+    "walking": "🚶", "走路": "🚶",
+    "runner": "🏃", "跑步": "🏃",
+    "dancer": "💃", "跳舞": "💃",
+    "bow": "🙇", "鞠躬": "🙇",
+    "couple": "👫", "情侣": "👫",
+    "family": "👪", "家庭": "👪",
+    "muscle": "💪", "肌肉": "💪", "力量": "💪",
+    "point_left": "👈", "左边": "👈",
+    "point_right": "👉", "右边": "👉",
+    "point_up_2": "👆", "上边": "👆",
+    "middle_finger": "🖕",
+    "point_down": "👇", "下边": "👇",
+    "v": "✌️", "胜利": "✌️",
+    "hand_splayed": "🖐️",
+    "metal": "🤘",
+    "ok_hand": "👌", "完美": "👌",
+    "raised_hand": "✋",
+    "vulcan": "🖖",
+    "writing": "✍️", "写作": "✍️",
+    "pray": "🙏", "祈祷": "🙏",
+    "handshake": "🤝", "握手": "🤝",
+    "拳": "👊", "拳头": "👊",
+    "facepunch": "🤜",
+    "right_fist": "🤛",
+    "oncoming_fist": "👊",
+    "left_fist": "🤛",
+}
+
+
+def _add_emoji(text: str) -> str:
+    """根据文本内容自动添加相关 emoji。
+    
+    策略：
+    1. 先检查文本是否已有 emoji
+    2. 查找关键词匹配
+    3. 根据语义选择最合适的 emoji
+    """
+    import re as _re
+    # 如果已有 emoji，不添加
+    if _re.search(r'[\U0001F000-\U0001FFFF]|[\u2600-\u26FF]|[\u2700-\u27BF]', text):
+        return text
+    
+    text_lower = text.lower()
+    best_emoji = None
+    best_score = 0
+    
+    for keyword, emoji in _EMOJI_KEYWORD_MAP.items():
+        if keyword in text_lower:
+            score = len(keyword)  # 越长越精确
+            if score > best_score:
+                best_score = score
+                best_emoji = emoji
+    
+    if best_emoji:
+        return f"{best_emoji}  {text}"
+    return text
+
+
+def _add_emoji_to_point(point: dict) -> dict:
+    """为 heading 和 bullets 添加 emoji。"""
+    result = dict(point)
+    heading = result.get("heading", "")
+    if heading:
+        result["heading"] = _add_emoji(heading)
+    bullets = result.get("bullets", [])
+    if bullets:
+        result["bullets"] = [_add_emoji(b) for b in bullets]
+    return result
+
+
+def _add_emoji_to_data(data: dict) -> dict:
+    """为整个数据添加 emoji。"""
+    result = dict(data)
+    title = result.get("title", "")
+    if title:
+        result["title"] = _add_emoji(title)
+    subtitle = result.get("subtitle", "")
+    if subtitle:
+        result["subtitle"] = _add_emoji(subtitle)
+    summary = result.get("summary", "")
+    if summary:
+        result["summary"] = _add_emoji(summary)
+    points = result.get("points", [])
+    if points:
+        result["points"] = [_add_emoji_to_point(p) for p in points]
+    return result
+
+
 def _unique_path(base: str) -> str:
     """🔴 2026-08-06 更名保留：路徑已存在 → 回傳 _v2/_v3... 版本化路徑（不覆蓋舊檔）。
 
@@ -662,6 +875,8 @@ def generate_ppt(script: str, title: str, lang: str = "zh", out_dir: str = ".") 
     """
     print("[INFO] Extracting key points for PPT...", file=sys.stderr)
     data = _extract_key_points(script, title, lang)
+    if data:
+        data = _add_emoji_to_data(data)
     if not data:
         print("[WARN] Could not extract key points, using fallback", file=sys.stderr)
         data = {
@@ -695,7 +910,7 @@ def generate_ppt(script: str, title: str, lang: str = "zh", out_dir: str = ".") 
         elif st == "timeline":
             _add_timeline_slide(prs, point, i)
         elif st == "split":
-            _add_action_slide(prs, point, i)
+            _add_split_slide(prs, point, i)
         else:
             _add_content_slide(prs, point, i)
     _add_summary_slide(prs, data)
