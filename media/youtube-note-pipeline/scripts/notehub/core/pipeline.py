@@ -237,7 +237,7 @@ def _generate_outputs(source: str, title: str, content_for_gen: str, out_dir: st
             from ..generators.ppt import generate_ppt
             # ⚠️ 2026-08-06：必須用 keyword — generate_ppt(script, title, lang, out_dir)
             # 舊 code 傳 positional 第三參數 → out_dir 被當 lang → PPT 存到 cwd！
-            ppt_out = generate_ppt(content_for_gen, title, lang=lang, out_dir=out_dir)
+            ppt_out = generate_ppt(content_for_gen, title, lang=lang, out_dir=out_dir, scheme=job.get('ppt_scheme', 'dark'))
             print(f"[INFO] PPT generated: {ppt_out}", file=sys.stderr)
         except Exception as e:
             print(f"[ERROR] PPT failed: {e}", file=sys.stderr)
