@@ -178,6 +178,20 @@ def _apply_cjk_font(prs: Presentation, name: str = _FONT_NAME):
                     ea.set('typeface', name)
 
 
+def _unique_path(base: str) -> str:
+    """🔴 2026-08-06 更名保留：路徑已存在 → 回傳 _v2/_v3... 版本化路徑（不覆蓋舊檔）。
+
+    例：標題.pptx 已存在 → 標題_v2.pptx → 標題_v3.pptx…
+    """
+    if not os.path.exists(base):
+        return base
+    root, ext = os.path.splitext(base)
+    i = 2
+    while os.path.exists(f"{root}_v{i}{ext}"):
+        i += 1
+    return f"{root}_v{i}{ext}"
+
+
 # ---------------------------------------------------------------------------
 # Build PPT
 # ---------------------------------------------------------------------------
@@ -365,7 +379,8 @@ def generate_ppt(script: str, title: str, lang: str = "zh", out_dir: str = ".") 
     safe_title = title.replace("/", "_").replace("\\", "_")[:80]
     # 🔴 2026-08-06：繁中字型（Noto Sans CJK TC + a:ea 屬性）
     _apply_cjk_font(prs)
-    pptx_path = os.path.join(out_dir, f"{safe_title}.pptx")
+    # 🔴 2026-08-06：更名保留 — 同名已存在 → _v2/_v3（不覆蓋舊檔）
+    pptx_path = _unique_path(os.path.join(out_dir, f"{safe_title}.pptx"))
     prs.save(pptx_path)
     os.chmod(pptx_path, 0o777)
     print(f"[OK] PPT saved: {pptx_path} ({len(prs.slides)} slides)", file=sys.stderr)

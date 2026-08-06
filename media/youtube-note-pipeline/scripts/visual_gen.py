@@ -220,6 +220,20 @@ def _wrap_text(text: str, font, max_width: int, draw) -> list[str]:
     return lines
 
 
+def _unique_path(base: str) -> str:
+    """🔴 2026-08-06 更名保留：路徑已存在 → 回傳 _v2/_v3... 版本化路徑（不覆蓋舊檔）。
+
+    例：標題_summary.png 已存在 → 標題_summary_v2.png → 標題_summary_v3.png…
+    """
+    if not os.path.exists(base):
+        return base
+    root, ext = os.path.splitext(base)
+    i = 2
+    while os.path.exists(f"{root}_v{i}{ext}"):
+        i += 1
+    return f"{root}_v{i}{ext}"
+
+
 # ---------------------------------------------------------------------------
 # Generate visual summary image
 # ---------------------------------------------------------------------------
@@ -342,7 +356,8 @@ def generate_visual(script: str, title: str, lang: str = "zh", out_dir: str = ".
 
     # Save
     safe_title = title.replace("/", "_").replace("\\", "_")[:60]
-    png_path = os.path.join(out_dir, f"{safe_title}_summary.png")
+    # 🔴 2026-08-06：更名保留 — 同名已存在 → _v2/_v3（不覆蓋舊檔）
+    png_path = _unique_path(os.path.join(out_dir, f"{safe_title}_summary.png"))
     img.save(png_path, "PNG", quality=95)
     os.chmod(png_path, 0o777)
     print(f"[OK] Visual summary saved: {png_path}", file=sys.stderr)
