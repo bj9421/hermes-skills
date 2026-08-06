@@ -72,7 +72,8 @@ with open('/opt/data/.env') as f:
 ## 📚 References
 
 - `references/multi-source-synthesis.md` — NotebookLM 式多來源合成（2026-08-05）：決策已定（混合來源/兩階段/勾選入口）
-- `references/ppt-prompt-resources.md` — PPT 提示詞資源庫（2026-08-06）：104 職場力大綱模組 / 2Slides 10 模板 / Meiko 生成器 + notehub ppt_gen.py 升級紀錄 + **PPT skill 研究（anysearch：siril9/presentation-skill 16 版型 / guizang 23.3k⭐）+ 中文字型設定**。階段 1（Prompt 升級）已實作；階段 2（slide_types）/ 階段 3（金句/數據/QA 頁版型）待做。使用者問「哪裡有 PPT 提示詞 / 提升簡報質量」時先看這份
+- `references/ppt-prompt-resources.md` — PPT 提示詞資源庫（2026-08-06）：104 職場力大綱模組 / 2Slides 10 模板 / Meiko 生成器 + notehub ppt_gen.py 升級紀錄 + **PPT skill 研究（anysearch：siril9/presentation-skill 16 版型 / guizang 23.3k⭐）+ 中文字型設定（Noto Sans CJK TC / python-pptx a:ea 坑 / fontconfig XDG_DATA_HOME 路徑）**。階段 1（Prompt 升級）已實作；階段 2（slide_types）/ 階段 3（金句/數據/QA 頁版型）待做。使用者問「哪裡有 PPT 提示詞 / 提升簡報質量」時先看這份
+- `references/playwright-mobile-verify.md` — Playwright 手機模式 UI 驗證 recipe（2026-08-06）：插測試 job → iPhone 13 viewport → DOM 驗證 → 截圖 → vision 確認 5 步流程，含 selector 坑（`.nh-checks` 非 `.nh-artifacts`）與可複製的 verify 腳本範本（/opt/data/tmp/verify_v15_merge_card.js、verify_v16_progress.js）
 - `references/cjk-font-rendering.md` — CJK 字型渲染：**Pillow 圖卡（visual_gen.py）**：芫荽 iansui 主字型/Noto Sans SC fallback/emoji 用 NotoEmoji（彩色版 Pillow 不能渲染）+ **python-pptx 中文字型坑（font.name 只設 Latin，需 a:ea 屬性）**
 
 ## ✅ UI 自我驗證 SOP（2026-08-06 使用者要求）
@@ -136,3 +137,5 @@ with open('/opt/data/.env') as f:
 43. **🔴 進度不倒退（2026-08-06 方案 1 續，使用者確認設計）** — done job 重送加 PPT/圖卡時，進度不該崩回 0%（視覺：100% → 0% → 95% → 100% 很怪）。`_job_progress` 以**已產出**為基礎：`arts['mp3']` 有（口播完成）→ queued 也顯示 95%；增量製作 PPT 中（ppt 勾選未產出）→ 96%；增量圖卡中 → 97%；全新 job 仍 0% 起跳。視覺：100% → 95% → 96% → 100%。驗證：`test_job_progress_no_regression`（8 場景）+ Playwright 手機模式（TEST-增量-PPT 卡 96% + 進度條寬度 96% + 「🔄 處理中」）通過。
 
 44. **🔴 PPT 繁中字型（2026-08-06）** — Noto Sans SC 是**簡體**字型（SC=Simplified Chinese），繁體內容細看字形偏簡體規範。已下載安裝：**Noto Sans CJK TC**（Google 官方繁中，內部 family name 是 "Noto Sans CJK TC" 不是 "Noto Sans TC"！）+ **Source Han Sans TC 思源黑體**（Adobe 官方）→ `/opt/data/fonts/` + `/opt/data/.xdg/data/fonts/`（fc-cache 認得的位置；/usr/share/fonts 無權限）。**python-pptx 字型陷阱**：`run.font.name` 只設 latin typeface，中文必須另外設 `a:ea`（East Asian）屬性才生效 — `_apply_cjk_font()` 遍歷全部 run 設 `rPr.find(qn('a:ea'))` + `typeface='Noto Sans CJK TC'`。visual_gen.py `_load_font` 優先序：Noto Sans CJK TC > Source Han Sans TC > Noto Sans SC > Iansui > WenQuanYi。驗證：解壓 PPTX 檢查 `a:ea typeface` 33 runs 全中。
+
+45. **🔴 PPT/圖卡更名保留（2026-08-06，使用者要求）** — 重送同名檔**不覆蓋**：ppt_gen.py/visual_gen.py 各加 `_unique_path(base)` — 路徑已存在 → `標題_v2.pptx` / `標題_summary_v2.png`（遞增 _v3/_v4…）。輸出 marker 抓 `.+?\.pptx` lazy match 對 `_v2.pptx` 也有效（前端路徑顯示不用改）。注意：生成會走 LLM（每次 90s 上限），端到端測試 4 次生成可能 5-10 分鐘 — 用背景執行 + notify_on_complete 或縮小測試範圍。
