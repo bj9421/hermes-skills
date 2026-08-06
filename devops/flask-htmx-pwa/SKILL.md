@@ -111,6 +111,41 @@ sw.js 用 network-first + cache fallback：**server 資料已修好、手機仍�
 
 修法：bump `sw.js` 的 `const CACHE = 'bookmark-manager-v1'` → `'bookmark-manager-v2'`，手機下次載入新 sw.js 自動清舊快取。任何 UI 內容/樣式改版都應 bump 版本，否則使用者會一直看到舊畫面並回報「掛掉了」。
 
+### 🔴 根因層修法：Server 回應加 Cache-Control no-store（2026-08-06 實戰）
+
+bump SW CACHE 版本是「症狀層」修法。**真正根因常是 server 回應沒有 Cache-Control header** → 瀏覽器 HTTP cache 把 HTML + sw.js 都存起來 → 手機「每次 reload 都舊版」、怎麼 bump SW 都沒用（因為連 sw.js 都被 HTTP 快取）。
+
+診斷：`curl -sI http://localhost:PORT/ | grep -i cache` — 沒輸出 = 沒有 cache header = 嫌疑成立。
+
+修法（app.py 統一加，waitress 也適用）：
+
+```python
+@app.after_request
+def no_cache(response):
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
+```
+
+**診斷順序鐵律（使用者報「reload 後還是舊版/佇列消失」）**：
+1. 先 `curl -sI` 看 cache header — 沒有 → 加 no-store（比 bump SW 更根本）
+2. server HTML 確認新版：`curl -s localhost:PORT/ | grep <新內容>`
+3. 才 bump SW CACHE + footer 版本號
+
+### ✅ 無瀏覽器環境驗證前端邏輯：jsdom 模擬 reload（2026-08-06 實戰）
+
+使用者報「每次 reload 都消失」時，**不要只靠 pytest（測不到前端 JS）** — 用 jsdom 在 Node 模擬完整 reload 流程。踩過的坑：
+
+1. **jsdom `window.localStorage` 是 read-only getter**：直接 assign 無效，script 用到的還是 jsdom 內建空 storage。必須 `Object.defineProperty(window, 'localStorage', {value: mock, configurable: true})`
+2. **`window.eval()` 逐個 script 執行作用域不共享**（`let` 變數跨 eval 消失 → `selectedIds is not defined`）→ 把所有 inline script 拼接成單一 `new window.Function(...)` 執行，回傳 closure 內的函數/狀態
+3. mock `fetch`（titles API）、`confirm`、`addEventListener`（避免 htmx listener 報錯）
+4. 等 async（`openNotehubSidebar` 有 await fetch）→ `setTimeout 300ms` 後再檢查 DOM（`#nh-setup` display、`#nh-queue-body tr` 數量、overlay open class）
+
+範本：`/opt/data/tmp/test_reload9.js`（勾選 [41,42] → reload → 配置表格恢復 rowCount=2 的驗證）。
+
+---
+
 ### 🔴 service worker「先舊後新」陷阱（2026-08-05）
 
 bump CACHE 版本後，手機**不會立刻顯示新版** — service worker 更新是兩段式：

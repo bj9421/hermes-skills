@@ -43,7 +43,7 @@ app.py (18行, 僅 blueprint 註冊 + startup)
 
 **JS 分流**（pollNotehubJobs）：`j.status` 為 done/failed → `#nh-done-list`（含 ✕ 清除鈕）；其餘 → `#nh-active-list`（無 ✕）。舊的單一 `#nh-progress-list` 已移除。`#nh-active-hint` 在有 active job 時顯示、無則隱藏。
 
-⚠️ **按鈕位置教訓（使用者 2026-08-05 兩次糾正）**：清除按鈕第一次只加在 `#nh-progress`（送出後的進度畫面），使用者回報「按鈕沒在新增佇列頁面出現」— 使用者操作的**勾選畫面（nh-setup）**才是主要位置。第二次改版把按鈕放進 `#nh-setup` 內 → 使用者回報「按鈕失效」— 因為 `#nh-setup` 只在**勾選了書籤**時顯示（`selectedIds.size > 0`），沒勾選時整個區塊隱藏 → 按鈕跟著消失。**最終位置：🧽 清佇列放在 `#nh-tab-queue` 頁籤層級（nh-setup 外、佇列列表上方），勾不勾選都看得到。** 教訓總結：**功能按鈕要放在頁籤層級，不要放在條件顯示區塊（僅勾選時才顯示的區塊）**；「使用者看不到按鈕」先檢查元素所在的容器是否可能被隱藏（display:none 條件）。改完後用 curl 抓頁面 + python 驗證按鈕落在正確的 tab 區塊（`html.split('id="nh-tab-queue"')[1].split('id="nh-tab-done"')[0]` 檢查）。
+⚠️ **按鈕位置教訓（使用者 2026-08-05 兩次糾正 → 2026-08-06 最終定案）**：清除按鈕第一次只加在 `#nh-progress`（送出後的進度畫面），使用者回報「按鈕沒在新增佇列頁面出現」— 使用者操作的**勾選畫面（nh-setup）**才是主要位置。第二次改版把按鈕放進 `#nh-setup` 內 → 使用者回報「按鈕失效」— 因為 `#nh-setup` 只在**勾選了書籤**時顯示（`selectedIds.size > 0`），沒勾選時整個區塊隱藏 → 按鈕跟著消失。第三次改版把 🧽 清佇列放 `#nh-tab-queue` 頁籤層級 → 2026-08-06 使用者再度糾正「清佇列 按鈕應改到 開始/合併 旁邊」→ **最終位置：`#nh-setup` 的 `.nh-actions` 按鈕列，與開始批次/開始合併/取消並排**（見下方「配置表格按鈕列最終位置」）。教訓總結：**功能按鈕要放在使用者正在操作的那個區塊（勾選畫面），不要放在條件顯示區塊外層或分離位置**；「使用者看不到按鈕」先檢查元素所在的容器是否可能被隱藏（display:none 條件），「按鈕位置不合理」聽使用者指示直接移動。改完後用 curl 抓頁面 + python 驗證按鈕落在正確的 tab 區塊（`html.split('id="nh-tab-queue"')[1].split('id="nh-tab-done"')[0]` 檢查）。
 
 **驗證腳本**：`/opt/data/scripts/verify_nh_tabs.py` — 13 項 DOM 檢查（標題/頁籤/按鈕位置/列表分流/舊 id 清除/sw.js 版本），改版後必跑。另有 `check_nh_js.py`（node --check 驗證 index.html 內所有 inline script 語法 + script 開關標籤平衡）與 `verify_nh_footer.py`（確認頁尾版本號出現）。inline JS 改動後跑 check_nh_js.py 可避免語法錯誤上線。
 
@@ -946,6 +946,7 @@ app.py 已從 766 行 / 53 函數 / cohesion 0.10 拆成上述模組結構（coh
 ## 📊 系統狀態（2026-08-05 晚）
 - **Commit**：057b345（IG 時長）；f424636（IG 標籤）；ad000c4（Bilibili 時長）；883309a（#10 原子認領補齊）；**清佇列按鈕 commit（🧽 clear scope='queued'，routes_notehub.py + index.html + tests/test_clear_queued.py，+3 tests）**；**4b42e38（Notehub 頁籤式版面改版）**；**頁尾版本號 commit（v4 · 頁籤版面，templates/index.html + static/style.css）**；**勾選持久化 commit（localStorage，templates/index.html +24）**；**佇列輸出選項 commit（PPT/圖卡 checkbox + 開始批次/開始合併 + 移除關閉，db.py + schema.sql + routes_notehub.py + templates + style.css + tests/test_notehub_outputs.py，+4 tests）**；**Phase 6 commit（工作名稱修復方案 B：/api/bookmarks/titles + openNotehubSidebar 改 async，routes_bookmarks.py + templates + tests/test_bookmark_titles.py，+4 tests → 112 tests）**；code review 19/19 修復全 commit
 - **Tests**：**117 passed**（112 + 5 test_synthesize_api：job 建立 / 來源不足 400 / 未選輸出 400 / 只 PPT mode=none / dual；含 queued+running 一起清、running subprocess kill、titles map 回傳）
+- **2026-08-06 工作流修正**：commit `2cf1196`（batchNotehub 定義 + ☰ 只顯示佇列 + cancelNotehubSetup）+ `4f2faf9`（清佇列按鈕移入 nh-actions + SETUP_MODE_KEY 配置模式持久化）+ `9f6820b`（sw.js cache v6）+ footer v6；**晚間 v8（commit `fcfb7f6` + `c12b768` + `e391bff`）：刪除取消按鈕（清佇列=清 job+清勾選一鍵搞定，`clearQueueAndSelection()`）、reload 持久化簡化（只要有勾選即恢復配置表格，不再依賴 SETUP_MODE_KEY）、sw.js cache v8 + footer v8**；117 tests 全綠
 - **Notehub 版面**：頁籤式（工作佇列/完成工作）已上線；驗證 13 項全過（`/opt/data/scripts/verify_nh_tabs.py`）；sw.js v4
 - **小紅書 notehub job 修復（2026-08-05，skills repo commit `961ff02`）**：`notehub/extractors/url.py` 新增 `_is_xhs_url()` + `_fetch_xhs()`（短鏈302→DoH查IP→curl --resolve→__INITIAL_STATE__，搬自 llm_enhance.fetch_xiaohongshu_meta）— 小紅書書籤送口播不再 SSL CERTIFICATE_VERIFY_FAILED。實測書籤 #101（xhslink.com/m/8qWhW4ScJIU）extract 成功（title/desc/tags）。詳見 youtube-note-pipeline pitfall 35
 - **Code Review**：19 bugs 全數修復 19/19（2 HIGH：FTS5 引號 crash、limit 全庫 dump；12 MEDIUM；5 LOW）→ `references/code-review-2026-08-05.md`
@@ -993,3 +994,79 @@ app.py 已從 766 行 / 53 函數 / cohesion 0.10 拆成上述模組結構（coh
 - 方案 A（翻頁清除 selectedIds）被否決 — 會犧牲跨頁勾選持久化（Phase 3 使用者要的功能）
 
 **教訓**：全域選取狀態 + 分頁 DOM 重載 = 隱形勾選殘留。任何「取卡片 DOM 顯示資訊」的邏輯都要先確認該 id 是否仍在目前頁面；DB 有 title 但 UI 顯示 fallback 時，先懷疑前端 DOM 取不到，不是資料問題。**修法偏好**：使用者要保留跨頁勾選 → 選「server API 補資料」而不是「限制前端狀態」。
+
+### 🔴 工作流邏輯修正：勾選 ≠ 進佇列（2026-08-06，使用者兩次糾正）
+
+**正確工作流**（使用者明確定義）：書籤頁勾選 → 按「🎙️ 送 notehub」→ 顯示配置表格（nh-setup）→ 按「🚀 開始批次」或「🧬 開始合併」→ **才建立 job**。勾選本身**絕對不能**讓書籤出現在工作佇列。
+
+**本 session 抓到的三個 bug（都已修，commit `2cf1196`）**：
+1. **`batchNotehub()` 在 HTML onclick 被呼叫但函數根本沒定義**（`grep -n "function batchNotehub" templates/index.html` 回 0）→ 按「送 notehub」JS ReferenceError 沒反應，使用者誤以為「勾選就自動進佇列」。修法：定義 `function batchNotehub() { openNotehubSidebar(true); }`
+2. **`openNotehubSidebar()` 原本只要 `selectedIds.size > 0` 就自動顯示配置表格** → ☰ 漢堡按鈕誤顯示配置。修法：加參數 `openNotehubSidebar(showSetup=false)` — ☰（第 42 行）只顯示佇列進度（else 分支：隱藏 nh-setup + 顯示 nh-clear-bar + pollNotehubJobs）；只有 `batchNotehub()` 和 `batchAction('notehub')` 傳 `true` 顯示配置表格
+3. **配置表格沒有取消按鈕** → 勾選狀態清不掉，只能回書籤頁面取消。修法：加 `cancelNotehubSetup()`（clearSelection + 隱藏 nh-setup + 恢復 nh-clear-bar/nh-active-hint + pollNotehubJobs + toast「已取消勾選，書籤未加入佇列」）+ 配置表格加「✖️ 取消（清除勾選）」按鈕
+
+**診斷順序**（使用者報「勾選後直接進佇列」或「清佇列無效」時）：
+1. `grep -n "function batchNotehub" templates/index.html` — onclick 引用的函數是否真的存在（JS 錯誤 = 按鈕無聲失效，最像「自動進佇列」）
+2. 查 DB/API：`curl -s localhost:5001/api/notehub/jobs` — 若 pending=0 但 UI 顯示書籤 = 那是 **localStorage 勾選狀態**（`bm-selected-ids`）不是 job，清佇列當然清不掉
+3. 驗證修復：`curl -s localhost:5001/ | grep -c "cancelNotehubSetup"` > 0；`node --check` 跑 inline JS（check_nh_js.py）
+
+**⚠️ 改完 HTML 後必須重啟 server**（waitress 無 reloader + Flask template 快取）→ 否則 `curl localhost:5001/` 還是舊版；再 bump `static/sw.js` CACHE 版本（v5→v6）讓手機 PWA 刷新。驗證三件套：`curl localhost:5001/ | grep -c "cancelNotehubSetup"`（server 新 HTML）+ `curl localhost:5001/static/sw.js | grep "CACHE ="`（sw 新版本）+ 手機重新安裝 PWA。
+
+### 🔴 配置表格按鈕列最終位置 + 配置模式持久化（2026-08-06 晚，commit `4f2faf9`）
+
+**使用者最終定案**（「清佇列 按鈕應改到 開始/合併 旁邊」）：
+- 🧽 清佇列按鈕**最終位置 = `#nh-setup` 的 `.nh-actions` 按鈕列**，不再有獨立的 `.nh-clear-bar` 區塊
+- 這推翻了本 skill 上方「按鈕位置教訓」的舊結論（放頁籤層級）— **2026-08-06 使用者明確要求改放配置表格內**，跟輸出動作放一起最直覺
+
+**🔴 取消按鈕已刪除（2026-08-06 晚，使用者：「清佇列 跟 取消 按鈕 功能重覆 把取消按鈕 刪除」）**：
+- 按鈕列最終 = 3 顆：🚀 開始批次 / 🧬 開始合併 / 🧽 清佇列（**無取消**）
+- 新增 `clearQueueAndSelection()`：`await clearNotehubJobs('queued')` + `clearSelection()` + `setSetupMode(false)` + 隱藏 nh-setup + 恢復 nh-active-hint — 一鍵清 job + 清勾選
+- `cancelNotehubSetup()` 函數保留但已無按鈕引用（不刪，避免日後需要）
+
+**配置模式持久化（reload 後配置表格自動恢復）— 🔴 2026-08-06 晚簡化**：
+- **第一版失敗**：`SETUP_MODE_KEY='bm-notehub-setup-mode'` + `restoreSelection()` 檢查 `isSetupMode() && selectedIds.size > 0` — 使用者回報「工作佇列 reload 還是消失」→ 因為**只有按過「送 notehub」才會寫 SETUP_MODE_KEY**，勾選書籤後直接 reload（沒按送）→ key 不存在 → 不恢復
+- **最終版（v8）**：`restoreSelection()` 改成**只要 `selectedIds.size > 0`（localStorage `bm-selected-ids` 有勾選）就自動 `openNotehubSidebar(true)`**，完全不依賴 SETUP_MODE_KEY
+- 🔴 **必須用 `window.__bmSetupRestored` flag 只恢復一次**：`restoreSelection()` 同時綁在 `htmx:afterSwap`（每次 HTMX 換頁/重繪都觸發），若每次都開側邊欄會反覆彈出
+- 教訓：**持久化恢復的觸發條件要用「使用者可見狀態」（勾選存在）而非「先前動作 flag」（按過某按鈕）** — 使用者 reload 時不會記得要先按哪顆鈕
+
+### 🔴 patch 髒字串坑：`[#](urn:odp:ns:text)41`（2026-08-06）
+
+**現象**：配置表格表頭 `#` 被不明字串 `[#](urn:odp:ns:text)41` 取代，手機端顯示髒字。根因：先前 patch 的 new_string 混入編輯器/複製產物（`urn:odp:ns:text` 是 ODP 文件連結偽造格式），`#` 變成超連結語法。
+
+**預防**：patch 後 `grep -rn "urn:odp" templates/ --include="*.html"` 確認零殘留；手機截圖出現「不明字串」先 grep 髒字串指紋（`urn:` / 怪異 markdown 連結語法），不要懷疑資料。
+
+**footer 版本同步**：footer `<b>vN</b>` 與 sw.js `CACHE` 版本同步（v6 · Notehub 工作流修正版）。使用者問「footer 有顯示版本多少嗎」→ 回報版本號順便確認手機端是否已抓到新版。
+
+**🔴 版本號三處必須同 commit 同步（2026-08-06 實測教訓，使用者「還是 v6版」）**：
+1. `static/sw.js` 的 `CACHE = 'bookmark-manager-vN'`
+2. `templates/index.html` footer 的 `<b>vN</b>`
+3. server 重啟（waitress 無 reloader + Flask template 快取，curl 會回舊 HTML 直到重啟）
+
+**本 session 踩坑**：改了功能（清佇列移入配置列 + 配置持久化）只 bump SW v7，**忘了同步 footer** → 使用者看到 footer 還是 v6 → 回報「還是 v6版」→ 其實功能已在 server 上，純粹是 footer 版本號沒更新。**教訓：改版 = 一次 commit 同時改 sw.js CACHE + footer 版本 + 重啟 server，驗證用 `curl localhost:5001/ | grep -o 'bookmark-manager <b>v[0-9]*</b>'` 三處一致**。使用者以 footer 版本號為「是否更新」的判斷依據 — footer 沒同步 = 使用者以為沒修好。
+
+### 🔴 終極根因：Server 回應沒 Cache-Control → 手機永遠舊版（2026-08-06，使用者「每次 reload 佇列都消失」）
+
+**現象**：JS 邏輯已用 jsdom 實測證明正確（勾選 → reload → 配置表格恢復 rowCount=2），但使用者手機「每次 reload 佇列都消失」、「還是 v6版」。**根因不是 JS，是 server 回應完全沒有 Cache-Control header** → 手機瀏覽器把舊 HTML + 舊 sw.js 都 HTTP 快取了，bump SW 版本沒用（連 sw.js 都被快取）。
+
+診斷：`curl -sI http://localhost:5001/ | head -10` — 只有 Content-Length/Type/Date/Server，沒有 Cache-Control → 成立。
+
+修法（app.py `@app.after_request`，與 access log 共用一個函數）：
+```python
+response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+response.headers['Pragma'] = 'no-cache'
+response.headers['Expires'] = '0'
+```
+
+**診斷順序鐵律（使用者報「reload 後舊版/佇列消失/還有 vN 版」）**：
+1. `curl -sI localhost:5001/ | grep -i cache` — 沒 header → 加 no-store（比 bump SW 更根本）
+2. `curl -s localhost:5001/ | grep -o 'bookmark-manager <b>v[0-9]*</b>'` — server 是否新版
+3. 才 bump sw.js CACHE + footer 版本
+
+### ✅ 無瀏覽器驗證前端 reload 邏輯：jsdom（2026-08-06，使用者「妳完成工作沒自我測試嗎」）
+
+**自我測試紀律**：pytest 測不到前端 JS。使用者報「每次 reload 都消失」時，用 jsdom 在 Node 模擬「勾選 → reload → 檢查配置表格恢復」。**踩過的 jsdom 坑**：
+1. **`window.localStorage` 是 read-only getter** — 直接 assign 無效（script 用的是 jsdom 內建空 storage → selectedIds 讀不到）。必須 `Object.defineProperty(window, 'localStorage', {value: mock, configurable: true})`
+2. **`window.eval()` 逐個 script 執行作用域不共享** — `let selectedIds` 跨 eval 消失（`selectedIds is not defined`）。解法：所有 inline script 拼接成單一 `new window.Function(...)` 執行（回傳 closure 內的 restoreSelection/selectedIds 供斷言）
+3. mock `fetch`（/api/bookmarks/titles、/api/notehub/durations）、`confirm`、`addEventListener`（避免 htmx listener 報錯）
+4. `openNotehubSidebar` 是 async（內部 await fetch titles）→ setTimeout 300ms 後再檢查 DOM（`#nh-setup` style.display、`#nh-queue-body tr` 數、`#nh-overlay.open`）
+
+範本：`/opt/data/tmp/test_reload9.js` — 勾選 [41,42] → reload → 期望 `setupVisible: "block", rowCount: 2, overlayOpen: true`；沒勾選 → 全 false。跑：`cd /opt/data/tmp && node test_reload9.js`（需 `npm install jsdom`）。
