@@ -837,6 +837,23 @@ every 10m → cron_watchdog.py (no_agent)
 | timeout / killed | 需人工調查 | 只報告，不自動修 |
 | 其他錯誤 | — | 報告錯誤內容 + 建議方向 |
 
+### 排除清單（EXCLUDE_JOB_IDS）— 使用者要求「一直出現 排除」（2026-08-07）
+
+**情境：** 某些 LLM-driven job（如 Auto Memory Scanner `7ebd14dcb4bd`，每 3h）只要 provider 回應慢就 600s idle timeout → watchdog 每 10 分鐘重報「需人工處理」，但該 job 本身健康（standalone 腳本 exit 0）、警報無可操作內容。使用者明確要求「一直出現 排除」— **這類反覆無意義警報要排除，不是繼續報告**。
+
+**機制：** `cron_watchdog.py` 頂部加排除集合，迴圈內跳過：
+```python
+EXCLUDE_JOB_IDS = {"7ebd14dcb4bd"}   # Auto Memory Scanner — 反覆 LLM timeout，無可操作內容
+...
+jid = job.get("id") or job.get("job_id")
+if jid in EXCLUDE_JOB_IDS:
+    continue
+```
+
+**配套：** 排除後要清該 job 的 error 狀態（`last_status=null, last_error=null`），否則 watchdog 不報但 job 仍標 error（每日盤查會看到）。
+
+**🐛 欄位 bug（同場修復）：** watchdog 原本讀 `job.get("job_id")`，但 jobs.json 的欄位是 `id` → 所有 error 報告顯示 `(None)`（使用者收到的報告就是 `⚠️ Auto Memory Scanner (None)`）。修法：`jid = job.get("id") or job.get("job_id")` 兼容兩者。改完務必同步兩份副本（`/opt/data/scripts/` + `~/.hermes/scripts/`）並 diff 驗證，下次 tick 生效。
+
 ### 修復方式：直接改 jobs.json
 
 **不走 `cronjob action=update`（需要 TTY），直接改 live JSON store：**
