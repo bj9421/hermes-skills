@@ -1,5 +1,14 @@
 # Voice Shortcuts & Edge-TTS Reliability
 
+## 🎙️ 主持人角色名（2026-08-07 使用者指定）
+
+| 角色 | 名字 | Voice | 職責 |
+|------|------|-------|------|
+| 女聲主持人 | **曉萱** | zh-TW-HsiaoChenNeural | 引導話題、提問、總結；solo 模式第一人稱自介「大家好，我是曉萱」 |
+| 男聲評論員 | **永康** | zh-TW-YunJheNeural | 補充觀點、舉例、深入分析 |
+
+**雙人腳本規範**（`_DUAL_PROMPT`）：行首標記維持 `A:`（=曉萱）/ `B:`（=永康）供 parser 解析，但**對話內容禁止稱呼「A/B/主持人/評論員」**，一律用名字互稱（「曉萱，你怎麼看？」「永康補充說…」）。solo 模式禁止第三人稱自稱。
+
 ## Voice Alias Table
 
 | Alias | Voice ID | Language | Notes |

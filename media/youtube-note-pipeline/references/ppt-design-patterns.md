@@ -25,6 +25,24 @@ _EMOJI_KEYWORD_MAP = {
 - **格式統一**：`emoji + 雙空格 + 文字`
 - **字型支援**：Noto Color Emoji（系統內建），Source Han Sans TC（中文主力）
 
+### 🔴 健康醫療組（2026-08-07 新增，K2 案例）
+原表 321 關鍵字全是科技/AI 主題 → 健康內容套不到 emoji（使用者嫌「太單調」）。已加：
+```python
+"維生素": "💊", "补充": "💊", "保健": "💊", "vitamin": "💊", "supplement": "💊",
+"鈣質": "🦴", "骨骼": "🦴", "骨質": "🦴", "骨密度": "🦴", "calcium": "🦴",
+"心臟": "❤️", "心血管": "❤️", "冠狀動脈": "❤️", "heart": "❤️", "cardiovascular": "❤️",
+"血液": "🩸", "血壓": "🩸", "blood": "🩸",
+"健康": "🌿", "養生": "🌿", "health": "🌿",
+"試驗": "🔬", "研究": "🔬", "臨床": "🔬", "trial": "🔬", "study": "🔬",
+"劑量": "⚖️", "dose": "⚖️", "dosage": "⚖️",
+"醫生": "🩺", "醫師": "🩺", "doctor": "🩺",
+```
+**🔴 單字陷阱**：`_add_emoji` 是 substring 匹配 → 單字「鈣」誤配「鈣化」→ 用「鈣質」等長詞，不要單字。下關鍵字前先 `grep -oE` 報告詞頻。
+
+### 🔴 預覽圖 emoji 渲染（ppt_preview_render.py，2026-08-07）
+預覽 script 只用 Source Han Sans TC（無 emoji glyph）→ emoji 顯示 ☑ 方框。已修：
+`draw_mixed()` — emoji codepoint（`\U0001F000-\U0001FAFF`/`\u2600-\u27BF`/`\u2460-\u2473`/`\uFE0F`）用 `/opt/data/fonts/NotoEmoji-Regular.ttf`（單色白線條、可辨識），其餘用主字型。驗證 emoji 真的寫入 PPTX：zipfile 抽 `<a:t>` 節點（PowerPoint 開檔才是彩色）。
+
 ## 2026-08-06：新版型系統
 
 ### 9 種版型

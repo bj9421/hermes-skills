@@ -36,20 +36,39 @@ SYNTHESIS_PROMPT = """你是內容合成專家。以下是多個來源的完整�
 來源內容：
 """
 
+# 🔴 2026-08-07 FIX：多 chunk 時，後續 chunk 用「接續模式」而非獨立合成。
+# 原本每個 chunk 都套 SYNTHESIS_PROMPT → chunk 2 被 LLM 當成「另一批多來源」
+# 重新合成 → 輸出重複的【共通主題】【來源一~七】結構，接在報告後半（K2 案例：
+# 後半 4177 字是重複混亂內容）。
+CONTINUATION_PROMPT = """你是內容合成專家。這是同一份多來源資料的【後續片段】（前面部分已經合成過報告）。
+
+請將此片段的內容補充進既有報告。要求：
+1. 只輸出【新增/補充的內容】，不要重新輸出整個報告、不要重複【共通主題】【整體結論】等總覽章節
+2. 用「### 補充：<主題或來源>」作為小節標題，- 條列細節
+3. 保留原文的重要細節、數據和觀點，不要過度濃縮
+4. 繁體中文，台灣用語
+
+後續片段：
+"""
+
 
 def _synthesize(combined: str, lang: str = "zh") -> str | None:
-    """LLM 合成最終報告（過長時分塊，最後合併）。"""
+    """LLM 合成最終報告（過長時分塊，後續 chunk 走接續模式）。"""
     chunks = _chunk_text(combined, max_chars=24000, overlap=1000)
     print(f"[INFO] Synthesizing {len(chunks)} chunk{'s' if len(chunks) > 1 else ''} via LLM...",
           file=sys.stderr)
     parts = []
     for i, chunk in enumerate(chunks):
-        prompt = SYNTHESIS_PROMPT + chunk
-        if len(chunks) > 1:
+        if len(chunks) == 1:
+            prompt = SYNTHESIS_PROMPT + chunk
+        else:
+            # 🔴 2026-08-07 FIX：chunk 0 用完整合成，chunk 1+ 用接續模式
             if i == 0:
-                prompt += "\n\n（這是第 1 部分，後續還有其他來源。）"
-            elif i == len(chunks) - 1:
-                prompt += "\n\n（這是最後一部分。請補上【整體結論】。）"
+                prompt = SYNTHESIS_PROMPT + chunk + "\n\n（這是第 1 部分，後續還有其他來源內容。）"
+            else:
+                prompt = CONTINUATION_PROMPT + chunk
+                if i == len(chunks) - 1:
+                    prompt += "\n\n（這是最後一部分。補充完成即可，不需要輸出整體結論。）"
         messages = [
             {"role": "system", "content": "你是專業的內容合成專家。"},
             {"role": "user", "content": prompt},
@@ -61,7 +80,7 @@ def _synthesize(combined: str, lang: str = "zh") -> str | None:
             print(f"[WARN] 合成失敗 chunk {i + 1}", file=sys.stderr)
     if not parts:
         return None
-    return "\n\n---\n\n".join(parts)
+    return "\n\n".join(parts)
 
 
 def synthesize_sources(sources: list[str], lang: str = "zh", title_hint: str = "") -> tuple:
