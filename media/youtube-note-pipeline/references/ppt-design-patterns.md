@@ -23,7 +23,7 @@ _EMOJI_KEYWORD_MAP = {
 - **避免重複**：檢測文本是否已有 emoji，有則跳過
 - **關鍵詞匹配**：長度越長越優先（避免 "data" 匹配到 "analytics"）
 - **格式統一**：`emoji + 雙空格 + 文字`
-- **字型支援**：Noto Color Emoji（系統內建），Source Han Sans TC（中文主力）
+- **🔴 字型支援（2026-08-07 實測更正）：`_EMOJI_FONT = "Noto Color Emoji"` 是死碼** — 宣告於 ppt_gen.py:241 但全檔無一處讀取；`_apply_cjk_font()` 把所有 run（含 emoji run）都設 `latin/ea = Source Han Sans TC`（XML 實測 `<a:latin typeface="Source Han Sans TC"/>`）→ PowerPoint 開檔 emoji 黑白/fallback，非彩色。**修法方向**：`_apply_cjk_font` 後拆 emoji run 設 `Segoe UI Emoji`；**驗證**：zipfile 抽 `<a:r>` 看含 emoji run 的 `<a:latin typeface>`。Source Han Sans TC 仍是中文主力。詳見 SKILL.md pitfall 63。
 
 ### 🔴 健康醫療組（2026-08-07 新增，K2 案例）
 原表 321 關鍵字全是科技/AI 主題 → 健康內容套不到 emoji（使用者嫌「太單調」）。已加：
@@ -41,7 +41,7 @@ _EMOJI_KEYWORD_MAP = {
 
 ### 🔴 預覽圖 emoji 渲染（ppt_preview_render.py，2026-08-07）
 預覽 script 只用 Source Han Sans TC（無 emoji glyph）→ emoji 顯示 ☑ 方框。已修：
-`draw_mixed()` — emoji codepoint（`\U0001F000-\U0001FAFF`/`\u2600-\u27BF`/`\u2460-\u2473`/`\uFE0F`）用 `/opt/data/fonts/NotoEmoji-Regular.ttf`（單色白線條、可辨識），其餘用主字型。驗證 emoji 真的寫入 PPTX：zipfile 抽 `<a:t>` 節點（PowerPoint 開檔才是彩色）。
+`draw_mixed()` — emoji codepoint（`\U0001F000-\U0001FAFF`/`\u2600-\u27BF`/`\u2460-\u2473`/`\uFE0F`）用 `/opt/data/fonts/NotoEmoji-Regular.ttf`（單色白線條、可辨識），其餘用主字型。驗證 emoji 真的寫入 PPTX：zipfile 抽 `<a:t>` 節點。⚠️ **寫入 XML ≠ PowerPoint 彩色** — 還要查 `<a:rPr>` 內 `<a:latin typeface>` 是否為 emoji 字型（`_apply_cjk_font` 會覆蓋成 Source Han Sans TC → 黑白，見上方字型支援更正）。
 
 ## 2026-08-06：新版型系統
 
@@ -74,3 +74,8 @@ python /opt/data/tmp/verify_ppt_geometry.py
 3. **Noto Sans SC** - 降權（簡體字形）
 4. **Iansui** - 手寫風備選
 5. **WenQuanYi Zen Hei** - 不建議（太醜）
+
+## 字體大小準則（2026-08-07 使用者實測嫌「字太小」）
+- **內容文字 ≥ 20pt**（16-18pt 會被嫌太小）。放大一級映射：16→20、18→22、20→24、22→26、28→32、32→36、34→40、36→40、40→44
+- **python-pptx 字體三層級陷阱**：ppt_gen.py 用 `p.font.size`（**paragraph 層級**）設定，run 層級沒設 → 改既有 PPTX 時 run/paragraph 兩層都要查，只改 run 會得到 0 個（K2 實測）
+- 放大替換用 regex 一次性 `Pt(\d+)` 查表，**不要 sed 連鎖**（Pt(16)→Pt(20) 後會被 20→24 再匹配）

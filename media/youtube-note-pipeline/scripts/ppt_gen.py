@@ -490,7 +490,7 @@ def _add_title_slide(prs: Presentation, data: dict):
     tf.word_wrap = True
     p = tf.paragraphs[0]
     p.text = data.get("title", "Presentation")
-    p.font.size = Pt(40)
+    p.font.size = Pt(44)
     p.font.bold = True
     p.font.color.rgb = _TEXT_WHITE
     p.alignment = PP_ALIGN.CENTER
@@ -502,7 +502,7 @@ def _add_title_slide(prs: Presentation, data: dict):
     tf.word_wrap = True
     p = tf.paragraphs[0]
     p.text = data.get("subtitle", "")
-    p.font.size = Pt(20)
+    p.font.size = Pt(24)
     p.font.color.rgb = _TEXT_LIGHT
     p.alignment = PP_ALIGN.CENTER
 
@@ -534,7 +534,7 @@ def _add_content_slide(prs: Presentation, point: dict, index: int):
     tf.word_wrap = False
     p = tf.paragraphs[0]
     p.text = f"{index:02d}"
-    p.font.size = Pt(28)
+    p.font.size = Pt(32)
     p.font.bold = True
     p.font.color.rgb = _ACCENT
     p.alignment = PP_ALIGN.LEFT
@@ -546,7 +546,7 @@ def _add_content_slide(prs: Presentation, point: dict, index: int):
     tf.word_wrap = True
     p = tf.paragraphs[0]
     p.text = point.get("heading", "")
-    p.font.size = Pt(32)
+    p.font.size = Pt(36)
     p.font.bold = True
     p.font.color.rgb = _TEXT_WHITE
 
@@ -570,7 +570,7 @@ def _add_content_slide(prs: Presentation, point: dict, index: int):
         else:
             p = tf.add_paragraph()
         p.text = f"▸  {bullet}"
-        p.font.size = Pt(20)
+        p.font.size = Pt(24)
         p.font.color.rgb = _TEXT_LIGHT
         p.space_after = Pt(14)
 
@@ -590,7 +590,7 @@ def _add_hook_slide(prs: Presentation, point: dict):
     tf.vertical_anchor = MSO_ANCHOR.MIDDLE
     p = tf.paragraphs[0]
     p.text = point.get("heading", "")
-    p.font.size = Pt(40)
+    p.font.size = Pt(44)
     p.font.bold = True
     p.font.color.rgb = _TEXT_WHITE
     p.alignment = PP_ALIGN.CENTER
@@ -604,7 +604,7 @@ def _add_hook_slide(prs: Presentation, point: dict):
         tf.word_wrap = True
         p = tf.paragraphs[0]
         p.text = bullets[0]
-        p.font.size = Pt(18)
+        p.font.size = Pt(22)
         p.font.color.rgb = _TEXT_LIGHT
         p.alignment = PP_ALIGN.CENTER
 
@@ -640,7 +640,7 @@ def _add_quote_slide(prs: Presentation, point: dict):
     tf.vertical_anchor = MSO_ANCHOR.MIDDLE
     p = tf.paragraphs[0]
     p.text = point.get("heading", "")
-    p.font.size = Pt(36)
+    p.font.size = Pt(40)
     p.font.bold = True
     p.font.color.rgb = _TEXT_WHITE
     p.alignment = PP_ALIGN.CENTER
@@ -655,7 +655,7 @@ def _add_quote_slide(prs: Presentation, point: dict):
         tf.word_wrap = True
         p = tf.paragraphs[0]
         p.text = f"— {bullets[0]}"
-        p.font.size = Pt(16)
+        p.font.size = Pt(20)
         p.font.color.rgb = _TEXT_LIGHT
         p.alignment = PP_ALIGN.CENTER
 
@@ -687,7 +687,7 @@ def _add_data_slide(prs: Presentation, point: dict, index: int):
     tf.word_wrap = False
     p = tf.paragraphs[0]
     p.text = f"{index:02d}"
-    p.font.size = Pt(28)
+    p.font.size = Pt(32)
     p.font.bold = True
     p.font.color.rgb = _ACCENT
     p.alignment = PP_ALIGN.LEFT
@@ -699,7 +699,7 @@ def _add_data_slide(prs: Presentation, point: dict, index: int):
     tf.word_wrap = True
     p = tf.paragraphs[0]
     p.text = point.get("heading", "")
-    p.font.size = Pt(32)
+    p.font.size = Pt(36)
     p.font.bold = True
     p.font.color.rgb = _TEXT_WHITE
 
@@ -734,7 +734,7 @@ def _add_data_slide(prs: Presentation, point: dict, index: int):
         tf.word_wrap = True
         p = tf.paragraphs[0]
         p.text = num if num else "—"
-        p.font.size = Pt(34)
+        p.font.size = Pt(40)
         p.font.bold = True
         p.font.color.rgb = _ACCENT if num else _TEXT_LIGHT
         p.alignment = PP_ALIGN.CENTER
@@ -744,7 +744,7 @@ def _add_data_slide(prs: Presentation, point: dict, index: int):
         tf.word_wrap = True
         p = tf.paragraphs[0]
         p.text = desc if desc else bullet
-        p.font.size = Pt(16)
+        p.font.size = Pt(20)
         p.font.color.rgb = _TEXT_LIGHT
         p.alignment = PP_ALIGN.CENTER
 
@@ -763,7 +763,7 @@ def _add_qa_slide(prs: Presentation, point: dict, index: int):
     tf.word_wrap = False
     p = tf.paragraphs[0]
     p.text = f"{index:02d}"
-    p.font.size = Pt(28)
+    p.font.size = Pt(32)
     p.font.bold = True
     p.font.color.rgb = _ACCENT
 
@@ -774,7 +774,7 @@ def _add_qa_slide(prs: Presentation, point: dict, index: int):
     tf.word_wrap = True
     p = tf.paragraphs[0]
     p.text = point.get("heading", "")
-    p.font.size = Pt(32)
+    p.font.size = Pt(36)
     p.font.bold = True
     p.font.color.rgb = _TEXT_WHITE
 
@@ -790,7 +790,7 @@ def _add_qa_slide(prs: Presentation, point: dict, index: int):
     for i, q in enumerate(questions):
         p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
         p.text = f"❓  {q}"
-        p.font.size = Pt(20)
+        p.font.size = Pt(24)
         p.font.color.rgb = _TEXT_LIGHT
         p.space_after = Pt(12)
 
@@ -802,7 +802,7 @@ def _add_qa_slide(prs: Presentation, point: dict, index: int):
         tf.word_wrap = True
         p = tf.paragraphs[0]
         p.text = ctas[0]
-        p.font.size = Pt(22)
+        p.font.size = Pt(26)
         p.font.bold = True
         p.font.color.rgb = _ACCENT
         p.alignment = PP_ALIGN.CENTER
@@ -822,7 +822,7 @@ def _add_action_slide(prs: Presentation, point: dict, index: int):
     tf.word_wrap = False
     p = tf.paragraphs[0]
     p.text = f"{index:02d}"
-    p.font.size = Pt(28)
+    p.font.size = Pt(32)
     p.font.bold = True
     p.font.color.rgb = _ACCENT
 
@@ -833,7 +833,7 @@ def _add_action_slide(prs: Presentation, point: dict, index: int):
     tf.word_wrap = True
     p = tf.paragraphs[0]
     p.text = point.get("heading", "")
-    p.font.size = Pt(32)
+    p.font.size = Pt(36)
     p.font.bold = True
     p.font.color.rgb = _TEXT_WHITE
 
@@ -853,9 +853,9 @@ def _add_action_slide(prs: Presentation, point: dict, index: int):
     for i, bullet in enumerate(bullets):
         p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
         p.text = f"→  {bullet}"
-        p.font.size = Pt(22)
+        p.font.size = Pt(26)
         p.font.color.rgb = _TEXT_LIGHT
-        p.space_after = Pt(16)
+        p.space_after = Pt(20)
 
 
 def _add_summary_slide(prs: Presentation, data: dict):
@@ -874,7 +874,7 @@ def _add_summary_slide(prs: Presentation, data: dict):
     tf = txBox.text_frame
     p = tf.paragraphs[0]
     p.text = "KEY TAKEAWAY"
-    p.font.size = Pt(16)
+    p.font.size = Pt(20)
     p.font.bold = True
     p.font.color.rgb = _ACCENT
     p.alignment = PP_ALIGN.CENTER
@@ -893,10 +893,10 @@ def _add_summary_slide(prs: Presentation, data: dict):
     tf.word_wrap = True
     p = tf.paragraphs[0]
     p.text = data.get("summary", "")
-    p.font.size = Pt(22)
+    p.font.size = Pt(26)
     p.font.color.rgb = _TEXT_LIGHT
     p.alignment = PP_ALIGN.CENTER
-    p.line_spacing = Pt(32)
+    p.line_spacing = Pt(36)
 
 
 # ---------------------------------------------------------------------------
@@ -1005,7 +1005,7 @@ def _add_comparison_slide(prs: Presentation, point: dict, index: int):
     tf = txBox.text_frame
     p = tf.paragraphs[0]
     p.text = f"{index:02d}"
-    p.font.size = Pt(28)
+    p.font.size = Pt(32)
     p.font.bold = True
     p.font.color.rgb = _ACCENT
 
@@ -1015,7 +1015,7 @@ def _add_comparison_slide(prs: Presentation, point: dict, index: int):
     tf = txBox.text_frame
     p = tf.paragraphs[0]
     p.text = point.get("heading", "")
-    p.font.size = Pt(32)
+    p.font.size = Pt(36)
     p.font.bold = True
     p.font.color.rgb = _TEXT_WHITE
 
@@ -1040,14 +1040,14 @@ def _add_comparison_slide(prs: Presentation, point: dict, index: int):
             tf = txBox.text_frame
             p = tf.paragraphs[0]
             p.text = f"❶ {left_text.strip()}"
-            p.font.size = Pt(18)
+            p.font.size = Pt(22)
             p.font.color.rgb = _TEXT_LIGHT
             # 右欄
             txBox = slide.shapes.add_textbox(right_col, y0 + i * Inches(0.65), width_col, Inches(0.6))
             tf = txBox.text_frame
             p = tf.paragraphs[0]
             p.text = f"❷ {right_text.strip()}"
-            p.font.size = Pt(18)
+            p.font.size = Pt(22)
             p.font.color.rgb = _ACCENT
         else:
             # 沒有分隔 → 統一放左欄
@@ -1055,7 +1055,7 @@ def _add_comparison_slide(prs: Presentation, point: dict, index: int):
             tf = txBox.text_frame
             p = tf.paragraphs[0]
             p.text = f"• {bullet}"
-            p.font.size = Pt(18)
+            p.font.size = Pt(22)
             p.font.color.rgb = _TEXT_LIGHT
 
 
@@ -1072,7 +1072,7 @@ def _add_timeline_slide(prs: Presentation, point: dict, index: int):
     tf = txBox.text_frame
     p = tf.paragraphs[0]
     p.text = f"{index:02d}"
-    p.font.size = Pt(28)
+    p.font.size = Pt(32)
     p.font.bold = True
     p.font.color.rgb = _ACCENT
 
@@ -1082,7 +1082,7 @@ def _add_timeline_slide(prs: Presentation, point: dict, index: int):
     tf = txBox.text_frame
     p = tf.paragraphs[0]
     p.text = point.get("heading", "")
-    p.font.size = Pt(32)
+    p.font.size = Pt(36)
     p.font.bold = True
     p.font.color.rgb = _TEXT_WHITE
 
@@ -1103,7 +1103,7 @@ def _add_timeline_slide(prs: Presentation, point: dict, index: int):
         p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
         arrow = "➜" if i > 0 else "①"
         p.text = f"{arrow}  {bullet}"
-        p.font.size = Pt(20)
+        p.font.size = Pt(24)
         p.font.color.rgb = _TEXT_LIGHT
         p.space_after = Pt(14)
 
@@ -1121,7 +1121,7 @@ def _add_split_slide(prs: Presentation, point: dict, index: int):
     tf = txBox.text_frame
     p = tf.paragraphs[0]
     p.text = f"{index:02d}"
-    p.font.size = Pt(28)
+    p.font.size = Pt(32)
     p.font.bold = True
     p.font.color.rgb = _ACCENT
 
@@ -1132,7 +1132,7 @@ def _add_split_slide(prs: Presentation, point: dict, index: int):
     tf.word_wrap = True
     p = tf.paragraphs[0]
     p.text = point.get("heading", "")
-    p.font.size = Pt(28)
+    p.font.size = Pt(32)
     p.font.bold = True
     p.font.color.rgb = _TEXT_WHITE
 
@@ -1145,6 +1145,6 @@ def _add_split_slide(prs: Presentation, point: dict, index: int):
     for i, bullet in enumerate(bullets):
         p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
         p.text = f"• {bullet}"
-        p.font.size = Pt(20)
+        p.font.size = Pt(24)
         p.font.color.rgb = _TEXT_LIGHT
         p.space_after = Pt(12)
