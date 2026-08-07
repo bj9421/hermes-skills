@@ -38,6 +38,22 @@ On the RPi/Docker deployment, services run under these s6 supervision paths:
 
 ## Common Issues
 
+### 0. Version Upgrade Breaks Gateway/Dashboard (v0.20.0 on RPi4, 2026-08-07)
+
+**Symptom:** After upgrading to `v2026.8.3` (= v0.20.0 Herald), Telegram bot and dashboard both unreachable; user had to manually downgrade back to `v2026.7.30` (= v0.19.1).
+
+**Root Cause:** Not yet confirmed at Hermes level — the upgrade image failed to bring up gateway/dashboard on arm64. Known contributing facts:
+- `gateway` and `dashboard` are **independent s6-supervised services** — they are NOT tied to the container's main Cmd. Overriding Cmd to `sleep infinity` only idles `main-hermes`; gateway/dashboard still get started by s6. So "sleep infinity fixed connectivity" was a coincidence (s6 had started services that time).
+- Portainer `Duplicate/Edit` is mandatory for image-tag upgrades (Recreate keeps old image tag). `Failed renaming container` = old-container rename handoff failed; check for leftover `hermes-old-*` containers first.
+
+**Fix / Recovery:**
+1. Check actual version: `hermes --version` (must match expected tag; `docker ps` image column must show the new tag, not `latest`).
+2. Check process tree: `ps -ef --forest | head -30` — confirm `s6-svscan` is PID 1, and `s6-supervise gateway-default` + `s6-supervise dashboard` are running.
+3. Verify service health: `curl -s http://127.0.0.1:9119/` for dashboard; gateway logs at `/opt/data/logs/gateways/default/current`.
+4. If unreachable → **downgrade** to the last known-good image tag (v2026.7.30) via Portainer Duplicate/Edit, keeping all env/ports identical. Keep Cmd override `sleep infinity` ONLY if the downgrade also fails to connect without it (s6 services are independent of Cmd).
+
+**Prevention:** Before upgrading on RPi4 (arm64), confirm the new image tag actually starts gateway/dashboard on arm64 (check release notes/issues, or test on a staging container first). Never upgrade blind on the production container — 2026-08-07 nearly lost the assistant.
+
 ### 1. Dashboard Infinite Restart Loop
 
 **Symptom:** Dashboard CPU at 99%, port closed, `hermes dashboard` process repeatedly starts and dies.

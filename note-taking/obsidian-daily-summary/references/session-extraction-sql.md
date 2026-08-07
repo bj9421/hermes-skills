@@ -75,6 +75,43 @@ ORDER BY timestamp;
 ```
 第一段看「使用者問了什麼」、第二段看「做完了什麼」，兩者合併就能寫出完整日誌，不必看全部訊息。
 
+## 6. 中型 session（300-700 訊息）關鍵字探測 + 時間區間掃描（2026-08-07 日誌 cron 實測）
+
+head/tail 只給「主題 + 結局」，但日誌模板要填「重點決策 / 技術變動」，中段敘事必須撈。對 349-664 訊息的 session，一次 dump 中段會爆輸出，改用三階段：
+
+**第一階段：head/tail 定錨（同 section 2）**
+前 3 + 後 3 筆訊息 → 知道主題是什麼、最後做到哪。
+
+**第二階段：關鍵字探測找「決策與技術變動錨點」**
+針對該日主題先列出候選關鍵字（如 `刪除`、`修復`、`勾選`、`確認範圍`、`PPT`、`K2`、`升級`、`改名`、`同步`…），逐個跑 LIKE 查詢：
+```sql
+SELECT role, content, timestamp FROM messages
+WHERE session_id = ? AND content LIKE ?
+ORDER BY timestamp LIMIT 6;   -- 參數：'%刪除%'、'%修復%' 等
+```
+- 每個關鍵字 5-6 筆結果就足以定位「使用者做了什麼決定、改哪個檔案」
+- 命中訊息通常帶 diff 摘要（`+++ b/...py` 或「已修改」字樣）→ 直接抄進技術變動
+
+**第三階段：時間區間掃描重建敘事弧**
+錨點確定後，用 timestamp 區間把整段來龍去脈拉出來（例如找 19:09-19:50 的 PPT 重做流程）：
+```sql
+SELECT role, content, timestamp FROM messages
+WHERE session_id = ? AND timestamp >= ? AND timestamp <= ?
+ORDER BY timestamp ASC;
+```
+- 起訖用 `datetime(2026,8,7,19,9,tzinfo=TZ).timestamp()` 算
+- 一次撈 40-120 筆、每筆截 150-250 字即可，不必看全部
+
+**實測（2026-08-07，4 個 session 659/19/349/664 訊息）：**
+- session 1（02:20-05:31，659 訊息）：`勾選`/`修復` 探測抓到 checkbox 數量不符根因與 routes_notehub.py 修改；`刪除` 抓到 /notes 誤解事件全程
+- session 4（19:09-23:18，664 訊息）：`K2`/`PPT`/`改名`/`升級` 四個關鍵字 + 19:09-19:50、19:54-20:30、21:38-23:18 三個時間窗 → 完整重建 PPT 重做三版、emoji/字體修復、Syncthing `?` 檔名、v0.20 升級失敗敘事
+- 4 個 session 全部內容萃取約 15 次查詢完成，遠比 session_search scroll 快
+
+**其他實測注意：**
+- **首則 user 訊息可能是圖片描述**（`[The user sent an image~ Here's what I can see: ...]`），不是真正問題 → 主旨要靠關鍵字探測找，別直接拿第一則訊息當主題
+- **DB 有重複 user 訊息**（同一內容出現兩次，疑為 Telegram 轉送複製）→ 萃取時按 (時間, content 前 60 字) 去重
+- 時間窗掃描若跨到 [CONTEXT COMPACTION] 段（內容會重播），用「不重複的錨點」判斷，避免把重播當新進度
+
 ## 實測（2026-08-03 日誌 cron）
 - 863 訊息 session：user 33 筆、assistant 423、tool 452 → 一次 SQL 就看出對話主軸（18:36 停 → 20:05 查核表 → 02:24 cron 回覆 → 03:05 迭代次數 → 03:12 graphify 分析 → 04:30 排程 → 08:28 進度查詢）
 - 比 session_search scroll 10+ 次省下大量往返

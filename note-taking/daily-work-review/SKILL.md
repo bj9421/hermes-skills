@@ -45,6 +45,7 @@ trigger: 每日工作檢討、daily review、一日三省、工作檢討、反�
 保存到 `/opt/data/obsidian-vault/Holographic/每日檢討/YYYY-MM-DD-工作檢討.md`
 - `chmod -R 777 <報告路徑>`（手機 Sync 才看得到）
 - 回報使用者時附上完整檔案路徑
+- **先檢查今日報告是否已被 daily-review cron（22:00）產出**：若已存在，不要重寫一份造成重複 — 讀取既有報告 → 用 patch 補登新發現（例：2026-08-07 手動補登 command override 結論）→ 再 chmod 777
 
 ## 報告格式
 

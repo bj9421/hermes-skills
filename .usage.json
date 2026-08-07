@@ -407,26 +407,26 @@
     "created_at": "2026-07-22T00:56:59.271313+00:00",
     "created_by": null,
     "last_patched_at": "2026-08-02T15:58:08.930032+00:00",
-    "last_used_at": "2026-08-06T16:04:57.488300+00:00",
-    "last_viewed_at": "2026-08-06T16:04:57.459092+00:00",
+    "last_used_at": "2026-08-07T15:58:35.175887+00:00",
+    "last_viewed_at": "2026-08-07T15:58:35.147527+00:00",
     "patch_count": 1,
     "pinned": false,
     "state": "active",
-    "use_count": 10,
-    "view_count": 10
+    "use_count": 11,
+    "view_count": 11
   },
   "daily-work-review": {
     "archived_at": null,
     "created_at": "2026-08-06T07:20:44.370346+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-08-06T07:53:10.204896+00:00",
-    "last_used_at": "2026-08-07T01:02:33.852147+00:00",
-    "last_viewed_at": "2026-08-07T01:02:33.839357+00:00",
-    "patch_count": 1,
+    "last_patched_at": "2026-08-07T15:19:00.311164+00:00",
+    "last_used_at": "2026-08-07T15:18:55.116913+00:00",
+    "last_viewed_at": "2026-08-07T15:18:55.102921+00:00",
+    "patch_count": 2,
     "pinned": false,
     "state": "active",
-    "use_count": 3,
-    "view_count": 3
+    "use_count": 7,
+    "view_count": 6
   },
   "dashboard-web-debugging": {
     "archived_at": null,
@@ -1017,14 +1017,14 @@
     "archived_at": "2026-07-09T20:35:46.837005+00:00",
     "created_at": "2026-06-07T01:29:29.409845+00:00",
     "created_by": null,
-    "last_patched_at": "2026-07-15T03:22:58.290676+00:00",
-    "last_used_at": "2026-08-03T11:45:04.291864+00:00",
-    "last_viewed_at": "2026-08-03T11:45:04.262642+00:00",
-    "patch_count": 1,
+    "last_patched_at": "2026-08-07T15:12:08.644689+00:00",
+    "last_used_at": "2026-08-07T15:18:29.821896+00:00",
+    "last_viewed_at": "2026-08-07T15:18:29.792406+00:00",
+    "patch_count": 2,
     "pinned": false,
     "state": "archived",
-    "use_count": 15,
-    "view_count": 15
+    "use_count": 17,
+    "view_count": 17
   },
   "hermes-soul-config": {
     "archived_at": null,
@@ -1420,14 +1420,14 @@
     "archived_at": null,
     "created_at": "2026-07-16T12:44:25.471676+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-08-06T16:09:47.309699+00:00",
-    "last_used_at": "2026-08-06T16:07:46.005105+00:00",
-    "last_viewed_at": "2026-08-06T16:07:45.988273+00:00",
-    "patch_count": 34,
+    "last_patched_at": "2026-08-07T15:59:43.928364+00:00",
+    "last_used_at": "2026-08-07T15:59:32.447835+00:00",
+    "last_viewed_at": "2026-08-07T15:59:32.433881+00:00",
+    "patch_count": 36,
     "pinned": false,
     "state": "active",
-    "use_count": 32,
-    "view_count": 32
+    "use_count": 35,
+    "view_count": 35
   },
   "obsidian-vault-cleanup": {
     "archived_at": null,
