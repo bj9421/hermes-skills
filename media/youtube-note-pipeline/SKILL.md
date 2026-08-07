@@ -72,6 +72,8 @@ with open('/opt/data/.env') as f:
 - `scripts/ppt_preview_color.py` — 彩色 PPT 預覽渲染器（PPTX→HTML→Playwright 截圖，emoji 彩色）。交付 .pptx 前跑這個，取代單色 `ppt_preview_render.py`（見 pitfall 65）
 - `references/playwright-mobile-verify.md` — Playwright 手機模式 UI 驗證 recipe（2026-08-06）：插測試 job → iPhone 13 viewport → DOM 驗證 → 截圖 → vision 確認 5 步流程，含 selector 坑（`.nh-checks` 非 `.nh-artifacts`）與可複製的 verify 腳本範本（/opt/data/tmp/verify_v15_merge_card.js、verify_v16_progress.js）
 - `references/script-quality-scan-and-rebuild.md` — 口播 script.md 品質掃描 + 批量重建（2026-08-07）：**空行分段偵測**（連續行合併會誤判 20/22 → 正確只有 5 個）、標點密度 <5/100 字 = raw transcript 特徵、從 raw.md 直接 `produce_podcast()` 重建不需重新下載/轉寫（單支 100-230s）。使用者要求「刪掉無分段舊檔重作」時先看這份
+- `references/script-quality-verification.md` — 口播腳本重寫率驗證 SOP（2026-08-08）：substring 覆蓋率 + 句子層級照抄率雙重指標、判讀準則、重跑方法、2026-08-08 實測數據（開源全史/死後旅程/理解能力）、口語稿 vs 逐字稿差異
+- `references/opencc-s2twp-trap.md` — OpenCC s2twp 錯誤使用模式（2026-08-08）：**不要 zip 逐字比對**，會全毀檔案；正確用法是直接替換 + over-conversion fixes
 - `references/cjk-font-rendering.md` — CJK 字型渲染：**Pillow 圖卡（visual_gen.py）**：芫荽 iansui 主字型/Noto Sans SC fallback/emoji 用 NotoEmoji（彩色版 Pillow 不能渲染）+ **python-pptx 中文字型坑（font.name 只設 Latin，需 a:ea 屬性）**
 
 ## ✅ UI 自我驗證 SOP（2026-08-06 使用者要求）

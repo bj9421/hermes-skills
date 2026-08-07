@@ -2044,14 +2044,14 @@
     "archived_at": null,
     "created_at": "2026-07-07T04:37:44.994692+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-08-07T20:44:55.689655+00:00",
-    "last_used_at": "2026-08-07T20:48:11.761258+00:00",
-    "last_viewed_at": "2026-08-07T20:48:11.747090+00:00",
-    "patch_count": 226,
+    "last_patched_at": "2026-08-07T21:04:36.257197+00:00",
+    "last_used_at": "2026-08-07T21:03:28.016479+00:00",
+    "last_viewed_at": "2026-08-07T21:03:28.002618+00:00",
+    "patch_count": 229,
     "pinned": false,
     "state": "active",
-    "use_count": 204,
-    "view_count": 204
+    "use_count": 206,
+    "view_count": 206
   },
   "yuanbao": {
     "archived_at": null,
