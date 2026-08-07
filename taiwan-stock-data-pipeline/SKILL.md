@@ -31,6 +31,7 @@ metadata:
 | **OHLC 協定** | `references/ohlc-verify-protocol.md`（架構、bug 記錄、已知限制） |
 | **全量比對記錄** | `references/ohlc-full-run-2026-07-24.md`（2026-07-24 實測：1925 檔 matched=774, mismatched=1146, errors=5） |
 | **全量比對記錄** | `references/ohlc-full-run-2026-07-28.md`（2026-07-28 實測：1925 檔 matched=1890, mismatched=30, errors=5, deviation=0） |
+| **全量比對記錄** | `references/ohlc-full-run-2026-08-08.md`（2026-08-08 實測：1925 檔 matched=1889, mismatched=29, errors=7, deviation=0；5236 連兩次全量管線遺漏） |
 | **Missing Data 調查** | `references/ohlc-missing-data-investigation-2026-07-24.md`（1146 missing_data 根因分析：timing race condition + screen_cache.date mismatch） |
 | **查詢優化** | `references/daily-prices-query-optimization.md`（固定日期 join → 229× 加速）|
 | **API 測試** | `scripts/test_twse_openapi.py`、`scripts/test_tdcc_openapi.py`、`scripts/test_tpex_openapi.py`（端點可用性驗證）|
@@ -358,6 +359,9 @@ LLM-driven cron prompt 的執行指令，優先寫 `source <venv>/bin/activate &
 - **sporadic `api_fetch_failed` 若 < 10 筆：** 通常是已下市股（1591, 3426, 4130, 4804, 4987, 6806 等）未自 screen_cache 清除，非真實異常。yfinance API 回傳 HTTP 404 + "possibly delisted" 警告但程式會容錯繼續跑。
 - **2026-07-25 全量實測結果：** 1925 檔中 matched=1891, mismatched=27, errors=7。mismatched 全部為 missing_data（DB close=null），零筆實際價格偏差。7 筆 errors 為已下市股。覆蓋率從 40.2% 提升至 98.2%。
 - **2026-07-28 全量實測結果（07-29 執行）：** 1925 檔中 matched=1890, mismatched=30, errors=5，Deviation>1%=0。連續 4 次 FULL 比對皆為 0 實際偏差。27 支 both_missing + 3 支 db_only_missing（5236 凌陽資料缺口值得關注）+ 5 支 api_fetch_failed（已下市股）。執行耗時約 76 分鐘。
+- **2026-08-08 全量實測結果（08-07 交易日）：** 1925 檔中 matched=1889, mismatched=29, errors=7，Deviation=0。**連續 5 次 FULL 比對皆為 0 實際偏差。** 28 支 close=null（暫停交易）+ 1 支 no_row（**5236 凌陽連兩次全量出現，管線遺漏持續**）+ 7 支 api_fetch_failed（**5904 為新面孔**，yfinance 回報 possibly delisted；其餘 6 支為已知已下市股）。執行耗時約 80 分鐘。
+- **⚠️ 腳本旗標：** `verify_daily_prices.py` **只支援 `--full`**，沒有 `--all-dates`（2026-08-08 cron prompt 帶了 `--all-dates` → `error: unrecognized arguments`）。比對目標日期固定為「昨日」（`get_yesterday()`），無法指定其他日期。全量正確指令：`cd /opt/data/projects/taiwan-stock-cashflow-api && PATH=/opt/data/.venv/bin:$PATH python -u screening/verify_daily_prices.py --full`（此 PATH 前綴形式在 cron session 實測可行，未觸發 lifecycle guard）。
+- **⚠️ cron session 跑 FULL（38–80 分鐘）的等候技巧：** cron 一次性 session 拿不到 `notify_on_complete`（回 unsupported），`process wait` 也被 clamp 到 60s。實測可行：`terminal(background=true)` 啟動 → `for i in $(seq 1 10); do kill -0 <PID> || echo DONE; sleep 55; done` 輪詢 → 結束後 `process log` 取尾輸出。⚠️ `kill -0` 的 PID 是 bash wrapper（如 1931），真正在跑的是 python 子程序（`ps -eo pid,etime,time,%cpu,cmd | grep verify_daily_prices` 找 child PID，確認 %CPU 有在吃 = 沒卡死）。
 - **異常詳細分類（2026-07-25）：**
   - **API 取得失敗 (7 支)：** `1459, 1589, 3426, 4130, 4804, 4987, 6806` — twstock + yfinance 均無法取得資料，多為已下市或停止交易股
   - **資料缺失 (20 支)：** `2035, 2937, 3064, 3067, 3085, 3158, 3226, 3531, 3664, 4183, 4305, 4406, 5520, 6171, 6210, 6228, 6236, 6242, 6856, 6865, 7743, 7782, 8342, 8477, 8905, 8923` — DB close=null，twstock 也回傳 null（可能為新上市尚未有完整交易資料）
