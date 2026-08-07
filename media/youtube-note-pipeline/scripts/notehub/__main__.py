@@ -190,6 +190,10 @@ def main():
     if "--voice-b" in pipeline_args:
         idx = pipeline_args.index("--voice-b")
         voice_b = resolve_voice(pipeline_args[idx + 1] if idx + 1 < len(pipeline_args) else None)
+    ppt_scheme = "dark"
+    if "--ppt-scheme" in pipeline_args:
+        idx = pipeline_args.index("--ppt-scheme")
+        ppt_scheme = pipeline_args[idx + 1] if idx + 1 < len(pipeline_args) else "dark"
 
     # Auto-detect voice shortcuts from remaining args (e.g. notehub file 台女)
     if not voice_a:
@@ -208,6 +212,7 @@ def main():
         lang=lang,
         voice_a=voice_a,
         voice_b=voice_b,
+        ppt_scheme=ppt_scheme,
     )
     print(f"\nOutput: {out_dir}")
 

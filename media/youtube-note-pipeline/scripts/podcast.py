@@ -12,6 +12,7 @@ Usage (imported by yt2md_pipeline.py):
 """
 
 import os
+import re
 import sys
 import time
 import asyncio
@@ -180,21 +181,23 @@ def _translate_title(title: str, target_lang: str) -> str | None:
     """Translate a video title to the target language via LLM (with retry + fallback)."""
     import time
     
-    # ⚠️ 2026-07-31 使用者指示：優先使用免費穩定模型（OpenCode Zen）
+    # ⚠️ 2026-08-07 修正：改用 call_llm（Zen→AGNES→Groq fallback 鏈），
+    # 原本只用 call_zen — Zen 429 時標題翻譯直接失敗（同 _generate_script 問題）。
     try:
-        from notehub.core.llm import call_zen
+        from notehub.core.llm import call_llm
     except ImportError:
-        call_zen = None
+        call_llm = None
     lang_name = _LANG_NAMES.get(target_lang, target_lang)
-    if call_zen:
-        zen = call_zen(
+    if call_llm:
+        result = call_llm(
             [{"role": "system", "content": "你是翻譯專家。只翻譯標題，不加任何解釋、引號或額外文字。"},
              {"role": "user", "content": f"將以下標題翻譯成{lang_name}，直接輸出翻譯結果：\n\n{title}"}],
+            max_tokens=0,
             temperature=0.3)
-        if zen:
-            return zen.strip().strip('"').strip("'").strip("《》")
+        if result:
+            return result.strip().strip('"').strip("'").strip("《》")
         # ⚠️ 2026-07-31 使用者指示：LLM 一律不用 NVIDIA（NVIDIA 僅供 Whisper）
-        print("[WARN] Zen title translate failed — 依使用者指示不 fallback NVIDIA，回傳 None", file=sys.stderr)
+        print("[WARN] Title translate failed (all LLM providers) — 依使用者指示不 fallback NVIDIA，回傳 None", file=sys.stderr)
         return None
     return None
 
@@ -203,7 +206,7 @@ def _translate_title(title: str, target_lang: str) -> str | None:
 # Script Generation
 # ---------------------------------------------------------------------------
 def _generate_script(transcript: str, title: str, mode: str, target_lang: str) -> str | None:
-    """Generate podcast script via NVIDIA LLM.
+    """Generate podcast script via LLM (Zen→AGNES→Groq fallback chain).
 
     Args:
         transcript: raw transcript text
@@ -213,11 +216,6 @@ def _generate_script(transcript: str, title: str, mode: str, target_lang: str) -
     Returns:
         script text or None on failure
     """
-    client = _get_llm_client()
-    if not client:
-        print("[WARN] No NVIDIA API key — cannot generate podcast script", file=sys.stderr)
-        return None
-
     # Language instruction
     if target_lang == "auto":
         lang_instruction = "跟隨逐字稿的語言"
@@ -231,21 +229,25 @@ def _generate_script(transcript: str, title: str, mode: str, target_lang: str) -
     template = _DUAL_PROMPT if mode == "dual" else _SOLO_PROMPT
     prompt = template.format(lang_instruction=lang_instruction) + transcript
 
-    # ⚠️ 2026-07-31 使用者指示：優先使用免費穩定模型（OpenCode Zen）
+    # ⚠️ 2026-08-07 修正：改用 call_llm（Zen→AGNES→Groq fallback 鏈），
+    # 原本只用 call_zen — Zen 429 就直接降級成 raw transcript（無分段無標點）。
+    # max_tokens=0（不帶）— deepseek-v4-flash 是 reasoning 模型，設 max_tokens
+    # 會被思考過程吃光 → content 空（同 ppt_gen.py / visual_gen.py 做法）。
     try:
-        from notehub.core.llm import call_zen
+        from notehub.core.llm import call_llm
     except ImportError:
-        call_zen = None
-    if call_zen:
-        print(f"[INFO] Generating {mode} podcast script via Zen (deepseek-v4-flash-free)...", file=sys.stderr)
-        zen = call_zen(
+        call_llm = None
+    if call_llm:
+        print(f"[INFO] Generating {mode} podcast script via Zen→AGNES→Groq (call_llm)...", file=sys.stderr)
+        result = call_llm(
             [{"role": "system", "content": "你是專業的播客腳本編寫者，擅長將逐字稿轉化為自然流暢的口播腳本。嚴格禁止重複相同或相似的段落，每個論點只講一次。"},
              {"role": "user", "content": prompt}],
+            max_tokens=0,
             temperature=0.7)
-        if zen:
-            return _dedup_script(zen.strip())
+        if result:
+            return _dedup_script(result.strip())
         # ⚠️ 2026-07-31 使用者指示：LLM 一律不用 NVIDIA（NVIDIA 僅供 Whisper）
-        print("[WARN] Zen script generation failed — 依使用者指示不 fallback NVIDIA，回傳 None", file=sys.stderr)
+        print("[WARN] Script generation failed (all LLM providers) — 依使用者指示不 fallback NVIDIA，回傳 None", file=sys.stderr)
         return None
     return None
 
@@ -377,7 +379,12 @@ def _parse_dual_script(script: str) -> list[tuple[str, str]]:
 
 
 def _parse_solo_script(script: str) -> list[str]:
-    """Parse solo script into paragraphs (non-empty lines)."""
+    """Parse solo script into paragraphs (non-empty lines).
+
+    🔴 2026-08-07 FIX: 過濾掉 markdown 分隔線（---/***）與過短段落（<5 字）。
+    原因：LLM 偶爾在腳本中間插入「---」分隔線，被當成 TTS 段落後
+    edge_tts 對過短輸入回傳 "No audio was received"（同 _split_long_text FIX）。
+    """
     paragraphs = []
     current = []
     for line in script.split("\n"):
@@ -387,9 +394,14 @@ def _parse_solo_script(script: str) -> list[str]:
                 paragraphs.append(" ".join(current))
                 current = []
         else:
+            # 跳過 markdown 分隔線（---、***、___）
+            if re.match(r'^[-*_]{3,}$', line):
+                continue
             current.append(line)
     if current:
         paragraphs.append(" ".join(current))
+    # 🔴 2026-08-07 FIX: 過濾 <5 字的無效段落（edge_tts 會失敗）
+    paragraphs = [p for p in paragraphs if len(p.strip()) >= 5]
     return paragraphs
 
 

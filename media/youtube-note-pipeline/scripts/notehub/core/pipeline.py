@@ -195,7 +195,8 @@ def _organize_content(text: str, title: str = "") -> str | None:
 
 def _generate_outputs(source: str, title: str, content_for_gen: str, out_dir: str,
                       podcast: str | None, ppt: bool, visual: bool,
-                      lang: str, voice_a: str | None, voice_b: str | None):
+                      lang: str, voice_a: str | None, voice_b: str | None,
+                      ppt_scheme: str = "dark"):
     """步驟 7-9：產出（口播/PPT/圖卡）+ 繁中轉換 + chmod。正常流程與 script 重用共用。"""
     script_path = None
     podcast_out_dir = None
@@ -237,7 +238,7 @@ def _generate_outputs(source: str, title: str, content_for_gen: str, out_dir: st
             from ..generators.ppt import generate_ppt
             # ⚠️ 2026-08-06：必須用 keyword — generate_ppt(script, title, lang, out_dir)
             # 舊 code 傳 positional 第三參數 → out_dir 被當 lang → PPT 存到 cwd！
-            ppt_out = generate_ppt(content_for_gen, title, lang=lang, out_dir=out_dir, scheme=job.get('ppt_scheme', 'dark'))
+            ppt_out = generate_ppt(content_for_gen, title, lang=lang, out_dir=out_dir, scheme=ppt_scheme)
             print(f"[INFO] PPT generated: {ppt_out}", file=sys.stderr)
         except Exception as e:
             print(f"[ERROR] PPT failed: {e}", file=sys.stderr)
@@ -267,7 +268,8 @@ def _generate_outputs(source: str, title: str, content_for_gen: str, out_dir: st
 
 def run_pipeline(source: str, organize: bool = False,
                  podcast: str = None, ppt: bool = False, visual: bool = False,
-                 lang: str = "auto", voice_a: str = None, voice_b: str = None):
+                 lang: str = "auto", voice_a: str = None, voice_b: str = None,
+                 ppt_scheme: str = "dark"):
     """Run the unified pipeline.
 
     Args:
@@ -279,6 +281,7 @@ def run_pipeline(source: str, organize: bool = False,
         lang: Target language for translation ("auto", "zh", "en", etc.)
         voice_a: TTS voice for host A
         voice_b: TTS voice for host B
+        ppt_scheme: PPT color scheme (dark/blue/green/light)
     """
     today = date.today().strftime("%Y-%m-%d")
 
@@ -294,7 +297,8 @@ def run_pipeline(source: str, organize: bool = False,
         print(f"[INFO] Script reused: {title} ({len(script_content)} chars)", file=sys.stderr)
         _generate_outputs(source, title, script_content, out_dir,
                           podcast=podcast, ppt=ppt, visual=visual,
-                          lang=lang, voice_a=voice_a, voice_b=voice_b)
+                          lang=lang, voice_a=voice_a, voice_b=voice_b,
+                          ppt_scheme=ppt_scheme)
         print(f"\n✅ Pipeline complete! Output: {out_dir}", file=sys.stderr)
         return out_dir
 
@@ -361,7 +365,8 @@ def run_pipeline(source: str, organize: bool = False,
     content_for_gen = organized or result.text
     _generate_outputs(source, title, content_for_gen, out_dir,
                       podcast=podcast, ppt=ppt, visual=visual,
-                      lang=lang, voice_a=voice_a, voice_b=voice_b)
+                      lang=lang, voice_a=voice_a, voice_b=voice_b,
+                      ppt_scheme=ppt_scheme)
 
     print(f"\n✅ Pipeline complete! Output: {out_dir}", file=sys.stderr)
     return out_dir
