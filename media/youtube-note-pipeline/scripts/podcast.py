@@ -610,7 +610,8 @@ tags: [podcast, 口播]
 
         # Step 3: Merge
         safe_title = _sanitize(dir_title)
-        mp3_path = os.path.join(out_dir, f"{safe_title}_podcast.mp3")
+        _length_suffix = {"short": "_短", "medium": "_中", "long": "_长"}.get(length, "_长")
+        mp3_path = os.path.join(out_dir, f"{safe_title}_podcast{_length_suffix}.mp3")
         _merge_audio(segment_files, mp3_path)
         os.chmod(mp3_path, 0o777)
         os.chmod(out_dir, 0o777)
