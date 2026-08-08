@@ -1382,13 +1382,13 @@
     "created_at": "2026-07-26T11:18:34.023059+00:00",
     "created_by": null,
     "last_patched_at": null,
-    "last_used_at": "2026-07-29T18:42:16.560274+00:00",
-    "last_viewed_at": "2026-07-29T18:42:16.546845+00:00",
+    "last_used_at": "2026-08-08T04:51:19.931818+00:00",
+    "last_viewed_at": "2026-08-08T04:51:19.918515+00:00",
     "patch_count": 0,
     "pinned": false,
     "state": "active",
-    "use_count": 20,
-    "view_count": 20
+    "use_count": 21,
+    "view_count": 21
   },
   "notion": {
     "archived_at": null,
@@ -2045,13 +2045,13 @@
     "created_at": "2026-07-07T04:37:44.994692+00:00",
     "created_by": "agent",
     "last_patched_at": "2026-08-07T21:04:36.257197+00:00",
-    "last_used_at": "2026-08-07T21:03:28.016479+00:00",
-    "last_viewed_at": "2026-08-07T21:03:28.002618+00:00",
+    "last_used_at": "2026-08-08T04:51:19.896291+00:00",
+    "last_viewed_at": "2026-08-08T04:51:19.882216+00:00",
     "patch_count": 229,
     "pinned": false,
     "state": "active",
-    "use_count": 206,
-    "view_count": 206
+    "use_count": 207,
+    "view_count": 207
   },
   "yuanbao": {
     "archived_at": null,
