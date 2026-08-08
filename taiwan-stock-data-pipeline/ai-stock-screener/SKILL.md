@@ -300,6 +300,7 @@ const data = res.data;                 // 已解析完成，不需 await .json()
     完整開發經驗紀錄：`references/canvas-treemap-lessons.md`
 
 11. **專案路徑混淆（已多次踩坑）**：此專案位於 **`/opt/data/projects/taiwan-stock-cashflow-api/`**，但舊文件、看門狗腳本、以及部分 cron 設定曾指向不存在的 `/opt/data/taiwan-stock-cashflow-api/`（僅有過時的 `screening/` 子目錄）。此外，`/opt/data/archive_ai_stock_tw/` 也包含一份完整的 Flask app 副本（含 `app.py`、`start_server.py`、`restart_server.py`），該路徑曾有 cron/service 從此啟動。若服務無法啟動，第一步先確認 `app.py` 實際存在於哪個目錄、以及 `.venv/` 是否在對應目錄中。看門狗腳本 `scripts/taiwan-stock-cashflow-watchdog.py` 已於 2026-07-13 修復路徑。
+    - **具體實例（2026-08-08 修復）**：`screening/auto_screen_and_notify.py` 內硬編碼結果保存路徑為 `/opt/data/taiwan-stock-cashflow-api/screening/latest_results.json`（少 `projects/`），導致 cron 指定的 `/opt/data/projects/.../latest_results.json` 一直是舊檔。檢查 cron 指定路徑的檔案時先看 mtime 是否為當日；已修正為含 `projects/` 的正確路徑（第 336 行保存 + 第 350 行提示訊息）。
 
 12. **gunicorn worker 崩潰：numpy cross-venv 路徑問題**（2026-07-13 發現並修復）
     **症狀：** 啟動 gunicorn 後 worker 立即 crash，log 顯示 `ImportError: Unable to import required dependency numpy`，但用 `.venv/bin/python3 -c "import numpy"` 測試卻正常載入。

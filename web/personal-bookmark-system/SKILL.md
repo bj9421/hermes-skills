@@ -256,6 +256,8 @@ if (openDetails.size > 0) {
 
 **🔴 Pitfall：kill server 要殺 python 本體不是 bash wrapper** — background process 是 `bash -lic ... python app.py`，`kill <bash_pid>` 只殺 wrapper，真正 server（子 python pid）還佔 port → 新 server `Address already in use`，curl 連到舊 code（測試全失敗以為 bug 沒修好）。診斷：`ss -tlnp | grep 5001` 找真正 pid；`ps aux | grep app.py` 看父子關係。
 
+**v15.3（2026-08-08，commit `f4fbc55`）：標籤與 radio 分列兩行** — 每個設定項（PPT 配色、口播長度）的標籤單獨一行，radio 另起一行，按鈕獨立一行。避免排版擠在一起。
+
 **驗證**：Playwright 手機模式（iPhone 13）→ 勾書籤 → 送 notehub → 口播長度 3 radio 存在 + 預設 long ✅ → 切 short/medium 送出 → API 200 + job 87 length 更新 ✅（合併進既有 job）→ worker 增量重跑秒完成 status 回 done ✅。測試後記得還原被合併 job 的 length（測試副作用）。DB/API 測試：urllib POST queue/synthesize 帶 length 驗證 + DELETE 清理。
 
 **⚠️ 重啟前檢查**：`GET /api/notehub/jobs` 確認 pending=0 再重啟（v12.1 血淚紀律，見下方段落）。
