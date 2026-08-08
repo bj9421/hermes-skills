@@ -537,6 +537,8 @@ def produce_podcast(
             folder_name = safe_title
         out_dir = os.path.join(obsidian_base, PODCAST_SUBDIR, folder_name)
     os.makedirs(out_dir, exist_ok=True)
+    # Store safe_title for consistent use in MP3 path
+    mp3_safe_title = _sanitize(dir_title)
 
     # Step 1: Generate script
     # ⚠️ 2026-07-31 使用者指示：口播腳本用免費模型（OpenCode Zen）生成
@@ -609,9 +611,8 @@ tags: [podcast, 口播]
             return None
 
         # Step 3: Merge
-        safe_title = _sanitize(dir_title)
         _length_suffix = {"short": "_短", "medium": "_中", "long": "_長"}.get(length, "_長")
-        mp3_path = os.path.join(out_dir, f"{safe_title}_podcast{_length_suffix}.mp3")
+        mp3_path = os.path.join(out_dir, f"{mp3_safe_title}_podcast{_length_suffix}.mp3")
         _merge_audio(segment_files, mp3_path)
         os.chmod(mp3_path, 0o777)
         os.chmod(out_dir, 0o777)
