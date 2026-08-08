@@ -241,7 +241,26 @@ if (openDetails.size > 0) {
 
 **⚠️ waitress template 快取實證（v13 驗證踩到）**：改完 `templates/index.html` + `style.css` 後**沒重啟 server** 就 curl/Playwright — CSS 靜態檔立即生效（`.nh-bar-slide` animation ✅）但 **HTML template 在 Flask/Jinja 記憶體快取 → footer 還是 v12**。診斷：`curl / | grep -o 'bookmark-manager <b>v[0-9]*</b>'` 看 server 真回什麼；檔案已 v13 但 curl v12 = template 快取，重啟才生效。**決策：若 server 有使用者真實 job 在跑，寧可等 job 完成再重啟**（waitress 重啟會 kill 子進程 → 使用者 job 重跑）。等待 pattern：background process 迴圈查 DB status（`SELECT status FROM notehub_jobs WHERE id=N`，非 running/queued 即 break）+ notify_on_complete=true → 完成通知後才重啟。
 
-**🔴 測試重啟 server 會打斷使用者的真實 job（v12.1 血淚，本次 session 打斷 2 次）**：測試改前端需要重啟 server 套新 HTML，但 waitress 重啟 = kill 所有 notehub subprocess = **使用者正在跑的 job 被標 failed/重跑**。紀律：**重啟前先 `GET /api/notehub/jobs` 確認 pending=0**；有 running 就等（背景監控）或先告知使用者。使用者 08:51 送的 job 被測試重啟打斷多次 → 16:59 回報「卡住了嗎」— 這是我們造成的延誤，不是系統問題。
+### 🔴 v15（2026-08-08，commit `4b5dd3b`）：口播長度三檔（短/中/長）
+
+**功能**：notehub 配置表格新增「🎙️ 口播長度」radio（短約5分/中約10分/長約20分預設），對應 podcast.py `--length` 參數（三檔字數 1,500-1,800/3,000-3,500/6,000-7,000，詳見 youtube-note-pipeline SKILL pitfall 69）。
+
+**五層改動**：
+1. `schema.sql` + `db.py` migration：`notehub_jobs` 加 `length TEXT DEFAULT 'long'`
+2. `create_notehub_jobs` / `create_synthesis_job` 支援 `length` 參數
+3. `routes_notehub.py`：queue 從 **item** 取 `it.get('length')` / `it.get('ppt_scheme')`；synthesize 從頂層 `data.get('length')`；合併邏輯 `new_length = it.get('length') or existing['length'] or 'long'`（新請求明確指定才覆蓋）
+4. `templates/index.html`：`.nh-scheme-row` 加口播長度 radio + JS `items.push` 帶 `length`（synthesize body 同）
+5. `static/style.css`：`.nh-scheme-row` flex 樣式（**v15 新增，原本不存在 — PPT 配色列一直缺樣式，靠內建 label 排排站，加了才不會擠**）
+
+**🔴 Pitfall：queue 的 per-item 欄位要用 `it.get()` 不是 `data.get()`** — 前端 `submitNotehubQueue` 送 `{items: [...]}`，length/ppt_scheme 在**每個 item 內**；routes 若寫 `data.get('length', 'long')` 從頂層拿 → 永遠 fallback 預設值（本輪實測 job 90 length 一直 long 才發現；**ppt_scheme 同源 bug 一起修好** — 之前 PPT 配色 UI 其實從未生效，永遠 dark）。synthesize 送頂層（`{ids, voice_a, ..., length}`）→ 用 `data.get()` 正確。
+
+**🔴 Pitfall：kill server 要殺 python 本體不是 bash wrapper** — background process 是 `bash -lic ... python app.py`，`kill <bash_pid>` 只殺 wrapper，真正 server（子 python pid）還佔 port → 新 server `Address already in use`，curl 連到舊 code（測試全失敗以為 bug 沒修好）。診斷：`ss -tlnp | grep 5001` 找真正 pid；`ps aux | grep app.py` 看父子關係。
+
+**驗證**：Playwright 手機模式（iPhone 13）→ 勾書籤 → 送 notehub → 口播長度 3 radio 存在 + 預設 long ✅ → 切 short/medium 送出 → API 200 + job 87 length 更新 ✅（合併進既有 job）→ worker 增量重跑秒完成 status 回 done ✅。測試後記得還原被合併 job 的 length（測試副作用）。DB/API 測試：urllib POST queue/synthesize 帶 length 驗證 + DELETE 清理。
+
+**⚠️ 重啟前檢查**：`GET /api/notehub/jobs` 確認 pending=0 再重啟（v12.1 血淚紀律，見下方段落）。
+
+**🔴 測試重啟 server 會打斷使用者的真實 job（v12.1 血淚，曾打斷 2 次）**：測試改前端需要重啟 server 套新 HTML，但 waitress 重啟 = kill 所有 notehub subprocess = **使用者正在跑的 job 被標 failed/重跑**。紀律：**重啟前先 `GET /api/notehub/jobs` 確認 pending=0**；有 running 就等（背景監控）或先告知使用者。使用者 08:51 送的 job 被測試重啟打斷多次 → 16:59 回報「卡住了嗎」— 這是我們造成的延誤，不是系統問題。
 
 ### 🔴 v15 / 方案 1（2026-08-06，commit `12cb90a`）：重送合併原卡不開新卡 + 檔案路徑含 PPT/圖卡
 
