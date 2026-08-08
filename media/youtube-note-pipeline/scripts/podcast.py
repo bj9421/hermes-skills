@@ -415,8 +415,31 @@ def _parse_dual_script(script: str) -> list[tuple[str, str]]:
     return segments
 
 
+def _strip_frontmatter(script: str) -> str:
+    """Remove YAML frontmatter (--- ... ---) from script content.
+
+    Frontmatter contains metadata (created, source, mode, language, tags)
+    that should NOT be spoken by TTS.
+    """
+    lines = script.split("\n")
+    if not lines or not lines[0].strip().startswith("---"):
+        return script
+    # Find the closing ---
+    end_idx = None
+    for i, line in enumerate(lines[1:], 1):
+        if line.strip() == "---":
+            end_idx = i
+            break
+    if end_idx is None:
+        return script
+    return "\n".join(lines[end_idx + 1:])
+
+
 def _parse_solo_script(script: str) -> list[str]:
     """Parse solo script into paragraphs (non-empty lines).
+
+    Skips frontmatter metadata (created, source, mode, language, tags, etc.)
+    and only reads the actual script content.
 
     🔴 2026-08-07 FIX: 過濾掉 markdown 分隔線（---/***）與過短段落（<5 字）。
     原因：LLM 偶爾在腳本中間插入「---」分隔線，被當成 TTS 段落後
@@ -576,7 +599,8 @@ tags: [podcast, 口播]
         segment_files = []
 
         if mode == "solo":
-            paragraphs = _parse_solo_script(script)
+            script_clean = _strip_frontmatter(script)
+            paragraphs = _parse_solo_script(script_clean)
             print(f"[INFO] Generating {len(paragraphs)} TTS segments (solo, voice={voice_a})...", file=sys.stderr)
             for i, para in enumerate(paragraphs):
                 if not para.strip():
