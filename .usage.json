@@ -420,13 +420,13 @@
     "created_at": "2026-08-06T07:20:44.370346+00:00",
     "created_by": "agent",
     "last_patched_at": "2026-08-07T15:19:00.311164+00:00",
-    "last_used_at": "2026-08-07T15:18:55.116913+00:00",
-    "last_viewed_at": "2026-08-07T15:18:55.102921+00:00",
+    "last_used_at": "2026-08-08T14:00:22.939350+00:00",
+    "last_viewed_at": "2026-08-08T14:00:22.926414+00:00",
     "patch_count": 2,
     "pinned": false,
     "state": "active",
-    "use_count": 7,
-    "view_count": 6
+    "use_count": 9,
+    "view_count": 7
   },
   "dashboard-web-debugging": {
     "archived_at": null,
