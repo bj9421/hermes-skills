@@ -440,11 +440,30 @@ def _parse_solo_script(script: str) -> list[str]:
 
     Skips frontmatter metadata (created, source, mode, language, tags, etc.)
     and only reads the actual script content.
+    也過濾掉 markdown 語法行（# 標題、> 引用、* 列表）。
 
     🔴 2026-08-07 FIX: 過濾掉 markdown 分隔線（---/***）與過短段落（<5 字）。
     原因：LLM 偶爾在腳本中間插入「---」分隔線，被當成 TTS 段落後
     edge_tts 對過短輸入回傳 "No audio was received"（同 _split_long_text FIX）。
     """
+    paragraphs = []
+    current = []
+    for line in script.split("\n"):
+        line = line.strip()
+        if not line:
+            if current:
+                paragraphs.append(" ".join(current))
+                current = []
+        else:
+            # 跳過 markdown 分隔線（---、***、___）
+            if re.match(r'^[-*_]{3,}$', line):
+                continue
+            # 跳過 markdown 標題（#）、引用（>）、列表（*）
+            if line.startswith('#') or line.startswith('>') or line.startswith('*'):
+                continue
+            current.append(line)
+    if current:
+        paragraphs.append(" ".join(current))
     paragraphs = []
     current = []
     for line in script.split("\n"):
