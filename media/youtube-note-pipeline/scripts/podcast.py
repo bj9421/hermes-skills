@@ -464,21 +464,6 @@ def _parse_solo_script(script: str) -> list[str]:
             current.append(line)
     if current:
         paragraphs.append(" ".join(current))
-    paragraphs = []
-    current = []
-    for line in script.split("\n"):
-        line = line.strip()
-        if not line:
-            if current:
-                paragraphs.append(" ".join(current))
-                current = []
-        else:
-            # 跳過 markdown 分隔線（---、***、___）
-            if re.match(r'^[-*_]{3,}$', line):
-                continue
-            current.append(line)
-    if current:
-        paragraphs.append(" ".join(current))
     # 🔴 2026-08-07 FIX: 過濾 <5 字的無效段落（edge_tts 會失敗）
     paragraphs = [p for p in paragraphs if len(p.strip()) >= 5]
     return paragraphs
