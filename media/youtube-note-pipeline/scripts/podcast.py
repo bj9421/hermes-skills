@@ -623,5 +623,5 @@ tags: [podcast, 口播]
 def _sanitize(s: str) -> str:
     """Sanitize string for use as filename."""
     import re
-    s = re.sub(r'[<>:"/\\|?*]', "_", s)
+    s = re.sub(r'[<>:"/\|?*？]', "_", s)  # 含半形 ? 與全形 ？
     return s[:120]
