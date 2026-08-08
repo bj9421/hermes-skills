@@ -102,7 +102,7 @@ def main():
                 skip_next = False
                 continue
             if a.startswith("--"):
-                skip_next = a in ('--lang', '--podcast', '--voice-a', '--voice-b')
+                skip_next = a in ('--lang', '--podcast', '--voice-a', '--voice-b', '--length')
                 continue
             sources.append(a)
         if len(sources) < 2:
@@ -129,6 +129,13 @@ def main():
         if "--voice-b" in synth_args:
             vi = synth_args.index("--voice-b")
             voice_b = resolve_voice(synth_args[vi + 1] if vi + 1 < len(synth_args) else None)
+        podcast_length = "long"
+        if "--length" in synth_args:
+            li = synth_args.index("--length")
+            podcast_length = synth_args[li + 1] if li + 1 < len(synth_args) else "long"
+            if podcast_length not in ("short", "medium", "long"):
+                print(f"[WARN] Unknown --length '{podcast_length}' — fallback to 'long'", file=sys.stderr)
+                podcast_length = "long"
 
         from notehub.core.synthesis import synthesize_sources
         out_dir, report_path, title = synthesize_sources(sources, lang=lang)
@@ -152,6 +159,7 @@ def main():
                     voice_b=voice_b or "zh-TW-YunJheNeural",
                     out_dir=out_dir,
                     video_id="",
+                    length=podcast_length,
                 )
                 if mp3:
                     print(f"[OK] Podcast saved: {mp3}", file=sys.stderr)
@@ -194,6 +202,13 @@ def main():
     if "--ppt-scheme" in pipeline_args:
         idx = pipeline_args.index("--ppt-scheme")
         ppt_scheme = pipeline_args[idx + 1] if idx + 1 < len(pipeline_args) else "dark"
+    podcast_length = "long"
+    if "--length" in pipeline_args:
+        idx = pipeline_args.index("--length")
+        podcast_length = pipeline_args[idx + 1] if idx + 1 < len(pipeline_args) else "long"
+        if podcast_length not in ("short", "medium", "long"):
+            print(f"[WARN] Unknown --length '{podcast_length}' — fallback to 'long'", file=sys.stderr)
+            podcast_length = "long"
 
     # Auto-detect voice shortcuts from remaining args (e.g. notehub file 台女)
     if not voice_a:
@@ -213,6 +228,7 @@ def main():
         voice_a=voice_a,
         voice_b=voice_b,
         ppt_scheme=ppt_scheme,
+        length=podcast_length,
     )
     print(f"\nOutput: {out_dir}")
 

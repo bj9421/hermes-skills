@@ -53,7 +53,25 @@ def _get_llm_client():
 
 # ---------------------------------------------------------------------------
 # Script Generation Prompts
-# ---------------------------------------------------------------------------
+_LENGTH_INSTRUCTIONS = {
+    "short": (
+        "8. 長度：短版（約 5 分鐘口播）。目標 1,500–1,800 字。"
+        "只保留最核心的重點與故事主線，每章精簡扼要，刪除次要細節與重複內容；"
+        "仍需完整涵蓋主題全貌，但每一章都濃縮成精華。"
+    ),
+    "medium": (
+        "8. 長度：中版（約 10 分鐘口播）。目標 3,000–3,500 字。"
+        "保留所有主要章節與關鍵數據，細節適度濃縮；"
+        "平衡完整度與精簡度，讓聽眾在有限時間內掌握全貌。"
+    ),
+    "long": (
+        "8. 長度：長版（約 20 分鐘口播）。目標 6,000–7,000 字。"
+        "完整涵蓋輸入內容的所有章節與細節：保留重要數據、劑量、專有名詞，不要過度濃縮；"
+        "這是完整版，寧可詳細也不要遺漏。"
+    ),
+}
+
+
 _SOLO_PROMPT = """你是一個專業的播客腳本編寫者。請將以下逐字稿轉換為單人口播腳本。
 
 角色：
@@ -67,19 +85,20 @@ _SOLO_PROMPT = """你是一個專業的播客腳本編寫者。請將以下逐�
 5. 去除贅字和口語重複，但保留自然的口語感
 6. 語言：{lang_instruction}
 7. 不要加逐字稿中的時間標記 [MM:SS]
-8. 長度：自然完整，不硬性截斷
+{length_instruction}
 9. 🔴 必須使用完整的標點符號（句號。逗號，頓號、問號？感嘆號！）
 10. 🔴 自然分段，每段 3-5 句，段之間空一行
 11. 🔴 如果輸入是結構化 markdown（標題、條列），請轉換成流暢的口播腳本，不要直接複製原始格式
 12. 🔴 全程以「我」自述，不要提到「主持人」「曉萱」以外的第三人稱稱呼自己
 13. 🔴 完整涵蓋輸入內容的所有章節：共通主題、各來源獨特觀點、差異與衝突、整體結論與行動建議，任何一章都不要遺漏
-14. 🔴 保留重要數據、劑量、專有名詞與細節，不要過度濃縮；目標長度至少 4500 字以上（約 20-25 分鐘口播）
+14. 🔴 保留重要數據、劑量、專有名詞與細節（在目標字數內盡量完整，不要為了湊字數硬塞重複內容）
 15. 🔴🔴 最重要的要求：用你自己的話重新講述，禁止逐句複製或照抄逐字稿。你可以調整敘事順序、合併重複段落、換句話說、加註解與串場 — 讓聽眾聽不出這是照唸逐字稿。改寫率至少 70%（輸出中直接沿用原文的句子不得超過三成）
 16. 🔴🔴 即使輸入已經是口語化的說書稿或主播稿（有人稱、有「朋友們」「歡迎」等串場詞），也必須重新組織敘述：改變句子結構、調整講述順序、用你自己的串場與節奏重講一遍，絕對不能只是加上標點符號就輸出。事實（人名、年份、地點、數字）可以保留，但表達方式必須是你自己的
 
 直接輸出腳本文字。
 
 逐字稿：
+
 """
 
 
@@ -101,20 +120,20 @@ _DUAL_PROMPT = """你是一個專業的播客腳本編寫者。請將以下逐�
 2. 去除贅字，但保留自然的口語感
 3. 語言：{lang_instruction}
 4. 不要加逐字稿中的時間標記 [MM:SS]
-5. 長度：自然完整，不硬性截斷
+{length_instruction}
 6. 🔴 必須使用完整的標點符號（句號。逗號，頓號、問號？感嘆號！）
 7. 🔴 自然分段，每段 3-5 句，段之間空一行
 8. 🔴 如果輸入是結構化 markdown（標題、條列），請轉換成流暢的對話腳本，不要直接複製原始格式
 9. 🔴 完整涵蓋輸入內容的所有章節：共通主題、各來源獨特觀點、差異與衝突、整體結論與行動建議，任何一章都不要遺漏
-10. 🔴 保留重要數據、劑量、專有名詞與細節，不要過度濃縮；目標長度至少 4500 字以上（約 20-25 分鐘口播）
+10. 🔴 保留重要數據、劑量、專有名詞與細節（在目標字數內盡量完整，不要為了湊字數硬塞重複內容）
 11. 🔴🔴 最重要的要求：用你自己的話重新講述，禁止逐句複製或照抄逐字稿。你可以調整敘事順序、合併重複段落、換句話說、加註解與串場 — 讓聽眾聽不出這是照唸逐字稿。改寫率至少 70%（輸出中直接沿用原文的句子不得超過三成）
 12. 🔴🔴 即使輸入已經是口語化的說書稿或主播稿（有人稱、有「朋友們」「歡迎」等串場詞），也必須重新組織敘述：改變句子結構、調整講述順序、用你自己的串場與節奏重講一遍，絕對不能只是加上標點符號就輸出。事實（人名、年份、地點、數字）可以保留，但表達方式必須是你自己的
 
 直接輸出腳本。
 
 逐字稿：
-"""
 
+"""
 
 # ---------------------------------------------------------------------------
 # Deduplication — detect and trim degenerate repetition loops
@@ -217,7 +236,7 @@ def _translate_title(title: str, target_lang: str) -> str | None:
 # ---------------------------------------------------------------------------
 # Script Generation
 # ---------------------------------------------------------------------------
-def _generate_script(transcript: str, title: str, mode: str, target_lang: str) -> str | None:
+def _generate_script(transcript: str, title: str, mode: str, target_lang: str, length: str = "long") -> str | None:
     """Generate podcast script via LLM (Zen→AGNES→Groq fallback chain).
 
     Args:
@@ -225,6 +244,7 @@ def _generate_script(transcript: str, title: str, mode: str, target_lang: str) -
         title: video title for context
         mode: 'solo' or 'dual'
         target_lang: target language code or 'auto'
+        length: 'short' (~5 min) / 'medium' (~10 min) / 'long' (~20 min), default 'long'
     Returns:
         script text or None on failure
     """
@@ -238,8 +258,13 @@ def _generate_script(transcript: str, title: str, mode: str, target_lang: str) -
     else:
         lang_instruction = f"使用 {target_lang}"
 
+    length_instruction = _LENGTH_INSTRUCTIONS.get(length, _LENGTH_INSTRUCTIONS["long"])
+
     template = _DUAL_PROMPT if mode == "dual" else _SOLO_PROMPT
-    prompt = template.format(lang_instruction=lang_instruction) + transcript
+    prompt = template.format(
+        lang_instruction=lang_instruction,
+        length_instruction=length_instruction,
+    ) + transcript
 
     # ⚠️ 2026-08-07 修正：改用 call_llm（Zen→AGNES→Groq fallback 鏈），
     # 原本只用 call_zen — Zen 429 就直接降級成 raw transcript（無分段無標點）。
@@ -475,6 +500,7 @@ def produce_podcast(
     voice_b: str = DEFAULT_VOICE_B,
     out_dir: str | None = None,
     video_id: str = "",
+    length: str = "long",
 ) -> str | None:
     """Produce a podcast from a transcript.
 
@@ -488,6 +514,7 @@ def produce_podcast(
         voice_b: voice for co-host (dual mode only)
         out_dir: output directory (default: OBSIDIAN_BASE/口播/{title} [{video_id}]/)
         video_id: YouTube video ID for unique directory naming
+        length: 'short' (~5 min) / 'medium' (~10 min) / 'long' (~20 min), default 'long'
 
     Returns:
         Path to the generated MP3, or None on failure.
@@ -513,7 +540,7 @@ def produce_podcast(
 
     # Step 1: Generate script
     # ⚠️ 2026-07-31 使用者指示：口播腳本用免費模型（OpenCode Zen）生成
-    script = _generate_script(transcript, title, mode, lang)
+    script = _generate_script(transcript, title, mode, lang, length=length)
     if not script:
         # Zen 與 NVIDIA 都失敗 → fallback：直接唸原文（TTS 本地產出保證）
         print("[WARN] Script generation failed — using raw transcript for TTS", file=sys.stderr)
@@ -527,12 +554,13 @@ source: {title}
 type: podcast-script
 mode: {mode}
 language: {lang}
+length: {length}
 tags: [podcast, 口播]
 ---
 
 # {title} — 口播腳本
 
-> 模式: {"雙主持人（曉萱＋永康）" if mode == "dual" else "單人口播（曉萱）"} | 語言: {lang}
+> 模式: {"雙主持人（曉萱＋永康）" if mode == "dual" else "單人口播（曉萱）"} | 語言: {lang} | 長度: {"短版（約 5 分鐘）" if length == "short" else "中版（約 10 分鐘）" if length == "medium" else "長版（約 20 分鐘）"}
 
 {script}
 """

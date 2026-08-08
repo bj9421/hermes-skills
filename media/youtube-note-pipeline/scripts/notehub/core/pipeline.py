@@ -196,7 +196,7 @@ def _organize_content(text: str, title: str = "") -> str | None:
 def _generate_outputs(source: str, title: str, content_for_gen: str, out_dir: str,
                       podcast: str | None, ppt: bool, visual: bool,
                       lang: str, voice_a: str | None, voice_b: str | None,
-                      ppt_scheme: str = "dark"):
+                      ppt_scheme: str = "dark", length: str = "long"):
     """步驟 7-9：產出（口播/PPT/圖卡）+ 繁中轉換 + chmod。正常流程與 script 重用共用。"""
     script_path = None
     podcast_out_dir = None
@@ -220,6 +220,7 @@ def _generate_outputs(source: str, title: str, content_for_gen: str, out_dir: st
                 voice_b=voice_b or "zh-TW-YunJheNeural",
                 out_dir=out_dir,
                 video_id=None,
+                length=length,
             )
             if mp3_path:
                 podcast_out_dir = os.path.dirname(mp3_path)
@@ -269,7 +270,7 @@ def _generate_outputs(source: str, title: str, content_for_gen: str, out_dir: st
 def run_pipeline(source: str, organize: bool = False,
                  podcast: str = None, ppt: bool = False, visual: bool = False,
                  lang: str = "auto", voice_a: str = None, voice_b: str = None,
-                 ppt_scheme: str = "dark"):
+                 ppt_scheme: str = "dark", length: str = "long"):
     """Run the unified pipeline.
 
     Args:
@@ -298,7 +299,7 @@ def run_pipeline(source: str, organize: bool = False,
         _generate_outputs(source, title, script_content, out_dir,
                           podcast=podcast, ppt=ppt, visual=visual,
                           lang=lang, voice_a=voice_a, voice_b=voice_b,
-                          ppt_scheme=ppt_scheme)
+                          ppt_scheme=ppt_scheme, length=length)
         print(f"\n✅ Pipeline complete! Output: {out_dir}", file=sys.stderr)
         return out_dir
 
@@ -366,7 +367,7 @@ def run_pipeline(source: str, organize: bool = False,
     _generate_outputs(source, title, content_for_gen, out_dir,
                       podcast=podcast, ppt=ppt, visual=visual,
                       lang=lang, voice_a=voice_a, voice_b=voice_b,
-                      ppt_scheme=ppt_scheme)
+                      ppt_scheme=ppt_scheme, length=length)
 
     print(f"\n✅ Pipeline complete! Output: {out_dir}", file=sys.stderr)
     return out_dir
